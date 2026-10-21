@@ -1,0 +1,21 @@
+[package]
+name = "catasto-cli"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Filesystem schema, manifest, and lockfile CLI."
+publish = false
+
+[[bin]]
+name = "catasto"
+path = "src/main.rs"
+
+[dependencies]
+catasto-core = { workspace = true }
+
+#= Crates.io
+anyhow = { workspace = true }
+clap = { workspace = true }
+jobserver-gate = { workspace = true }
+mimalloc = { workspace = true }
