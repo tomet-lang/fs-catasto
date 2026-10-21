@@ -1,0 +1,23 @@
+@kind(api)
+
+@meta{crate: catasto-core, dependencies: list(), dependents: list(catasto-cli)}
+
+=[catasto-core]
+
+`catasto-core` -- core engine and models for filesystem schemas, manifests, and lockfiles.
+
+Just as a cadastre (@em[catasto]) records the boundaries and parcels of land,
+`catasto` defines and verifies directory rules, naming conventions, media
+manifests, and content lockfiles across a workspace.
+
+==[Structs]
+
+===[struct CheckReport]
+
+Summary report produced by a `catasto check` run.
+
+==[Functions]
+
+===[fn check]
+
+Checks the directory tree rooted at `root` against its catasto schema and lockfile.

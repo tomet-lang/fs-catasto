@@ -1,0 +1,18 @@
+@kind(vocabulary)
+@vocabulary(writ){
+  version: "1.0.0"
+}
+
+@element(rule){
+  display: block
+  singleton: false
+
+  @args{
+    @param(id){ type: string, positional: true }[
+      The rule's identifier. The heading is prose; this is the name a tool
+      is held to.
+    ]
+  }
+}[
+  One rule, carrying its own parameters. Kept in step with the `tomet` repository's own writ vocabulary.
+]

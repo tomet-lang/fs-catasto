@@ -1,0 +1,22 @@
+# Normalize all text files to LF line endings
+* text=auto eol=lf
+
+#= Linguist
+tmtroot/ linguist-documentation=true
+*.md linguist-language=Markdown
+*.tmt linguist-language=Tomet
+
+# `.md` under tmtroot/spec/ and tmtroot/guide/ is exported from the sibling
+# `.tmt` source via `@config(export:)`, so it is generated, not authored.
+tmtroot/spec/**/*.md linguist-generated=true
+tmtroot/guide/**/*.md linguist-generated=true
+
+#= Git LFS
+*.png filter=lfs diff=lfs merge=lfs -text
+*.jpg filter=lfs diff=lfs merge=lfs -text
+*.jpeg filter=lfs diff=lfs merge=lfs -text
+*.webp filter=lfs diff=lfs merge=lfs -text
+*.gif filter=lfs diff=lfs merge=lfs -text
+*.ico filter=lfs diff=lfs merge=lfs -text
+*.ttf filter=lfs diff=lfs merge=lfs -text
+*.woff2 filter=lfs diff=lfs merge=lfs -text

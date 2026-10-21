@@ -1,0 +1,9 @@
+@kind(blueprint)
+@blueprint(crate){
+  version: "1.0",
+  description: "crate"
+}
+
+// @meta{
+//   mtime: $generate.date(now)
+// }

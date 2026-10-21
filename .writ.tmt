@@ -1,0 +1,53 @@
+@kind(writ)
+
+=[ Writ: workspace root ]
+
+Rules the `fs-catasto` repository obeys.
+
+Scope is this directory and everything under it. A narrower rule lives in a
+`.writ.tmt` closer to what it governs; read every `.writ.tmt` from a file up
+to here, the way `.gitignore` is read.
+
+Only the author edits this file. An agent that finds a rule in its way
+proposes an edit here and stops. It does not work around the rule, and it
+does not relax the rule to fit the change it wanted to make.
+
+==[ crate-layering ]
+
+@rule(crate-layering){
+  guard: { twrit: layers }
+
+  layers: {
+    1: list( "app" )
+    0: list( "crates/catasto-core" )
+  }
+}
+
+Every workspace member belongs to exactly one layer, and depends only on
+layers strictly below its own. Same-layer dependencies are allowed;
+upward ones are not.
+
+Layer 0 holds the core filesystem schema, manifest, and lockfile engine
+(`catasto-core`). Layer 1 is the CLI program (`app`).
+
+==[ rust-api-docs ]
+
+@rule(rust-api-docs){
+  guard: { twrit: rust-api }
+
+  rust_api: {
+    out: "tmtroot/generated/crates"
+  }
+}
+
+API documentation for all workspace Rust crates must be kept up to date
+with the source code and inner doc-comments (`//!`, `///`).
+
+==[ tmtroot-output-not-edited ]
+
+@rule(tmtroot-output-not-edited){
+  guard: { runs: "just docs-check" }
+}
+
+A file exported from @dir(tmtroot/) is generated. Do not hand-edit it. Edit
+the source and re-export.

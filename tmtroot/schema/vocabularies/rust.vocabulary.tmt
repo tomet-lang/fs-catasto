@@ -1,0 +1,16 @@
+@kind(vocabulary)
+@vocabulary(rust){
+  version: "1.0.0"
+}
+
+@element(crate){
+  display: inline
+  singleton: false
+
+  @args{
+    @param(name){ type: string, positional: true, required: true }[
+      The crate name (e.g. "catasto-core", "catasto-cli").
+    ]
+  }
+}
+| A reference to a Rust crate within the workspace or ecosystem.

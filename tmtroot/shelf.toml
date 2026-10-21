@@ -1,0 +1,8 @@
+[book]
+title = "catasto docs"
+lang = "en"
+dest = "dist"
+
+[build]
+base = "/fs-catasto"
+kinds = ["*", "!config", "!index"]

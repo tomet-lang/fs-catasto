@@ -1,0 +1,50 @@
+@config(
+  export: {
+    type: commonmark,
+    path: "README.md"
+  }
+)
+@meta{
+  id: doc-readme,
+  lang: en
+}
+
+${macro.generated_by(self.path)}
+
+=[ Catasto ]
+
+Filesystem schema, manifest, and lockfile toolchain (`fs-catasto`).
+
+==[ Overview ]
+
+`catasto` defines and verifies filesystem schemas, directory rules, naming conventions, media manifests, and content lockfiles (SHA-256 and provenance) across a workspace.
+
+Just as a cadastre (*catasto*) records the boundaries, parcels, and ownership of land, `catasto` keeps a repository's directory tree reproducible and governed by explicit rules.
+
+==[ Usage ]
+
+```bash
+catasto check [path]   # verify the directory tree against its schema and lockfile
+```
+
+==[ Workspace Layout ]
+
+-| @dir(app) (`catasto-cli`) -- Main CLI binary (`catasto`). Layer 1.
+-| @dir(crates/catasto-core) (`catasto-core`) -- Core library for filesystem schema parsing, directory rule evaluation, and lockfile verification. Layer 0.
+
+==[ Building and Testing ]
+
+=== Build workspace
+```bash
+cargo build --workspace
+```
+
+=== Run tests
+```bash
+cargo test --workspace
+```
+
+=== Check workspace
+```bash
+cargo run -p catasto-cli -- check .
+```
