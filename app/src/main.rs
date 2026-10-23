@@ -24,5 +24,7 @@ fn main() -> ExitCode {
 fn run(command: Command) -> anyhow::Result<ExitCode> {
     match command {
         Command::Check { path } => commands::check::check(&path),
+        Command::Lock { path } => commands::lock::lock(&path),
+        Command::Sync { path } => commands::sync::sync(&path),
     }
 }

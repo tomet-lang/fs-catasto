@@ -10,14 +10,6 @@ Just as a cadastre (@em[catasto]) records the boundaries and parcels of land,
 `catasto` defines and verifies directory rules, naming conventions, media
 manifests, and content lockfiles across a workspace.
 
-==[Structs]
-
-===[struct CheckReport]
-
-Summary report produced by a `catasto check` run.
-
-==[Functions]
-
-===[fn check]
-
-Checks the directory tree rooted at `root` against its catasto schema and lockfile.
+A workspace declares the files it manages in `catasto.toml`. [`lock`] records
+their SHA-256 in `catasto.lock`, [`check`] reports drift, and [`sync`]
+re-fetches the files from their sources.

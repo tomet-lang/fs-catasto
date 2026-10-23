@@ -21,4 +21,16 @@ pub enum Command {
         #[arg(default_value = ".")]
         path: PathBuf,
     },
+    /// Record the sha256 of every managed file in catasto.lock.
+    Lock {
+        /// Workspace root. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
+    /// Re-fetch every managed file from its source and rewrite catasto.lock.
+    Sync {
+        /// Workspace root. Defaults to the current directory.
+        #[arg(default_value = ".")]
+        path: PathBuf,
+    },
 }

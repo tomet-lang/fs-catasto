@@ -19,3 +19,6 @@ anyhow = { workspace = true }
 clap = { workspace = true }
 jobserver-gate = { workspace = true }
 mimalloc = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
