@@ -40,10 +40,8 @@ impl Workspace {
         std::fs::create_dir_all(&vault).unwrap();
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
         std::fs::write(
-            vault.join("catasto.toml"),
-            "[[managed]]\n\
-             path = \"schema/writ.vocabulary.tmt\"\n\
-             source = { path = \"../vocabularies/writ.vocabulary.tmt\" }\n",
+            vault.join("catasto.mtm"),
+            "\"schema/writ.vocabulary.tmt\": { source: \"../vocabularies/writ.vocabulary.tmt\" }\n",
         )
         .unwrap();
         std::fs::write(&source, "canonical").unwrap();
@@ -177,10 +175,9 @@ impl GitWorkspace {
         ws.git(&["init", "--quiet", "-b", "main"]);
         ws.commit("one");
         std::fs::write(
-            ws.vault.join("catasto.toml"),
+            ws.vault.join("catasto.mtm"),
             format!(
-                "[[managed]]\npath = \"schema/w.tmt\"\n\
-                 source = {{ git = {:?}, rev = \"main\", path = \"w.tmt\" }}\n",
+                "\"schema/w.tmt\": {{ source: {{ git: {:?}, rev: main, path: \"w.tmt\" }} }}\n",
                 ws.remote
             ),
         )
@@ -234,7 +231,7 @@ fn git_sync_pins_a_commit_and_check_works_offline() {
     assert_eq!(ws.run(&["sync"]).status.code(), Some(0));
     assert_eq!(ws.content(), "one");
     let lock = std::fs::read_to_string(ws.vault.join("catasto.lock")).unwrap();
-    assert!(lock.contains("commit = \""), "{lock}");
+    assert!(lock.contains("\"commit\": \""), "{lock}");
 
     std::fs::remove_dir_all(&ws.remote).unwrap();
     assert_eq!(ws.run(&["check"]).status.code(), Some(0));
@@ -257,10 +254,10 @@ fn git_sync_stays_pinned_until_update() {
 #[test]
 fn git_sync_reports_an_unknown_rev() {
     let ws = GitWorkspace::new();
-    let manifest = std::fs::read_to_string(ws.vault.join("catasto.toml")).unwrap();
+    let manifest = std::fs::read_to_string(ws.vault.join("catasto.mtm")).unwrap();
     std::fs::write(
-        ws.vault.join("catasto.toml"),
-        manifest.replace("rev = \"main\"", "rev = \"nope\""),
+        ws.vault.join("catasto.mtm"),
+        manifest.replace("rev: main", "rev: nope"),
     )
     .unwrap();
 

@@ -1,7 +1,0 @@
-[[managed]]
-path = "tmtroot/schema/vocabularies/rust.vocabulary.tmt"
-source = { path = "../vocabularies/rust.vocabulary.tmt" }
-
-[[managed]]
-path = "tmtroot/schema/vocabularies/writ.vocabulary.tmt"
-source = { path = "../vocabularies/writ.vocabulary.tmt" }

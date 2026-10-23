@@ -8,14 +8,16 @@ description = "Core engine and models for catasto filesystem schemas and lockfil
 publish = false
 
 [dependencies]
+#= Tomet
+jobserver-gate = { workspace = true }
+motem = { workspace = true }
+
 #= Crates.io
 anyhow = { workspace = true }
 ignore = { workspace = true }
-jobserver-gate = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sha2 = { workspace = true }
-toml = { workspace = true }
 walkdir = { workspace = true }
 
 [dev-dependencies]

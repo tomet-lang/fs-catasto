@@ -1,0 +1,4 @@
+// The files catasto manages in this workspace. Each key is a path here;
+// `source` is where its canonical content comes from.
+"tmtroot/schema/vocabularies/rust.vocabulary.tmt": { source: "../vocabularies/rust.vocabulary.tmt" }
+"tmtroot/schema/vocabularies/writ.vocabulary.tmt": { source: "../vocabularies/writ.vocabulary.tmt" }

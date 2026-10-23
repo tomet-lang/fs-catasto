@@ -17,6 +17,7 @@ catasto-cli = { path = "app" }
 jobserver-gate = { git = "https://github.com/tomet-lang/jobserver-gate.git" }
 
 #= Tomet
+motem = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-ast = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-config = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-load = { git = "https://github.com/tomet-lang/tomet.git" }
@@ -36,7 +37,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
 tempfile = "3"
-toml = "1"
 walkdir = "2"
 
 [profile.release]

@@ -104,9 +104,7 @@ mod tests {
     use crate::git::testing::TestRepo;
 
     const MANIFEST: &str = "\
-[[managed]]
-path = \"vocab/writ.tmt\"
-source = { path = \"../vocabularies/writ.tmt\" }
+\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\" }
 ";
 
     fn sync(root: &Path) -> Result<Lock> {
@@ -119,7 +117,7 @@ source = { path = \"../vocabularies/writ.tmt\" }
         let source = tmp.path().join("vocabularies/writ.tmt");
         std::fs::create_dir_all(&vault).unwrap();
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
-        std::fs::write(vault.join("catasto.toml"), MANIFEST).unwrap();
+        std::fs::write(vault.join("catasto.mtm"), MANIFEST).unwrap();
         std::fs::write(&source, "canonical").unwrap();
         (tmp, vault, source)
     }
@@ -191,10 +189,9 @@ source = { path = \"../vocabularies/writ.tmt\" }
             let repo = TestRepo::new();
             repo.commit("shared/w.tmt", "one");
             std::fs::write(
-                vault.join("catasto.toml"),
+                vault.join("catasto.mtm"),
                 format!(
-                    "[[managed]]\npath = \"vocab/w.tmt\"\n\
-                     source = {{ git = {:?}, rev = \"main\", path = \"shared/w.tmt\" }}\n",
+                    "\"vocab/w.tmt\": {{ source: {{ git: {:?}, rev: main, path: \"shared/w.tmt\" }} }}\n",
                     repo.url()
                 ),
             )
@@ -273,10 +270,10 @@ source = { path = \"../vocabularies/writ.tmt\" }
         fx.repo.tag("v1");
         let moved = fx.repo.commit("shared/w.tmt", "two");
         fx.repo.tag("v2");
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.toml")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.mtm")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.toml"),
-            manifest.replace("rev = \"main\"", "rev = \"v2\""),
+            fx.vault.join("catasto.mtm"),
+            manifest.replace("rev: main", "rev: v2"),
         )
         .unwrap();
 
@@ -297,9 +294,9 @@ source = { path = \"../vocabularies/writ.tmt\" }
             .to_str()
             .unwrap()
             .to_owned();
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.toml")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.mtm")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.toml"),
+            fx.vault.join("catasto.mtm"),
             manifest.replace(&fx.repo.url(), &format!("../../{repo_name}")),
         )
         .unwrap();
@@ -314,10 +311,10 @@ source = { path = \"../vocabularies/writ.tmt\" }
     #[test]
     fn a_git_failure_leaves_the_workspace_untouched() {
         let fx = GitFixture::new();
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.toml")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.mtm")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.toml"),
-            manifest.replace("rev = \"main\"", "rev = \"nope\""),
+            fx.vault.join("catasto.mtm"),
+            manifest.replace("rev: main", "rev: nope"),
         )
         .unwrap();
 
