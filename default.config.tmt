@@ -6,8 +6,8 @@
     generated_by: "<!-- Generated from ${1}. Edit that, then `tomet export .`. -->"
   }
   vocabularies: list(
-    "tmtroot/schema/vocabularies/writ.vocabulary.tmt",
-    "tmtroot/schema/vocabularies/rust.vocabulary.tmt",
+    "tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt",
+    "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt",
   )
   format: {
     meta: { always_newline: true }

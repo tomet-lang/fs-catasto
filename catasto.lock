@@ -1,13 +1,23 @@
 {
   "version": 1,
   "files": {
-    "tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
+    "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": {
       "sha256": "09cfbe9ca17c3540ea68eae56760426be5ef5bd4cf5b17ab03ecc4f55b28875c",
-      "source": "../vocabularies/rust.vocabulary.tmt"
+      "source": {
+        "git": "https://github.com/tomet-lang/vocabularies.git",
+        "rev": "main",
+        "path": "vocabularies/rust/rust@1.0.0.vocabulary.tmt"
+      },
+      "commit": "3b00caa0eef21c4b55b447d9447fb430c450674b"
     },
-    "tmtroot/schema/vocabularies/writ.vocabulary.tmt": {
-      "sha256": "27cfd04767f8c6350e57b651551145f09c7d730fe020f38fe7fceab2d2d00faf",
-      "source": "../vocabularies/writ.vocabulary.tmt"
+    "tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt": {
+      "sha256": "72e73524c0a2fa6b5aac68dad1b511fce6c3c1a6bf58f55276108e726e0a982f",
+      "source": {
+        "git": "https://github.com/tomet-lang/vocabularies.git",
+        "rev": "main",
+        "path": "vocabularies/writ/writ@1.0.0.vocabulary.tmt"
+      },
+      "commit": "3b00caa0eef21c4b55b447d9447fb430c450674b"
     }
   }
 }

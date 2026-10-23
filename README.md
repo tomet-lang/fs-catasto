@@ -26,7 +26,7 @@ catasto check [path]           # report drift between catasto.mtm, catasto.lock,
 `catasto.mtm` is written by hand, in motem, the data language of the Tomet ecosystem. It maps each managed path to what is known about it, and today that is where its content comes from.
 
 ```text
-"tmtroot/schema/vocabularies/writ.vocabulary.tmt": { source: "../vocabularies/writ.vocabulary.tmt" }
+"docs/shared/terms.tmt": { source: "../shared/terms.tmt" }
 ```
 
 The key is a path relative to the workspace and must stay inside it. Quote a path that is not a bare word, which is any path with a `/` or a space in it. An entry is always a map, and a path may be declared once.
@@ -37,8 +37,8 @@ A `source` is one of two kinds:
 - `{ git: "...", rev: "...", path: "..." }` -- a file in a git repository. `git` is an `https://` URL or a local path (relative to the workspace root), `rev` is a tag, a branch, or a commit already reachable from one, and `path` is the file's location inside the repository. Quote a `rev` that reads as a number (`rev: "1.2"`).
 
 ```text
-"tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
-  source: { git: "https://example.com/vocabularies.git", rev: v1, path: "rust.vocabulary.tmt" }
+"tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": {
+  source: { git: "https://github.com/tomet-lang/vocabularies.git", rev: main, path: "vocabularies/rust/rust@1.0.0.vocabulary.tmt" }
 }
 ```
 
