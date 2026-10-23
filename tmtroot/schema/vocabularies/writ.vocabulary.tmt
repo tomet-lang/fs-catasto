@@ -13,6 +13,5 @@
       is held to.
     ]
   }
-}[
-  One rule, carrying its own parameters. Kept in step with the `tomet` repository's own writ vocabulary.
-]
+}
+| One rule, carrying its own parameters. Kept in step with the `tomet` repository's own writ vocabulary.

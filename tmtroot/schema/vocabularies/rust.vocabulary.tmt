@@ -9,7 +9,7 @@
 
   @args{
     @param(name){ type: string, positional: true, required: true }[
-      The crate name (e.g. "catasto-core", "catasto-cli").
+      The crate name (e.g. "my-crate-core", "my-crate-cli").
     ]
   }
 }
