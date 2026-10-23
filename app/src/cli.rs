@@ -28,9 +28,14 @@ pub enum Command {
         path: PathBuf,
     },
     /// Re-fetch every managed file from its source and rewrite catasto.lock.
+    ///
+    /// Git sources are read at the commit recorded in catasto.lock.
     Sync {
         /// Workspace root. Defaults to the current directory.
         #[arg(default_value = ".")]
         path: PathBuf,
+        /// Resolve every git rev again and lock the commits they point at now.
+        #[arg(long)]
+        update: bool,
     },
 }

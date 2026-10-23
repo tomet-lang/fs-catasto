@@ -23,11 +23,20 @@ pub fn sha256_file(path: &Path) -> Result<String> {
         hasher.update(&buf[..n]);
     }
 
-    let mut hex = String::with_capacity(64);
-    for byte in hasher.finalize() {
+    Ok(to_hex(hasher.finalize().as_slice()))
+}
+
+/// Returns the lowercase hex SHA-256 of `bytes`.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    to_hex(Sha256::digest(bytes).as_slice())
+}
+
+fn to_hex(bytes: &[u8]) -> String {
+    let mut hex = String::with_capacity(bytes.len() * 2);
+    for byte in bytes {
         write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
     }
-    Ok(hex)
+    hex
 }
 
 #[cfg(test)]
@@ -42,6 +51,14 @@ mod tests {
 
         assert_eq!(
             sha256_file(&file).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn hashes_bytes_like_files() {
+        assert_eq!(
+            sha256_hex(b"abc"),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
     }

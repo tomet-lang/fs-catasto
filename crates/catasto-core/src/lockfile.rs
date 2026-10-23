@@ -1,5 +1,6 @@
 //! The generated `catasto.lock`.
 
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
@@ -33,6 +34,9 @@ pub struct Locked {
     pub source: Source,
     /// Lowercase hex SHA-256 of the file content.
     pub sha256: String,
+    /// Full commit id the file was read at. Present exactly for git sources.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub commit: Option<String>,
 }
 
 impl Lock {
@@ -63,19 +67,52 @@ impl Lock {
 ///
 /// Every declared file must exist; the lock records what is on disk, so a file
 /// that differs from its source shows up as `stale` on the next check.
+///
+/// A git source keeps the commit the existing lock recorded for it. `lock`
+/// never resolves a revision; `catasto sync` does.
 pub fn lock(root: &Path) -> Result<Lock> {
     let manifest = Manifest::load(root)?;
+    let existing = Lock::load(root)?;
 
+    let commits = manifest
+        .managed
+        .iter()
+        .filter_map(|managed| {
+            let locked = existing.get(&managed.path)?;
+            let commit = locked.commit.clone()?;
+            (locked.source == managed.source).then(|| (managed.path.clone(), commit))
+        })
+        .collect();
+    write_lock(root, manifest, &commits)
+}
+
+/// Writes `catasto.lock` for `manifest`; `commits` maps git-sourced paths to
+/// the commit they were read at.
+pub(crate) fn write_lock(
+    root: &Path,
+    manifest: Manifest,
+    commits: &HashMap<PathBuf, String>,
+) -> Result<Lock> {
     let mut locked = Vec::with_capacity(manifest.managed.len());
     for managed in manifest.managed {
         let file = root.join(&managed.path);
         if !file.is_file() {
             bail!("managed file does not exist: {}", managed.path.display());
         }
+        let commit = match managed.source {
+            Source::Path(_) => None,
+            Source::Git { .. } => Some(commits.get(&managed.path).cloned().with_context(|| {
+                format!(
+                    "no locked commit for {}: run `catasto sync`",
+                    managed.path.display()
+                )
+            })?),
+        };
         locked.push(Locked {
             sha256: sha256_file(&file)?,
             path: managed.path,
             source: managed.source,
+            commit,
         });
     }
     locked.sort_by(|a, b| a.path.cmp(&b.path));
@@ -161,6 +198,63 @@ source = { path = \"src/a.tmt\" }
 
         assert!(err.to_string().contains("b.tmt"), "{err}");
         assert!(!dir.path().join(LOCK_FILE).exists());
+    }
+
+    const GIT_MANIFEST: &str = "\
+[[managed]]
+path = \"w.tmt\"
+source = { git = \"https://example.com/v.git\", rev = \"v1\", path = \"w.tmt\" }
+";
+
+    const COMMIT: &str = "0123456789abcdef0123456789abcdef01234567";
+
+    fn locked_git_entry(commit: &str) -> String {
+        format!(
+            "[[locked]]\npath = \"w.tmt\"\nsha256 = \"x\"\ncommit = \"{commit}\"\n\
+             [locked.source]\ngit = \"https://example.com/v.git\"\nrev = \"v1\"\npath = \"w.tmt\"\n"
+        )
+    }
+
+    #[test]
+    fn lock_cannot_pin_a_git_source_by_itself() {
+        let dir = workspace(GIT_MANIFEST, &[("w.tmt", "abc")]);
+
+        let err = lock(dir.path()).unwrap_err();
+
+        assert!(err.to_string().contains("run `catasto sync`"), "{err}");
+    }
+
+    #[test]
+    fn lock_keeps_the_commit_of_an_unchanged_git_source() {
+        let dir = workspace(GIT_MANIFEST, &[("w.tmt", "abc")]);
+        std::fs::write(dir.path().join(LOCK_FILE), locked_git_entry(COMMIT)).unwrap();
+
+        let lock = lock(dir.path()).unwrap();
+
+        assert_eq!(lock.locked[0].commit.as_deref(), Some(COMMIT));
+        assert_eq!(Lock::load(dir.path()).unwrap(), lock);
+    }
+
+    #[test]
+    fn lock_drops_the_commit_when_the_rev_changed() {
+        let dir = workspace(GIT_MANIFEST, &[("w.tmt", "abc")]);
+        std::fs::write(
+            dir.path().join(LOCK_FILE),
+            locked_git_entry(COMMIT).replace("rev = \"v1\"", "rev = \"v0\""),
+        )
+        .unwrap();
+
+        assert!(lock(dir.path()).is_err());
+    }
+
+    #[test]
+    fn path_sources_have_no_commit_in_the_lock() {
+        let dir = workspace(MANIFEST, &[("a.tmt", "abc"), ("b.tmt", "x")]);
+
+        lock(dir.path()).unwrap();
+
+        let text = std::fs::read_to_string(dir.path().join(LOCK_FILE)).unwrap();
+        assert!(!text.contains("commit"), "{text}");
     }
 
     #[test]

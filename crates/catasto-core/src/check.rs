@@ -7,7 +7,7 @@ use anyhow::{Result, bail};
 
 use crate::digest::sha256_file;
 use crate::lockfile::Lock;
-use crate::manifest::Manifest;
+use crate::manifest::{Manifest, Source};
 
 /// How a managed file has drifted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -70,8 +70,9 @@ impl CheckReport {
 /// Checks the managed files under `root` against `catasto.toml` and `catasto.lock`.
 ///
 /// Files that are not declared and not locked are unmanaged and never reported.
-/// The source is consulted only when it is readable, so a vendored workspace
-/// checks cleanly without its sources around.
+/// A local source is consulted only when it is readable, so a vendored
+/// workspace checks cleanly without its sources around. A git source is never
+/// consulted: `check` does not touch the network.
 pub fn check(root: &Path) -> Result<CheckReport> {
     if !root.exists() {
         bail!("path does not exist: {}", root.display());
@@ -88,10 +89,10 @@ pub fn check(root: &Path) -> Result<CheckReport> {
     };
 
     for managed in &manifest.managed {
-        let Some(locked) = lock
-            .get(&managed.path)
-            .filter(|locked| locked.source == managed.source)
-        else {
+        let Some(locked) = lock.get(&managed.path).filter(|locked| {
+            locked.source == managed.source
+                && matches!(managed.source, Source::Git { .. }) == locked.commit.is_some()
+        }) else {
             report(&managed.path, ViolationKind::Unlocked);
             continue;
         };
@@ -103,9 +104,11 @@ pub fn check(root: &Path) -> Result<CheckReport> {
             report(&managed.path, ViolationKind::Modified);
         }
 
-        let source = managed.source.resolve(root);
-        if source.is_file() && sha256_file(&source)? != locked.sha256 {
-            report(&managed.path, ViolationKind::Stale);
+        let readable_source = managed.source.local_path(root).filter(|s| s.is_file());
+        if let Some(source) = readable_source {
+            if sha256_file(&source)? != locked.sha256 {
+                report(&managed.path, ViolationKind::Stale);
+            }
         }
     }
 
@@ -259,5 +262,65 @@ source = { path = \"../vocabularies/writ.tmt\" }
     fn a_missing_root_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         assert!(check(&dir.path().join("nope")).is_err());
+    }
+
+    const GIT_SOURCE: &str = "{ git = \"/does/not/exist.git\", rev = \"main\", path = \"w.tmt\" }";
+
+    /// A vault with one git-sourced file whose lock entry has `commit_line`.
+    fn git_vault(commit_line: &str) -> tempfile::TempDir {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("w.tmt"), "abc").unwrap();
+        std::fs::write(
+            dir.path().join("catasto.toml"),
+            format!("[[managed]]\npath = \"w.tmt\"\nsource = {GIT_SOURCE}\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            dir.path().join("catasto.lock"),
+            format!(
+                "[[locked]]\npath = \"w.tmt\"\n\
+                 sha256 = \"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad\"\n\
+                 {commit_line}\n\
+                 [locked.source]\ngit = \"/does/not/exist.git\"\nrev = \"main\"\npath = \"w.tmt\"\n"
+            ),
+        )
+        .unwrap();
+        dir
+    }
+
+    #[test]
+    fn a_git_source_checks_offline() {
+        let dir = git_vault("commit = \"0123456789abcdef0123456789abcdef01234567\"");
+
+        assert!(check(dir.path()).unwrap().is_ok());
+    }
+
+    #[test]
+    fn a_git_entry_without_a_commit_needs_syncing() {
+        let dir = git_vault("");
+
+        let kinds: Vec<_> = check(dir.path())
+            .unwrap()
+            .violations
+            .into_iter()
+            .map(|v| v.kind)
+            .collect();
+
+        assert_eq!(kinds, [ViolationKind::Unlocked]);
+    }
+
+    #[test]
+    fn a_modified_git_file_is_still_detected_offline() {
+        let dir = git_vault("commit = \"0123456789abcdef0123456789abcdef01234567\"");
+        std::fs::write(dir.path().join("w.tmt"), "edited").unwrap();
+
+        let kinds: Vec<_> = check(dir.path())
+            .unwrap()
+            .violations
+            .into_iter()
+            .map(|v| v.kind)
+            .collect();
+
+        assert_eq!(kinds, [ViolationKind::Modified]);
     }
 }

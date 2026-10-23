@@ -12,4 +12,5 @@ manifests, and content lockfiles across a workspace.
 
 A workspace declares the files it manages in `catasto.toml`. [`lock`] records
 their SHA-256 in `catasto.lock`, [`check`] reports drift, and [`sync`]
-re-fetches the files from their sources.
+re-fetches the files from their sources: local paths, or files in git
+repositories pinned to a commit.

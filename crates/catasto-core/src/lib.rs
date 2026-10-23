@@ -6,16 +6,19 @@
 //!
 //! A workspace declares the files it manages in `catasto.toml`. [`lock`] records
 //! their SHA-256 in `catasto.lock`, [`check`] reports drift, and [`sync`]
-//! re-fetches the files from their sources.
+//! re-fetches the files from their sources: local paths, or files in git
+//! repositories pinned to a commit.
 
 mod check;
 mod digest;
+mod git;
 mod lockfile;
 mod manifest;
 mod sync;
 
 pub use check::{CheckReport, Violation, ViolationKind, check};
-pub use digest::sha256_file;
+pub use digest::{sha256_file, sha256_hex};
+pub use git::{CACHE_DIR_ENV, Fetched, GitCache};
 pub use lockfile::{LOCK_FILE, Lock, Locked, lock};
 pub use manifest::{MANIFEST_FILE, Managed, Manifest, Source};
-pub use sync::sync;
+pub use sync::{SyncMode, sync, sync_with};
