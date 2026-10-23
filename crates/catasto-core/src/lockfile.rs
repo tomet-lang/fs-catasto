@@ -215,7 +215,7 @@ mod tests {
 
     fn workspace(manifest: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
         let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("catasto.mtm"), manifest).unwrap();
+        std::fs::write(dir.path().join("catasto.motm"), manifest).unwrap();
         for (path, content) in files {
             let file = dir.path().join(path);
             std::fs::create_dir_all(file.parent().unwrap()).unwrap();

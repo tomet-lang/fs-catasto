@@ -1,4 +1,4 @@
-//! The hand-written `catasto.mtm` declaration.
+//! The hand-written `catasto.motm` declaration.
 //!
 //! A manifest is a motem map from a path inside the workspace to what
 //! catasto knows about that path. Today an entry says where the file comes
@@ -29,7 +29,7 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// File name of the manifest, relative to the workspace root.
-pub const MANIFEST_FILE: &str = "catasto.mtm";
+pub const MANIFEST_FILE: &str = "catasto.motm";
 
 /// The set of files catasto manages in a workspace.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -55,8 +55,9 @@ struct Entry {
 }
 
 impl<'de> Deserialize<'de> for Manifest {
-    /// Reads the entries in the order they were written. Duplicate paths are
-    /// kept here and rejected by validation, which can name them.
+    /// Reads the entries in the order they were written. The motem parser
+    /// already rejects a path written twice, so a manifest read from text has
+    /// no duplicates; validation still checks one built in code.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
         struct Entries;
 
@@ -70,9 +71,7 @@ impl<'de> Deserialize<'de> for Manifest {
             fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Manifest, A::Error> {
                 let mut managed = Vec::new();
                 while let Some(path) = map.next_key::<String>()? {
-                    let entry: Entry = map
-                        .next_value()
-                        .map_err(|e| de::Error::custom(format!("{path}: {e}")))?;
+                    let entry: Entry = map.next_value()?;
                     managed.push(Managed {
                         path: path.into(),
                         source: entry.source,
@@ -230,7 +229,7 @@ impl Serialize for Source {
 }
 
 impl Manifest {
-    /// Loads `catasto.mtm` from `root`. A missing file is an empty manifest.
+    /// Loads `catasto.motm` from `root`. A missing file is an empty manifest.
     pub fn load(root: &Path) -> Result<Self> {
         let file = root.join(MANIFEST_FILE);
         match std::fs::read_to_string(&file) {
@@ -340,7 +339,7 @@ mod tests {
     #[test]
     fn an_entry_needs_a_source() {
         let err = Manifest::parse("\"a.tmt\": {}").unwrap_err();
-        assert_eq!(err.to_string(), "a.tmt: missing field `source`");
+        assert_eq!(err.to_string(), "\"a.tmt\": missing field `source`");
     }
 
     #[test]
@@ -440,7 +439,7 @@ mod tests {
     fn rejects_duplicate_paths() {
         let text = "\"a\": { source: \"s\" }\n\"a\": { source: \"t\" }\n";
         let err = Manifest::parse(text).unwrap_err();
-        assert!(err.to_string().contains("declared twice"), "{err}");
+        assert!(err.to_string().contains("duplicate key `a`"), "{err}");
     }
 
     #[test]

@@ -117,7 +117,7 @@ mod tests {
         let source = tmp.path().join("vocabularies/writ.tmt");
         std::fs::create_dir_all(&vault).unwrap();
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
-        std::fs::write(vault.join("catasto.mtm"), MANIFEST).unwrap();
+        std::fs::write(vault.join("catasto.motm"), MANIFEST).unwrap();
         std::fs::write(&source, "canonical").unwrap();
         (tmp, vault, source)
     }
@@ -189,7 +189,7 @@ mod tests {
             let repo = TestRepo::new();
             repo.commit("shared/w.tmt", "one");
             std::fs::write(
-                vault.join("catasto.mtm"),
+                vault.join("catasto.motm"),
                 format!(
                     "\"vocab/w.tmt\": {{ source: {{ git: {:?}, rev: main, path: \"shared/w.tmt\" }} }}\n",
                     repo.url()
@@ -270,9 +270,9 @@ mod tests {
         fx.repo.tag("v1");
         let moved = fx.repo.commit("shared/w.tmt", "two");
         fx.repo.tag("v2");
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.mtm")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.motm")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.mtm"),
+            fx.vault.join("catasto.motm"),
             manifest.replace("rev: main", "rev: v2"),
         )
         .unwrap();
@@ -294,9 +294,9 @@ mod tests {
             .to_str()
             .unwrap()
             .to_owned();
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.mtm")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.motm")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.mtm"),
+            fx.vault.join("catasto.motm"),
             manifest.replace(&fx.repo.url(), &format!("../../{repo_name}")),
         )
         .unwrap();
@@ -311,9 +311,9 @@ mod tests {
     #[test]
     fn a_git_failure_leaves_the_workspace_untouched() {
         let fx = GitFixture::new();
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.mtm")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.motm")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.mtm"),
+            fx.vault.join("catasto.motm"),
             manifest.replace("rev: main", "rev: nope"),
         )
         .unwrap();

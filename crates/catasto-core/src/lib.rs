@@ -4,7 +4,7 @@
 //! `catasto` defines and verifies directory rules, naming conventions, media
 //! manifests, and content lockfiles across a workspace.
 //!
-//! A workspace declares the files it manages in `catasto.mtm`. [`lock`] records
+//! A workspace declares the files it manages in `catasto.motm`. [`lock`] records
 //! their SHA-256 in `catasto.lock`, [`check`] reports drift, and [`sync`]
 //! re-fetches the files from their sources: local paths, or files in git
 //! repositories pinned to a commit.

@@ -25,7 +25,7 @@ pub(crate) enum UrlKind {
     Local,
 }
 
-/// Classifies a `git` value from `catasto.mtm`.
+/// Classifies a `git` value from `catasto.motm`.
 pub(crate) fn classify(url: &str) -> Result<UrlKind, String> {
     if url.is_empty() || url.starts_with('-') {
         return Err(format!("invalid git url: {url:?}"));

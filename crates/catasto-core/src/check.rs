@@ -31,7 +31,7 @@ impl fmt::Display for ViolationKind {
             Self::Missing => "missing: managed file does not exist",
             Self::Stale => "stale: source has changed since it was locked",
             Self::Unlocked => "unlocked: not in catasto.lock (run `catasto lock`)",
-            Self::Orphaned => "orphaned: in catasto.lock but not declared in catasto.mtm",
+            Self::Orphaned => "orphaned: in catasto.lock but not declared in catasto.motm",
         })
     }
 }
@@ -67,7 +67,7 @@ impl CheckReport {
     }
 }
 
-/// Checks the managed files under `root` against `catasto.mtm` and `catasto.lock`.
+/// Checks the managed files under `root` against `catasto.motm` and `catasto.lock`.
 ///
 /// Files that are not declared and not locked are unmanaged and never reported.
 /// A local source is consulted only when it is readable, so a vendored
@@ -147,7 +147,7 @@ mod tests {
             let source = tmp.path().join("vocabularies/writ.tmt");
             std::fs::create_dir_all(vault.join("vocab")).unwrap();
             std::fs::create_dir_all(source.parent().unwrap()).unwrap();
-            std::fs::write(vault.join("catasto.mtm"), MANIFEST).unwrap();
+            std::fs::write(vault.join("catasto.motm"), MANIFEST).unwrap();
             std::fs::write(vault.join("vocab/writ.tmt"), "v1").unwrap();
             std::fs::write(&source, "v1").unwrap();
             lock(&vault).unwrap();
@@ -226,7 +226,7 @@ mod tests {
     fn a_changed_source_declaration_needs_relocking() {
         let fx = Fixture::new();
         std::fs::write(
-            fx.vault.join("catasto.mtm"),
+            fx.vault.join("catasto.motm"),
             MANIFEST.replace("../vocabularies/writ.tmt", "../elsewhere/writ.tmt"),
         )
         .unwrap();
@@ -237,7 +237,7 @@ mod tests {
     #[test]
     fn detects_a_locked_file_that_is_no_longer_declared() {
         let fx = Fixture::new();
-        std::fs::remove_file(fx.vault.join("catasto.mtm")).unwrap();
+        std::fs::remove_file(fx.vault.join("catasto.motm")).unwrap();
 
         assert_eq!(fx.kinds(), [ViolationKind::Orphaned]);
     }
@@ -269,7 +269,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("w.tmt"), "abc").unwrap();
         std::fs::write(
-            dir.path().join("catasto.mtm"),
+            dir.path().join("catasto.motm"),
             format!("\"w.tmt\": {{ source: {GIT_SOURCE} }}\n"),
         )
         .unwrap();

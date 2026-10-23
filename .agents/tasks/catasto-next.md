@@ -1,6 +1,6 @@
 # catasto: what comes after the manifest
 
-The manifest is path-first motem (`catasto.mtm`) and the lock is JSON. These
+The manifest is path-first motem (`catasto.motm`) and the lock is JSON. These
 are left open.
 
 - Rules by path: naming and prefix rules, directory rules (what may live in a

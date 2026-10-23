@@ -40,7 +40,7 @@ impl Workspace {
         std::fs::create_dir_all(&vault).unwrap();
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
         std::fs::write(
-            vault.join("catasto.mtm"),
+            vault.join("catasto.motm"),
             "\"schema/writ.vocabulary.tmt\": { source: \"../vocabularies/writ.vocabulary.tmt\" }\n",
         )
         .unwrap();
@@ -175,7 +175,7 @@ impl GitWorkspace {
         ws.git(&["init", "--quiet", "-b", "main"]);
         ws.commit("one");
         std::fs::write(
-            ws.vault.join("catasto.mtm"),
+            ws.vault.join("catasto.motm"),
             format!(
                 "\"schema/w.tmt\": {{ source: {{ git: {:?}, rev: main, path: \"w.tmt\" }} }}\n",
                 ws.remote
@@ -254,9 +254,9 @@ fn git_sync_stays_pinned_until_update() {
 #[test]
 fn git_sync_reports_an_unknown_rev() {
     let ws = GitWorkspace::new();
-    let manifest = std::fs::read_to_string(ws.vault.join("catasto.mtm")).unwrap();
+    let manifest = std::fs::read_to_string(ws.vault.join("catasto.motm")).unwrap();
     std::fs::write(
-        ws.vault.join("catasto.mtm"),
+        ws.vault.join("catasto.motm"),
         manifest.replace("rev: main", "rev: nope"),
     )
     .unwrap();

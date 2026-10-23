@@ -404,10 +404,18 @@ dependencies = [
 
 [[package]]
 name = "motem"
-version = "0.2.0"
-source = "git+https://github.com/tomet-lang/tomet.git#fe581f4c866f649d89816ef6401bdeea335e543d"
+version = "0.3.0"
+source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
 dependencies = [
- "serde",
+ "motem-syntax",
+ "serde_motem",
+]
+
+[[package]]
+name = "motem-syntax"
+version = "0.3.0"
+source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
+dependencies = [
  "tomet-ast",
  "tomet-lexer",
 ]
@@ -549,6 +557,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_motem"
+version = "0.3.0"
+source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
+dependencies = [
+ "motem-syntax",
+ "serde",
+ "tomet-ast",
+]
+
+[[package]]
 name = "sha2"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -603,8 +621,8 @@ checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
 
 [[package]]
 name = "tomet-ast"
-version = "0.2.0"
-source = "git+https://github.com/tomet-lang/tomet.git#fe581f4c866f649d89816ef6401bdeea335e543d"
+version = "0.3.0"
+source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
 dependencies = [
  "serde",
  "tomet-cst",
@@ -613,16 +631,16 @@ dependencies = [
 
 [[package]]
 name = "tomet-cst"
-version = "0.2.0"
-source = "git+https://github.com/tomet-lang/tomet.git#fe581f4c866f649d89816ef6401bdeea335e543d"
+version = "0.3.0"
+source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
 dependencies = [
  "rowan",
 ]
 
 [[package]]
 name = "tomet-lexer"
-version = "0.2.0"
-source = "git+https://github.com/tomet-lang/tomet.git#fe581f4c866f649d89816ef6401bdeea335e543d"
+version = "0.3.0"
+source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
 dependencies = [
  "tomet-ast",
  "tomet-cst",

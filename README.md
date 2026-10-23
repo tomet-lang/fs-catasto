@@ -16,14 +16,14 @@ Just as a cadastre (*catasto*) records the boundaries, parcels, and ownership of
 catasto sync [path]            # fetch every managed file from its source, then lock
 catasto sync --update [path]   # also resolve every git rev again
 catasto lock [path]            # record the sha256 of every managed file in catasto.lock
-catasto check [path]           # report drift between catasto.mtm, catasto.lock, and the files
+catasto check [path]           # report drift between catasto.motm, catasto.lock, and the files
 ```
 
 `check` exits with 1 when it finds drift, and never touches the network. Files that are neither declared nor locked are unmanaged and never reported.
 
 ## Files
 
-`catasto.mtm` is written by hand, in motem, the data language of the Tomet ecosystem. It maps each managed path to what is known about it, and today that is where its content comes from.
+`catasto.motm` is written by hand, in motem, the data language of the Tomet ecosystem. It maps each managed path to what is known about it, and today that is where its content comes from.
 
 ```text
 "docs/shared/terms.tmt": { source: "../shared/terms.tmt" }
