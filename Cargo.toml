@@ -1,10 +1,10 @@
 [workspace]
 resolver = "3"
 members = [
-    "app",
-    "crates/catasto-core",
-    "crates/catasto-digest",
-    "crates/catasto-git",
+  "app",
+  "crates/catasto-core",
+  "crates/catasto-digest",
+  "crates/catasto-git",
 ]
 
 default-members = ["app"]
