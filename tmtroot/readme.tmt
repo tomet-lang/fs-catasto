@@ -34,12 +34,13 @@ catasto remove DEST [--delete]                  # stop managing a file
 catasto upstream remove NAME                    # drop a name nothing uses
 catasto upstream list
 catasto check [path]                            # report drift between catasto.ctmt, catasto.lock, and the files
+catasto diff [--only FILE]... [path]            # unified diff between disk and what sync would write
 catasto sync [--update] [--only FILE]... [path] # fetch managed files from their sources, then lock
 catasto lock [path]                             # record the sha256 of every managed file in catasto.lock
 catasto spec [cli|manifest] [--all] [--check] [--out DIR] # extract .tmt specifications
 ```
 
-Every command works on the current directory; `-C DIR` (`--workspace DIR`) says another. `check`, `lock` and `sync` also take the directory as a trailing path, as `tomet check` and `twrit check` do.
+Every command works on the current directory; `-C DIR` (`--workspace DIR`) says another. `check`, `diff`, `lock` and `sync` also take the directory as a trailing path, as `tomet check` and `twrit check` do.
 
 ==[ Getting Started ]
 
@@ -60,7 +61,7 @@ The commands edit `catasto.ctmt` without rewriting it: comments, order and layou
 
 `catasto sync --only FILE` reads one file again. With `--update` it moves that file to where its `rev` points now and nothing else, which is how to take one new vocabulary without taking all of them.
 
-`check` exits with 1 when it finds drift, and never touches the network. It names the command that puts each file right. Files that are neither declared nor locked are unmanaged and never reported.
+`check` exits with 1 when it finds drift, and never touches the network. It names the command that puts each file right. `catasto diff [path]` shows the unified diff of what `catasto sync` would write against what is on disk, reading git sources at their locked commit (and fetching them if needed). It exits 0 when nothing differs and 1 when something does. Files that are neither declared nor locked are unmanaged and never reported.
 
 The names are exact: `catasto.ctmt` and `catasto.lock`, and `init` takes no other. A workspace that has `Catasto.ctmt` or `CATASTO.lock` instead is told to rename it, rather than being read as one with nothing declared or locked, which is what a case-sensitive filesystem would otherwise make of it.
 

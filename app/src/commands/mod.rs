@@ -1,4 +1,5 @@
 pub mod check;
+pub mod diff;
 pub mod lock;
 pub mod manage;
 pub mod spec;
@@ -8,7 +9,7 @@ use std::path::PathBuf;
 
 use anyhow::{Result, bail};
 
-/// The workspace root: the trailing path of `check`, `lock` and `sync`, or
+/// The workspace root: the trailing path of `check`, `lock`, `diff` and `sync`, or
 /// `-C`, or the current directory. Saying it twice, differently, is an error.
 pub fn root(global: &Option<PathBuf>, trailing: Option<PathBuf>) -> Result<PathBuf> {
     match (global, trailing) {

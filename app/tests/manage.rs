@@ -512,3 +512,67 @@ fn upstream_add_force_cli_exit_codes_and_messages() {
         "{out}"
     );
 }
+
+#[test]
+fn diff_command_cli_contract() {
+    let w = World::new();
+    w.ready(); // adds upstream "shared"
+    w.ok(&["add", "a.tmt", "--upstream", "shared", "a.tmt"]);
+    w.ok(&["add", "b.tmt", "--upstream", "shared", "sub/b.tmt"]);
+
+    // 1. Clean tree: prints nothing and exits 0
+    let out = w.run(&["diff"]);
+    assert_eq!(out.status.code(), Some(0));
+    assert!(
+        out.stdout.is_empty(),
+        "{:?}",
+        String::from_utf8_lossy(&out.stdout)
+    );
+
+    // 2. Hand-edited file: prints expected hunk and exits 1
+    let tree_manifest_before = w.read("catasto.ctmt");
+    let tree_lock_before = w.read("catasto.lock");
+
+    let a_path = w.vault.join("a.tmt");
+    std::fs::write(&a_path, "a modified\n").unwrap();
+    let b_path = w.vault.join("b.tmt");
+    std::fs::write(&b_path, "b modified\n").unwrap();
+
+    let out = w.run(&["diff"]);
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("--- a/a.tmt"), "{stdout}");
+    assert!(stdout.contains("+++ b/a.tmt\tgit "), "{stdout}");
+    assert!(stdout.contains("-a modified"), "{stdout}");
+    assert!(stdout.contains("+a one"), "{stdout}");
+    assert!(stdout.contains("--- a/b.tmt"), "{stdout}");
+    assert!(stdout.contains("+++ b/b.tmt\tgit "), "{stdout}");
+    assert!(stdout.contains("-b modified"), "{stdout}");
+    assert!(stdout.contains("+b one"), "{stdout}");
+
+    // Working tree is untouched after diff!
+    assert_eq!(w.read("a.tmt"), "a modified\n");
+    assert_eq!(w.read("b.tmt"), "b modified\n");
+    assert_eq!(w.read("catasto.ctmt"), tree_manifest_before);
+    assert_eq!(w.read("catasto.lock"), tree_lock_before);
+
+    // 3. --only limits it
+    let out = w.run(&["diff", "--only", "a.tmt"]);
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("a.tmt"), "{stdout}");
+    assert!(!stdout.contains("b.tmt"), "{stdout}");
+
+    // 4. Binary file prints the one-line notice
+    let bin_path = w.remote.join("bin.dat");
+    std::fs::write(&bin_path, [0xFF, 0x00, 0xFE, 0x01]).unwrap();
+    w.git(&["add", "bin.dat"]);
+    w.git(&["commit", "-m", "add bin"]);
+    w.ok(&["add", "bin.dat", "--upstream", "shared", "bin.dat"]);
+
+    std::fs::write(w.vault.join("bin.dat"), [0xAA, 0xBB]).unwrap();
+    let out = w.run(&["diff", "--only", "bin.dat"]);
+    assert_eq!(out.status.code(), Some(1));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stdout, "Binary files differ: bin.dat\n");
+}

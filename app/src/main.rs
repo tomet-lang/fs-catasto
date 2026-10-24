@@ -42,6 +42,9 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::Sync { path, update, only } => {
             commands::sync::sync(&commands::root(root, path)?, update, &only)
         }
+        Command::Diff { path, only } => {
+            commands::diff::diff(&commands::root(root, path)?, &only)
+        }
         Command::Spec {
             target,
             all,

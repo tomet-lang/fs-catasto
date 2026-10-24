@@ -91,6 +91,17 @@ Examples:
         #[arg(long, value_name = "FILE")]
         only: Vec<PathBuf>,
     },
+    /// Show differences between the workspace files and what sync would write.
+    ///
+    /// Reads git sources at the commit recorded in catasto.lock and may touch the
+    /// network when a commit is not cached yet (unlike check, which is offline).
+    Diff {
+        /// Workspace root. Defaults to the current directory.
+        path: Option<PathBuf>,
+        /// Only this file (as the manifest writes its path); repeat for more.
+        #[arg(long, value_name = "FILE")]
+        only: Vec<PathBuf>,
+    },
     /// Generate automated .tmt specifications and reference documentation.
     Spec {
         /// Documentation target to generate (`cli` | `manifest`).

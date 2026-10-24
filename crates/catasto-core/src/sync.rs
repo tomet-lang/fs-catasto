@@ -33,16 +33,37 @@ pub fn sync_with(root: &Path, mode: SyncMode, cache_dir: Option<&Path>) -> Resul
     sync_only(root, mode, cache_dir, &[])
 }
 
-/// Like [`sync_with`], for the files in `only` (paths as the manifest writes
-/// them); an empty `only` is every file. The other files, and what the lock
-/// says about them, stay as they are: `catasto sync --update --only a` moves
-/// `a` and nothing else.
-pub fn sync_only(
+/// What `sync` would write for one managed file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlannedFile {
+    /// Workspace-relative path of the managed file (as in manifest).
+    pub path: PathBuf,
+    /// Absolute path where it would be written on disk.
+    pub destination: PathBuf,
+    /// What `sync` would write: file bytes or link target.
+    pub content: Content,
+    /// The commit it came from (for git sources).
+    pub commit: Option<String>,
+    /// The canonical source from the manifest.
+    pub source: Source,
+}
+
+/// A plan of changes `sync` would write.
+#[derive(Debug, Clone)]
+pub struct SyncPlan {
+    pub manifest: Manifest,
+    pub lock: Lock,
+    pub files: Vec<PlannedFile>,
+}
+
+/// Computes the content `sync` would write for the selected files, fetching
+/// what is needed from git repositories and reading local sources.
+pub fn plan_sync(
     root: &Path,
     mode: SyncMode,
     cache_dir: Option<&Path>,
     only: &[PathBuf],
-) -> Result<Lock> {
+) -> Result<SyncPlan> {
     let manifest = Manifest::load(root)?;
     let lock = Lock::load(root)?;
     for path in only {
@@ -57,33 +78,66 @@ pub fn sync_only(
     let selected = |path: &Path| only.is_empty() || only.iter().any(|p| p == path);
     let mut fetched_git = fetch_git(root, mode, cache_dir, &manifest, &lock, &selected)?;
 
-    let mut commits = HashMap::new();
-    let mut hashes = HashMap::new();
-    let mut fetched = Vec::with_capacity(manifest.managed.len());
+    let mut files = Vec::with_capacity(manifest.managed.len());
     for (index, managed) in manifest.managed.iter().enumerate() {
         if !selected(&managed.path) {
             continue;
         }
-        let content = match &managed.source {
+        let (content, commit) = match &managed.source {
             Source::Git { .. } => {
                 let file = fetched_git[index]
                     .take()
                     .expect("every git source was fetched")?;
-                commits.insert(managed.path.clone(), file.commit);
-                file.content
+                (file.content, Some(file.commit))
             }
-            local => Content::File(read_local(root, &managed.path, local)?),
+            local => (Content::File(read_local(root, &managed.path, local)?), None),
         };
-        let hash = match &content {
+        files.push(PlannedFile {
+            path: managed.path.clone(),
+            destination: root.join(&managed.path),
+            content,
+            commit,
+            source: managed.source.clone(),
+        });
+    }
+
+    Ok(SyncPlan {
+        manifest,
+        lock,
+        files,
+    })
+}
+
+/// Like [`sync_with`], for the files in `only` (paths as the manifest writes
+/// them); an empty `only` is every file. The other files, and what the lock
+/// says about them, stay as they are: `catasto sync --update --only a` moves
+/// `a` and nothing else.
+pub fn sync_only(
+    root: &Path,
+    mode: SyncMode,
+    cache_dir: Option<&Path>,
+    only: &[PathBuf],
+) -> Result<Lock> {
+    let plan = plan_sync(root, mode, cache_dir, only)?;
+    let mut commits = HashMap::new();
+    let mut hashes = HashMap::new();
+    let mut fetched = Vec::with_capacity(plan.files.len());
+
+    for file in &plan.files {
+        if let Some(commit) = &file.commit {
+            commits.insert(file.path.clone(), commit.clone());
+        }
+        let hash = match &file.content {
             Content::File(bytes) => catasto_digest::sha256_hex(bytes),
             Content::Link(link_target) => catasto_digest::sha256_hex(link_target.as_bytes()),
         };
-        hashes.insert(managed.path.clone(), hash);
-        fetched.push((root.join(&managed.path), content));
+        hashes.insert(file.path.clone(), hash);
+        fetched.push((file.destination.clone(), file.content.clone()));
     }
 
     write_all(fetched)?;
-    write_lock_selected_with_hashes(root, manifest, &commits, &lock, &selected, &hashes)
+    let selected = |path: &Path| only.is_empty() || only.iter().any(|p| p == path);
+    write_lock_selected_with_hashes(root, plan.manifest, &commits, &plan.lock, &selected, &hashes)
 }
 
 /// Reads every git source, one result per entry of the manifest (`None` for

@@ -19,6 +19,7 @@ anyhow = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+similar = { workspace = true }
 
 [dev-dependencies]
 catasto-git = { workspace = true, features = ["testing"] }
