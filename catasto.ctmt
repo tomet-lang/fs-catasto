@@ -2,11 +2,33 @@
 // `source` is where its canonical content comes from.
 ::upstreams{
   vocabularies: { git: "https://github.com/tomet-lang/vocabularies.git", rev: main, root: vocabularies }
+  commonfiles: { git: "https://github.com/tomet-lang/commonfiles.git", rev: main }
 }
 
+// Vocabularies
 "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": {
   source: { upstream: vocabularies, path: "rust/rust@1.0.0.vocabulary.tmt" }
 }
 "tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt": {
   source: { upstream: vocabularies, path: "writ/writ@1.0.0.vocabulary.tmt" }
+}
+
+// Environment
+".editorconfig": {
+  source: { upstream: commonfiles, path: ".editorconfig" }
+}
+".envrc": {
+  source: { upstream: commonfiles, path: ".envrc" }
+}
+".gitattributes": {
+  source: { upstream: commonfiles, path: ".gitattributes" }
+}
+"nix/formatter.nix": {
+  source: { upstream: commonfiles, path: "nix/formatter.nix" }
+}
+"LICENSE-APACHE": {
+  source: { upstream: commonfiles, path: "licenses/LICENSE-APACHE" }
+}
+"LICENSE-MIT": {
+  source: { upstream: commonfiles, path: "licenses/LICENSE-MIT" }
 }

@@ -1,6 +1,60 @@
 {
   "version": 1,
   "files": {
+    ".editorconfig": {
+      "sha256": "2640a0cd478e15abaf9ecdabd962ac0937a3f7e1dc39900649d381f693803d94",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": ".editorconfig"
+      },
+      "commit": "9dafeb38d6ff6f8a93b2a6c08e51e039a32d1220"
+    },
+    ".envrc": {
+      "sha256": "3c8bdb9d52dd4e7440a504e0f43bb3a1929c06f8f4f2d4d7ef41baab974e39e2",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": ".envrc"
+      },
+      "commit": "9dafeb38d6ff6f8a93b2a6c08e51e039a32d1220"
+    },
+    ".gitattributes": {
+      "sha256": "2c4d2530e6c2f455de09b135a57ea1ec71790ccffaa4eadcdd4643ee466d76c3",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": ".gitattributes"
+      },
+      "commit": "9dafeb38d6ff6f8a93b2a6c08e51e039a32d1220"
+    },
+    "LICENSE-APACHE": {
+      "sha256": "a549c19a5c34ad57b10e336bdfad9cb6040c2fc311ed217f01c7a9c4ddee6015",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": "licenses/LICENSE-APACHE"
+      },
+      "commit": "9dafeb38d6ff6f8a93b2a6c08e51e039a32d1220"
+    },
+    "LICENSE-MIT": {
+      "sha256": "24d88f36f2620d2b18d70bc2136e103b1f9910a63a4614d94404577b2a41f5a0",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": "licenses/LICENSE-MIT"
+      },
+      "commit": "9dafeb38d6ff6f8a93b2a6c08e51e039a32d1220"
+    },
+    "nix/formatter.nix": {
+      "sha256": "520fd59fc3243a1220b18ba0ce3b710de7c91a46a7d71be0e8f28d9bac55e093",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": "nix/formatter.nix"
+      },
+      "commit": "9dafeb38d6ff6f8a93b2a6c08e51e039a32d1220"
+    },
     "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": {
       "sha256": "11af349642b16e1f78054789e995c212e2f13bca4fbba42a5db126ae71f6e1d1",
       "source": {
