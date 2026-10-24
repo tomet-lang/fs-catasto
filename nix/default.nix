@@ -24,6 +24,14 @@ flake-parts.lib.mkFlake { inherit inputs; } {
       packages = rec {
         default = catasto;
         catasto = pkgs.callPackage ./pkgs/catasto.nix { inherit craneLib; };
+
+        # What CI builds and sends to Cachix (.github/workflows/nix-ci.yml).
+        ci = pkgs.linkFarm "ci" [
+          {
+            name = "catasto";
+            path = catasto;
+          }
+        ];
       };
 
       devShells.default = pkgs.callPackage ./dev.nix {

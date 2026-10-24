@@ -28,6 +28,15 @@
       },
       "commit": "9dafeb38d6ff6f8a93b2a6c08e51e039a32d1220"
     },
+    ".github/workflows/nix-ci.yml": {
+      "sha256": "572ebb0f03d139314ee7c638e6e6cf62b585b3bf112dd0e71dfd1905dad562bc",
+      "source": {
+        "git": "https://github.com/tomet-lang/commonfiles.git",
+        "rev": "main",
+        "path": ".github/workflows/nix-ci.yml"
+      },
+      "commit": "9dafeb38d6ff6f8a93b2a6c08e51e039a32d1220"
+    },
     "LICENSE-APACHE": {
       "sha256": "a549c19a5c34ad57b10e336bdfad9cb6040c2fc311ed217f01c7a9c4ddee6015",
       "source": {

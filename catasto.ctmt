@@ -23,6 +23,9 @@
 ".gitattributes": {
   source: { upstream: commonfiles, path: ".gitattributes" }
 }
+".github/workflows/nix-ci.yml": {
+  source: { upstream: commonfiles, path: ".github/workflows/nix-ci.yml" }
+}
 "nix/formatter.nix": {
   source: { upstream: commonfiles, path: "nix/formatter.nix" }
 }

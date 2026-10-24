@@ -1,0 +1,29 @@
+name: Nix CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  nix:
+    name: Nix Build · Cachix
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: DeterminateSystems/nix-installer-action@main
+
+      - name: Setup Cachix
+        uses: cachix/cachix-action@v15
+        with:
+          name: tomet
+          authToken: '${{ secrets.CACHIX_AUTH_TOKEN }}'
+
+      # Which packages go to Cachix is the flake's to say: its `ci` package gathers them
+      # (a `linkFarm`), and the dev shell is not part of it, so it is not built and not
+      # pushed. A package that runs the workspace tests does so as part of its build.
+      - name: Build the packages
+        run: nix build .#ci --print-build-logs
