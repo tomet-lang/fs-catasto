@@ -53,6 +53,23 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// File name of the manifest, relative to the workspace root.
 pub const MANIFEST_FILE: &str = "catasto.ctmt";
 
+/// The names the manifest had before it was `catasto.ctmt`. Nothing reads them; a workspace that still
+/// has one is told to rename it.
+const OLD_NAMES: [&str; 2] = ["catasto.motm", "catasto.mtm"];
+
+/// Fails when the manifest is missing but one under an old name is there.
+pub(crate) fn reject_old_names(root: &Path) -> Result<()> {
+    for old in OLD_NAMES {
+        if root.join(old).exists() {
+            bail!(
+                "found {old}, but the manifest is {MANIFEST_FILE} now: rename it \
+                 (catasto reads nothing under the old name)"
+            );
+        }
+    }
+    Ok(())
+}
+
 /// The set of files catasto manages in a workspace.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Manifest {
@@ -262,7 +279,10 @@ impl Manifest {
         let file = root.join(MANIFEST_FILE);
         match std::fs::read_to_string(&file) {
             Ok(text) => Self::parse(&text).with_context(|| format!("invalid {}", file.display())),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(Self::default()),
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                reject_old_names(root)?;
+                Ok(Self::default())
+            }
             Err(e) => Err(e).with_context(|| format!("cannot read {}", file.display())),
         }
     }
@@ -456,6 +476,32 @@ impl Upstreams {
         }
         Ok(out)
     }
+}
+
+/// One place named in `::upstreams`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpstreamInfo {
+    pub name: String,
+    pub git: String,
+    pub rev: String,
+    /// The directory of the repository its entries' paths start from.
+    pub root: Option<PathBuf>,
+}
+
+/// The places `::upstreams` names in `text`, in the order they were written.
+pub fn upstreams_of(text: &str) -> Result<Vec<UpstreamInfo>> {
+    let file = cotomet::syntax::parse_file(text).map_err(|e| anyhow!("{e}"))?;
+    let upstreams = Upstreams::from_header(&file.header)?;
+    Ok(upstreams
+        .named
+        .into_iter()
+        .map(|(name, upstream)| UpstreamInfo {
+            name,
+            git: upstream.git,
+            rev: upstream.rev,
+            root: upstream.root,
+        })
+        .collect())
 }
 
 fn is_inside_workspace(path: &Path) -> bool {

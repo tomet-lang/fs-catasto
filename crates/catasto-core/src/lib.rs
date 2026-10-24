@@ -10,11 +10,15 @@
 //! repositories pinned to a commit.
 
 mod check;
+mod edit;
 mod lockfile;
+mod manage;
 mod manifest;
 mod sync;
 
 pub use check::{CheckReport, Violation, ViolationKind, check};
+pub use edit::{SourceText, UpstreamText};
 pub use lockfile::{LOCK_FILE, Lock, Locked, lock};
-pub use manifest::{MANIFEST_FILE, Managed, Manifest, Source};
-pub use sync::{SyncMode, sync, sync_with};
+pub use manage::{Row, add, init, list, remove, upstream_add, upstream_list, upstream_remove};
+pub use manifest::{MANIFEST_FILE, Managed, Manifest, Source, UpstreamInfo, upstreams_of};
+pub use sync::{SyncMode, sync, sync_only, sync_with};

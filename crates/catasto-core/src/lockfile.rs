@@ -74,7 +74,7 @@ struct LockedBody {
 
 impl Lock {
     /// A lock of `locked`, sorted by path.
-    fn new(mut locked: Vec<Locked>) -> Self {
+    pub(crate) fn new(mut locked: Vec<Locked>) -> Self {
         locked.sort_by(|a, b| a.path.cmp(&b.path));
         Self { locked }
     }
@@ -179,8 +179,31 @@ pub(crate) fn write_lock(
     manifest: Manifest,
     commits: &HashMap<PathBuf, String>,
 ) -> Result<Lock> {
+    write_lock_selected(root, manifest, commits, &Lock::default(), &|_| true)
+}
+
+/// Like [`write_lock`], for a run that touched only the files `selected` says
+/// yes to. The others keep the entry `previous` has for them, as it was; one
+/// that has no entry there (or whose source changed) is left out, so the next
+/// `check` says it is `unlocked`.
+pub(crate) fn write_lock_selected(
+    root: &Path,
+    manifest: Manifest,
+    commits: &HashMap<PathBuf, String>,
+    previous: &Lock,
+    selected: &dyn Fn(&Path) -> bool,
+) -> Result<Lock> {
     let mut locked = Vec::with_capacity(manifest.managed.len());
     for managed in manifest.managed {
+        if !selected(&managed.path) {
+            if let Some(kept) = previous
+                .get(&managed.path)
+                .filter(|kept| kept.source == managed.source)
+            {
+                locked.push(kept.clone());
+            }
+            continue;
+        }
         let file = root.join(&managed.path);
         if !file.is_file() {
             bail!("managed file does not exist: {}", managed.path.display());

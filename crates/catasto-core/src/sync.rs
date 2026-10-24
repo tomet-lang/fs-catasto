@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::lockfile::{Lock, write_lock};
+use crate::lockfile::{Lock, write_lock_selected};
 use crate::manifest::{Managed, Manifest, Source};
 use catasto_git::{Fetched, GitCache, resolve_url};
 
@@ -30,13 +30,39 @@ pub fn sync(root: &Path, mode: SyncMode) -> Result<Lock> {
 
 /// Like [`sync`], with an explicit git cache directory.
 pub fn sync_with(root: &Path, mode: SyncMode, cache_dir: Option<&Path>) -> Result<Lock> {
+    sync_only(root, mode, cache_dir, &[])
+}
+
+/// Like [`sync_with`], for the files in `only` (paths as the manifest writes
+/// them); an empty `only` is every file. The other files, and what the lock
+/// says about them, stay as they are: `catasto sync --update --only a` moves
+/// `a` and nothing else.
+pub fn sync_only(
+    root: &Path,
+    mode: SyncMode,
+    cache_dir: Option<&Path>,
+    only: &[PathBuf],
+) -> Result<Lock> {
     let manifest = Manifest::load(root)?;
     let lock = Lock::load(root)?;
-    let mut fetched_git = fetch_git(root, mode, cache_dir, &manifest, &lock)?;
+    for path in only {
+        if !manifest.managed.iter().any(|managed| &managed.path == path) {
+            bail!(
+                "{} is not declared in {}",
+                path.display(),
+                crate::MANIFEST_FILE
+            );
+        }
+    }
+    let selected = |path: &Path| only.is_empty() || only.iter().any(|p| p == path);
+    let mut fetched_git = fetch_git(root, mode, cache_dir, &manifest, &lock, &selected)?;
 
     let mut commits = HashMap::new();
     let mut fetched = Vec::with_capacity(manifest.managed.len());
     for (index, managed) in manifest.managed.iter().enumerate() {
+        if !selected(&managed.path) {
+            continue;
+        }
         let content = match &managed.source {
             Source::Git { .. } => {
                 let file = fetched_git[index]
@@ -51,7 +77,7 @@ pub fn sync_with(root: &Path, mode: SyncMode, cache_dir: Option<&Path>) -> Resul
     }
 
     write_all(fetched)?;
-    write_lock(root, manifest, &commits)
+    write_lock_selected(root, manifest, &commits, &lock, &selected)
 }
 
 /// Reads every git source, one result per entry of the manifest (`None` for
@@ -69,12 +95,16 @@ fn fetch_git(
     cache_dir: Option<&Path>,
     manifest: &Manifest,
     lock: &Lock,
+    selected: &dyn Fn(&Path) -> bool,
 ) -> Result<Vec<Option<Result<Fetched>>>> {
     let mut by_url: Vec<(String, Vec<usize>)> = Vec::new();
     for (index, managed) in manifest.managed.iter().enumerate() {
         let Source::Git { git, .. } = &managed.source else {
             continue;
         };
+        if !selected(&managed.path) {
+            continue;
+        }
         let url = resolve_url(root, git)?;
         match by_url.iter_mut().find(|(known, _)| *known == url) {
             Some((_, indices)) => indices.push(index),

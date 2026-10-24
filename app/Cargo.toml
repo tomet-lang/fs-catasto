@@ -17,8 +17,10 @@ catasto-core = { workspace = true }
 #= Crates.io
 anyhow = { workspace = true }
 clap = { workspace = true }
+serde_json = { workspace = true }
 jobserver-gate = { workspace = true }
 mimalloc = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }
+serde_json = { workspace = true }

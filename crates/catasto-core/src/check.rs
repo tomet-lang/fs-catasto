@@ -24,14 +24,31 @@ pub enum ViolationKind {
     Orphaned,
 }
 
+impl ViolationKind {
+    /// The one word for it, as `catasto list` shows it.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Modified => "modified",
+            Self::Missing => "missing",
+            Self::Stale => "stale",
+            Self::Unlocked => "unlocked",
+            Self::Orphaned => "orphaned",
+        }
+    }
+}
+
 impl fmt::Display for ViolationKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_str(match self {
-            Self::Modified => "modified: differs from the locked sha256",
-            Self::Missing => "missing: managed file does not exist",
-            Self::Stale => "stale: source has changed since it was locked",
-            Self::Unlocked => "unlocked: not in catasto.lock (run `catasto lock`)",
-            Self::Orphaned => "orphaned: in catasto.lock but not declared in catasto.ctmt",
+            Self::Modified => {
+                "modified: differs from the locked sha256 (`catasto sync` restores it; `catasto lock` keeps it, for a local source)"
+            }
+            Self::Missing => "missing: managed file does not exist (run `catasto sync`)",
+            Self::Stale => "stale: source has changed since it was locked (run `catasto sync`)",
+            Self::Unlocked => "unlocked: not in catasto.lock (run `catasto sync`)",
+            Self::Orphaned => {
+                "orphaned: in catasto.lock but not declared in catasto.ctmt (run `catasto sync`)"
+            }
         })
     }
 }

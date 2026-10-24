@@ -101,6 +101,7 @@ dependencies = [
  "clap",
  "jobserver-gate",
  "mimalloc",
+ "serde_json",
  "tempfile",
 ]
 
