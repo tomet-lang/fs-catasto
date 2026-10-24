@@ -1,0 +1,22 @@
+[package]
+name = "catasto-git"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Reads files out of git repositories for catasto, through the system git."
+publish = false
+
+[features]
+# Throwaway repositories for tests, shared with crates that fetch through this one.
+testing = ["dep:tempfile"]
+
+[dependencies]
+catasto-digest = { workspace = true }
+
+#= Crates.io
+anyhow = { workspace = true }
+tempfile = { workspace = true, optional = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

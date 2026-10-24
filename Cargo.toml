@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["app", "crates/catasto-core"]
+members = [
+    "app",
+    "crates/catasto-core",
+    "crates/catasto-digest",
+    "crates/catasto-git",
+]
 
 default-members = ["app"]
 
@@ -12,6 +17,8 @@ license = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
 catasto-core = { path = "crates/catasto-core" }
+catasto-digest = { path = "crates/catasto-digest" }
+catasto-git = { path = "crates/catasto-git" }
 catasto-cli = { path = "app" }
 
 jobserver-gate = { git = "https://github.com/tomet-lang/jobserver-gate.git" }

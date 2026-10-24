@@ -1,4 +1,4 @@
-//! Content hashing.
+//! `catasto-digest` -- SHA-256 content hashing for catasto.
 
 use std::fmt::Write as _;
 use std::fs::File;

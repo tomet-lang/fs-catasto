@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::git::{GitCache, resolve_url};
+use catasto_git::{GitCache, resolve_url};
 use crate::lockfile::{Lock, write_lock};
 use crate::manifest::{Manifest, Source};
 
@@ -101,7 +101,7 @@ mod tests {
 
     use super::*;
     use crate::check::check;
-    use crate::git::testing::TestRepo;
+    use catasto_git::testing::TestRepo;
 
     const MANIFEST: &str = "\
 \"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\" }

@@ -1,0 +1,17 @@
+@kind(api)
+
+@meta{crate: catasto-digest, dependencies: list(), dependents: list(catasto-core, catasto-git)}
+
+=[catasto-digest]
+
+`catasto-digest` -- SHA-256 content hashing for catasto.
+
+==[Functions]
+
+===[fn sha256_file]
+
+Returns the lowercase hex SHA-256 of the file at `path`.
+
+===[fn sha256_hex]
+
+Returns the lowercase hex SHA-256 of `bytes`.

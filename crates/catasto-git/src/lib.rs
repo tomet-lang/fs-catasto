@@ -1,4 +1,4 @@
-//! Reading files out of git repositories through the system `git`.
+//! `catasto-git` -- reading files out of git repositories through the system `git`.
 //!
 //! Each repository URL gets one bare clone in the cache directory. Nothing is
 //! written into the workspace.
@@ -8,7 +8,7 @@ use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Result, bail};
 
-use crate::digest::sha256_hex;
+use catasto_digest::sha256_hex;
 
 /// Environment variable that overrides the cache directory.
 pub const CACHE_DIR_ENV: &str = "CATASTO_CACHE_DIR";
@@ -18,7 +18,7 @@ pub const CACHE_DIR_ENV: &str = "CATASTO_CACHE_DIR";
 /// There is deliberately no ssh: `git@host:path`, `ssh://`, `git://` and plain
 /// `http://` are rejected, so catasto never needs keys, agents or host config.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) enum UrlKind {
+pub enum UrlKind {
     /// An `https://` URL.
     Https,
     /// A path on the local filesystem, absolute or relative to the workspace.
@@ -26,7 +26,7 @@ pub(crate) enum UrlKind {
 }
 
 /// Classifies a `git` value from `catasto.motm`.
-pub(crate) fn classify(url: &str) -> Result<UrlKind, String> {
+pub fn classify(url: &str) -> Result<UrlKind, String> {
     if url.is_empty() || url.starts_with('-') {
         return Err(format!("invalid git url: {url:?}"));
     }
@@ -55,7 +55,7 @@ pub(crate) fn classify(url: &str) -> Result<UrlKind, String> {
 
 /// The URL to hand to `git`: remote URLs as written, local paths made
 /// absolute against the workspace `root`.
-pub(crate) fn resolve_url(root: &Path, url: &str) -> Result<String> {
+pub fn resolve_url(root: &Path, url: &str) -> Result<String> {
     match classify(url).map_err(anyhow::Error::msg)? {
         UrlKind::Https => Ok(url.to_owned()),
         UrlKind::Local => {
@@ -254,14 +254,21 @@ fn run(git_dir: Option<&Path>, args: &[&str]) -> Result<Output> {
     Ok(output)
 }
 
-#[cfg(test)]
-pub(crate) mod testing {
+/// Throwaway repositories for tests, behind the `testing` feature.
+#[cfg(any(test, feature = "testing"))]
+pub mod testing {
     use std::path::Path;
     use std::process::Command;
 
     /// A throwaway repository on branch `main`.
     pub struct TestRepo {
         dir: tempfile::TempDir,
+    }
+
+    impl Default for TestRepo {
+        fn default() -> Self {
+            Self::new()
+        }
     }
 
     impl TestRepo {

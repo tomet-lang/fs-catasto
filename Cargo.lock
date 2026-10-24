@@ -109,14 +109,33 @@ name = "catasto-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "catasto-digest",
+ "catasto-git",
  "ignore",
  "jobserver-gate",
  "motem",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "walkdir",
+]
+
+[[package]]
+name = "catasto-digest"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "sha2",
+ "tempfile",
+]
+
+[[package]]
+name = "catasto-git"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "catasto-digest",
+ "tempfile",
 ]
 
 [[package]]

@@ -10,15 +10,11 @@
 //! repositories pinned to a commit.
 
 mod check;
-mod digest;
-mod git;
 mod lockfile;
 mod manifest;
 mod sync;
 
 pub use check::{CheckReport, Violation, ViolationKind, check};
-pub use digest::{sha256_file, sha256_hex};
-pub use git::{CACHE_DIR_ENV, Fetched, GitCache};
 pub use lockfile::{LOCK_FILE, Lock, Locked, lock};
 pub use manifest::{MANIFEST_FILE, Managed, Manifest, Source};
 pub use sync::{SyncMode, sync, sync_with};

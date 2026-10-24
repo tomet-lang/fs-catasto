@@ -8,7 +8,8 @@ description = "Core engine and models for catasto filesystem schemas and lockfil
 publish = false
 
 [dependencies]
-#= Tomet
+catasto-digest = { workspace = true }
+catasto-git = { workspace = true }
 jobserver-gate = { workspace = true }
 motem = { workspace = true }
 
@@ -17,8 +18,8 @@ anyhow = { workspace = true }
 ignore = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-sha2 = { workspace = true }
 walkdir = { workspace = true }
 
 [dev-dependencies]
+catasto-git = { workspace = true, features = ["testing"] }
 tempfile = { workspace = true }

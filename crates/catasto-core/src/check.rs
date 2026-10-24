@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-use crate::digest::sha256_file;
+use catasto_digest::sha256_file;
 use crate::lockfile::Lock;
 use crate::manifest::{Manifest, Source};
 

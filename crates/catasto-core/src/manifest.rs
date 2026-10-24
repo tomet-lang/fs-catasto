@@ -169,7 +169,7 @@ const NUMBER_REV: &str = "`rev` reads as a number; write it in quotes, e.g. `rev
 impl GitSource {
     fn into_source(self) -> Result<Source, String> {
         let GitSource { git, rev, path } = self;
-        crate::git::classify(&git)?;
+        catasto_git::classify(&git)?;
         if rev.is_empty() || rev.starts_with('-') {
             return Err(format!("invalid rev: {rev:?}"));
         }

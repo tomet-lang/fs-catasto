@@ -1,0 +1,16 @@
+[package]
+name = "catasto-digest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "SHA-256 content hashing for catasto."
+publish = false
+
+[dependencies]
+#= Crates.io
+anyhow = { workspace = true }
+sha2 = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

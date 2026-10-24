@@ -18,8 +18,10 @@ does not relax the rule to fit the change it wanted to make.
   guard: { twrit: layers }
 
   layers: {
-    1: list( "app" )
-    0: list( "crates/catasto-core" )
+    3: list( "app" )
+    2: list( "crates/catasto-core" )
+    1: list( "crates/catasto-git" )
+    0: list( "crates/catasto-digest" )
   }
 }
 
@@ -27,8 +29,10 @@ Every workspace member belongs to exactly one layer, and depends only on
 layers strictly below its own. Same-layer dependencies are allowed;
 upward ones are not.
 
-Layer 0 holds the core filesystem schema, manifest, and lockfile engine
-(`catasto-core`). Layer 1 is the CLI program (`app`).
+Layer 0 holds content hashing (`catasto-digest`). Layer 1 reads files out of
+git repositories (`catasto-git`). Layer 2 holds the filesystem schema,
+manifest, and lockfile engine (`catasto-core`). Layer 3 is the CLI program
+(`app`).
 
 ==[ rust-api-docs ]
 

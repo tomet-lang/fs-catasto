@@ -1,0 +1,60 @@
+@kind(api)
+
+@meta{crate: catasto-git, dependencies: list(catasto-digest), dependents: list(catasto-core)}
+
+=[catasto-git]
+
+`catasto-git` -- reading files out of git repositories through the system `git`.
+
+Each repository URL gets one bare clone in the cache directory. Nothing is
+written into the workspace.
+
+==[Module testing]
+
+Throwaway repositories for tests, behind the `testing` feature.
+
+===[Structs]
+
+====[struct TestRepo]
+
+A throwaway repository on branch `main`.
+
+===[Functions]
+
+====[fn run_git]
+
+==[Structs]
+
+===[struct Fetched]
+
+A file read from a repository, with the commit it was read at.
+
+===[struct GitCache]
+
+Bare clones of the repositories catasto reads from.
+
+==[Enums]
+
+===[enum UrlKind]
+
+Where a repository lives, as far as catasto accepts it.
+
+There is deliberately no ssh: `git@host:path`, `ssh://`, `git://` and plain
+`http://` are rejected, so catasto never needs keys, agents or host config.
+
+==[Functions]
+
+===[fn classify]
+
+Classifies a `git` value from `catasto.motm`.
+
+===[fn resolve_url]
+
+The URL to hand to `git`: remote URLs as written, local paths made
+absolute against the workspace `root`.
+
+==[Constants]
+
+===[const CACHE_DIR_ENV]
+
+Environment variable that overrides the cache directory.

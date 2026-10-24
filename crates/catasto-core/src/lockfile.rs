@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::digest::sha256_file;
+use catasto_digest::sha256_file;
 use crate::manifest::{Manifest, Source};
 
 /// File name of the lockfile, relative to the workspace root.

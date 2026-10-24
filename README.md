@@ -62,8 +62,10 @@ The lock records the commit that `rev` resolved to. Like `cargo build`, `catasto
 
 ## Workspace Layout
 
-- `app` (`catasto-cli`) -- Main CLI binary (`catasto`). Layer 1.
-- `crates/catasto-core` (`catasto-core`) -- Core library for filesystem schema parsing, directory rule evaluation, and lockfile verification. Layer 0.
+- `app` (`catasto-cli`) -- Main CLI binary (`catasto`). Layer 3.
+- `crates/catasto-core` (`catasto-core`) -- Core library for filesystem schema parsing, directory rule evaluation, and lockfile verification. Layer 2.
+- `crates/catasto-git` (`catasto-git`) -- Reads files out of git repositories through the system `git`, in a cache of bare clones. Layer 1.
+- `crates/catasto-digest` (`catasto-digest`) -- SHA-256 content hashing. Layer 0.
 
 ## Building and Testing
 
