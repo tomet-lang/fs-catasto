@@ -6,8 +6,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 
 use crate::lockfile::{Lock, write_lock};
-use crate::manifest::{Manifest, Source};
-use catasto_git::{GitCache, resolve_url};
+use crate::manifest::{Managed, Manifest, Source};
+use catasto_git::{Fetched, GitCache, resolve_url};
 
 /// How `sync` treats git sources that the lock already pins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -32,31 +32,16 @@ pub fn sync(root: &Path, mode: SyncMode) -> Result<Lock> {
 pub fn sync_with(root: &Path, mode: SyncMode, cache_dir: Option<&Path>) -> Result<Lock> {
     let manifest = Manifest::load(root)?;
     let lock = Lock::load(root)?;
-    let mut cache: Option<GitCache> = None;
+    let mut fetched_git = fetch_git(root, mode, cache_dir, &manifest, &lock)?;
 
     let mut commits = HashMap::new();
     let mut fetched = Vec::with_capacity(manifest.managed.len());
-    for managed in &manifest.managed {
+    for (index, managed) in manifest.managed.iter().enumerate() {
         let content = match &managed.source {
-            Source::Git { git, rev, path } => {
-                let pinned = match mode {
-                    SyncMode::Update => None,
-                    SyncMode::Locked => lock
-                        .get(&managed.path)
-                        .filter(|locked| locked.source == managed.source)
-                        .and_then(|locked| locked.commit.as_deref()),
-                };
-                if cache.is_none() {
-                    cache = Some(match cache_dir {
-                        Some(dir) => GitCache::new(dir),
-                        None => GitCache::new(GitCache::default_dir()?),
-                    });
-                }
-                let cache = cache.as_ref().expect("cache was just initialised");
-                let url = resolve_url(root, git)?;
-                let file = cache
-                    .fetch(&url, rev, path, pinned)
-                    .with_context(|| format!("source of {}", managed.path.display()))?;
+            Source::Git { .. } => {
+                let file = fetched_git[index]
+                    .take()
+                    .expect("every git source was fetched")?;
                 commits.insert(managed.path.clone(), file.commit);
                 file.content
             }
@@ -67,6 +52,98 @@ pub fn sync_with(root: &Path, mode: SyncMode, cache_dir: Option<&Path>) -> Resul
 
     write_all(fetched)?;
     write_lock(root, manifest, &commits)
+}
+
+/// Reads every git source, one result per entry of the manifest (`None` for
+/// the entries that are not git sources).
+///
+/// A git URL has one bare clone in the cache, which two readers must not
+/// update at once, so the entries are grouped by URL: different URLs are read
+/// at the same time, each on a thread that holds a jobserver token, and the
+/// entries of one URL one after another. The results go back by the position
+/// of the entry, so what `sync` writes, and which error it reports first,
+/// does not depend on which thread finished first.
+fn fetch_git(
+    root: &Path,
+    mode: SyncMode,
+    cache_dir: Option<&Path>,
+    manifest: &Manifest,
+    lock: &Lock,
+) -> Result<Vec<Option<Result<Fetched>>>> {
+    let mut by_url: Vec<(String, Vec<usize>)> = Vec::new();
+    for (index, managed) in manifest.managed.iter().enumerate() {
+        let Source::Git { git, .. } = &managed.source else {
+            continue;
+        };
+        let url = resolve_url(root, git)?;
+        match by_url.iter_mut().find(|(known, _)| *known == url) {
+            Some((_, indices)) => indices.push(index),
+            None => by_url.push((url, vec![index])),
+        }
+    }
+
+    let mut results: Vec<Option<Result<Fetched>>> = manifest.managed.iter().map(|_| None).collect();
+    if by_url.is_empty() {
+        return Ok(results);
+    }
+    let cache = match cache_dir {
+        Some(dir) => GitCache::new(dir),
+        None => GitCache::new(GitCache::default_dir()?),
+    };
+
+    let groups: Vec<Vec<(usize, Result<Fetched>)>> = std::thread::scope(|scope| {
+        let cache = &cache;
+        let handles: Vec<_> = by_url
+            .iter()
+            .map(|(url, indices)| {
+                scope.spawn(move || {
+                    let _token = jobserver_gate::acquire();
+                    indices
+                        .iter()
+                        .map(|&index| {
+                            (
+                                index,
+                                fetch_entry(cache, url, mode, lock, &manifest.managed[index]),
+                            )
+                        })
+                        .collect()
+                })
+            })
+            .collect();
+        handles
+            .into_iter()
+            .map(|handle| handle.join().expect("a git fetch thread panicked"))
+            .collect()
+    });
+    jobserver_gate::reclaim_implicit_token();
+
+    for (index, result) in groups.into_iter().flatten() {
+        results[index] = Some(result);
+    }
+    Ok(results)
+}
+
+/// Reads one git source from `url`, at the commit the lock pins when `mode` lets it.
+fn fetch_entry(
+    cache: &GitCache,
+    url: &str,
+    mode: SyncMode,
+    lock: &Lock,
+    managed: &Managed,
+) -> Result<Fetched> {
+    let Source::Git { rev, path, .. } = &managed.source else {
+        unreachable!("only git sources are grouped by URL");
+    };
+    let pinned = match mode {
+        SyncMode::Update => None,
+        SyncMode::Locked => lock
+            .get(&managed.path)
+            .filter(|locked| locked.source == managed.source)
+            .and_then(|locked| locked.commit.as_deref()),
+    };
+    cache
+        .fetch(url, rev, path, pinned)
+        .with_context(|| format!("source of {}", managed.path.display()))
 }
 
 fn read_local(root: &Path, managed: &Path, source: &Source) -> Result<Vec<u8>> {
@@ -306,6 +383,102 @@ mod tests {
         assert_eq!(fx.content(), "one");
         assert!(lock.locked[0].commit.is_some());
         assert!(check(&fx.vault).unwrap().is_ok());
+    }
+
+    /// A vault with entries from two repositories, written in an order that
+    /// alternates between them.
+    fn two_repositories() -> (tempfile::TempDir, PathBuf, PathBuf, TestRepo, TestRepo) {
+        let tmp = tempfile::tempdir().unwrap();
+        let vault = tmp.path().join("vault");
+        let cache = tmp.path().join("cache");
+        std::fs::create_dir_all(&vault).unwrap();
+        let first = TestRepo::new();
+        first.commit("a1.tmt", "first a1");
+        first.commit("a2.tmt", "first a2");
+        let second = TestRepo::new();
+        second.commit("b1.tmt", "second b1");
+        std::fs::write(
+            vault.join("catasto.motm"),
+            format!(
+                "\"v/a1.tmt\": {{ source: {{ git: {first:?}, rev: main, path: \"a1.tmt\" }} }}\n\
+                 \"v/b1.tmt\": {{ source: {{ git: {second:?}, rev: main, path: \"b1.tmt\" }} }}\n\
+                 \"v/a2.tmt\": {{ source: {{ git: {first:?}, rev: main, path: \"a2.tmt\" }} }}\n",
+                first = first.url(),
+                second = second.url(),
+            ),
+        )
+        .unwrap();
+        (tmp, vault, cache, first, second)
+    }
+
+    #[test]
+    fn repositories_are_read_together_and_each_entry_gets_its_own_commit() {
+        let (_tmp, vault, cache, first, second) = two_repositories();
+
+        let lock = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+        for (file, content) in [
+            ("v/a1.tmt", "first a1"),
+            ("v/b1.tmt", "second b1"),
+            ("v/a2.tmt", "first a2"),
+        ] {
+            assert_eq!(
+                std::fs::read_to_string(vault.join(file)).unwrap(),
+                content,
+                "{file}"
+            );
+        }
+        let commit = |file: &str| lock.get(Path::new(file)).unwrap().commit.clone().unwrap();
+        assert_eq!(commit("v/a1.tmt"), first.git(&["rev-parse", "HEAD"]));
+        assert_eq!(commit("v/a2.tmt"), first.git(&["rev-parse", "HEAD"]));
+        assert_eq!(commit("v/b1.tmt"), second.git(&["rev-parse", "HEAD"]));
+        assert!(check(&vault).unwrap().is_ok());
+    }
+
+    #[test]
+    fn several_repositories_stay_pinned_until_update() {
+        let (_tmp, vault, cache, first, second) = two_repositories();
+        sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+        first.commit("a1.tmt", "moved a1");
+        second.commit("b1.tmt", "moved b1");
+
+        sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(vault.join("v/b1.tmt")).unwrap(),
+            "second b1"
+        );
+
+        sync_with(&vault, SyncMode::Update, Some(&cache)).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(vault.join("v/a1.tmt")).unwrap(),
+            "moved a1"
+        );
+        assert_eq!(
+            std::fs::read_to_string(vault.join("v/b1.tmt")).unwrap(),
+            "moved b1"
+        );
+    }
+
+    #[test]
+    fn the_error_reported_is_the_first_in_manifest_order() {
+        let (_tmp, vault, cache, first, second) = two_repositories();
+        // Both repositories fail, the second one's entry is written first.
+        std::fs::write(
+            vault.join("catasto.motm"),
+            format!(
+                "\"v/b.tmt\": {{ source: {{ git: {second:?}, rev: main, path: \"missing-b.tmt\" }} }}\n\
+                 \"v/a.tmt\": {{ source: {{ git: {first:?}, rev: main, path: \"missing-a.tmt\" }} }}\n",
+                first = first.url(),
+                second = second.url(),
+            ),
+        )
+        .unwrap();
+
+        for _ in 0..5 {
+            let err = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap_err();
+            assert!(err.to_string().contains("source of v/b.tmt"), "{err}");
+        }
+        assert!(!vault.join("v").exists());
     }
 
     #[test]

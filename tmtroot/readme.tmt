@@ -78,6 +78,8 @@ An upstream is not a macro and the name does not leave the manifest. It is read 
 
 Git sources are read through the system `git`, restricted to the `https` and `file` transports. ssh is not supported on purpose, so catasto never depends on keys, agents or host aliases: `git@host:path`, `ssh://`, `git://` and `http://` are rejected when the manifest is loaded. Each URL gets one bare clone in `$CATASTO_CACHE_DIR`, else `$XDG_CACHE_HOME/catasto`, else `~/.cache/catasto`. Nothing is written into the workspace besides the managed files and `catasto.lock`.
 
+`catasto sync` reads different URLs at the same time and the files of one URL one after another, since a URL has one clone to update. How many run at once is the jobserver's to say: the one a parent such as `make`, `cargo` or `sisho` passes down in `MAKEFLAGS`, else one per available CPU. The result does not depend on which URL answers first: files are written in the order of `catasto.motm`, and when several sources fail the error reported is the first of them in that order. The Nix package puts a `git` after the one on `PATH`, so `sync` works where none is installed.
+
 The lock records the commit that `rev` resolved to. Like `cargo build`, `catasto sync` reproduces that commit, restoring a modified file to it, and only touches the network when the commit is not cached yet. A source whose declaration changed is resolved again. `catasto sync --update` resolves every `rev` again, like `cargo update`.
 
 `catasto lock` never resolves a revision, so it cannot pin a git source that has no recorded commit. Run `catasto sync` for that.
