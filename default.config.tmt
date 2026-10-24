@@ -1,6 +1,6 @@
-@kind(config)
-@meta{id: doc-default-config}
-@config{
+::kind(config)
+::meta{id: doc-default-config}
+::config{
   macros: {
     copyright: "(C) 2026 Tomet Projects"
     generated_by: "<!-- Generated from ${1}. Edit that, then `tomet export .`. -->"

@@ -1,5 +1,5 @@
-@kind(api)
+::kind(api)
 
-@meta{crate: catasto-cli, dependencies: list(catasto-core), dependents: list()}
+::meta{crate: catasto-cli, dependencies: list(catasto-core), dependents: list()}
 
 =[catasto-cli]

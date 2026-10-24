@@ -42,14 +42,11 @@ All Markdown files (`README.md`, `AGENTS.md`, `CONTRIBUTING.md`) are generated b
 
 Read `CONTRIBUTING.md` for the contribution workflow, commit conventions, and verification steps.
 
-## Working against a local tomet
+## Changes in tomet
 
-The `tomet-*` crates are git dependencies, pinned by `Cargo.lock`. To try a change in the sibling `../tomet` checkout without a push, point the crates at it in `.cargo/config.toml`, which is gitignored:
+The `tomet-*` crates are git dependencies, pinned by `Cargo.lock`. A change in the sibling `../tomet` checkout reaches this repository by being pushed there, then taken with `cargo update -p <crate>`. The `tomet` binary of the dev shell is pinned by `flake.lock` (`nix flake update sisho`); move the two together.
 
-```toml
-[patch."https://github.com/tomet-lang/tomet.git"]
-tomet-ast = { path = "../tomet/crates/tomet-syntax-ast" }
-```
+Never point the crates at a local checkout with `[patch]` in `.cargo/config.toml`. Cargo then writes the path into `Cargo.lock` and drops the `source` of the patched crate, which the Nix build cannot fetch.
 
 ## Language
 
