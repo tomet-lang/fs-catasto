@@ -25,8 +25,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
-use catasto_digest::sha256_file;
 use crate::manifest::{Manifest, Source};
+use catasto_digest::sha256_file;
 
 /// File name of the lockfile, relative to the workspace root.
 pub const LOCK_FILE: &str = "catasto.lock";

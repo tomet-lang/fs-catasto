@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use catasto_git::{GitCache, resolve_url};
 use crate::lockfile::{Lock, write_lock};
 use crate::manifest::{Manifest, Source};
+use catasto_git::{GitCache, resolve_url};
 
 /// How `sync` treats git sources that the lock already pins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

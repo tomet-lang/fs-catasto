@@ -5,9 +5,9 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
 
-use catasto_digest::sha256_file;
 use crate::lockfile::Lock;
 use crate::manifest::{Manifest, Source};
+use catasto_digest::sha256_file;
 
 /// How a managed file has drifted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
