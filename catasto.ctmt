@@ -2,7 +2,7 @@
 // `source` is where its canonical content comes from.
 ::upstreams{
   vocabularies: { git: "https://github.com/tomet-lang/vocabularies.git", rev: main, root: vocabularies }
-  commonfiles: { git: "https://github.com/tomet-lang/commonfiles.git", rev: main }
+  commonfiles: { git: "https://github.com/tomet-lang/commonfiles.git", rev: main, root: base }
 }
 
 // Vocabularies
@@ -30,8 +30,8 @@
   source: { upstream: commonfiles, path: "nix/formatter.nix" }
 }
 "LICENSE-APACHE": {
-  source: { upstream: commonfiles, path: "licenses/LICENSE-APACHE" }
+  source: { upstream: commonfiles, path: "LICENSE-APACHE" }
 }
 "LICENSE-MIT": {
-  source: { upstream: commonfiles, path: "licenses/LICENSE-MIT" }
+  source: { upstream: commonfiles, path: "LICENSE-MIT" }
 }
