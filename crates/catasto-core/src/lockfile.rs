@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::{Manifest, Source};
+use crate::manifest::{Manifest, Source, reject_misnamed};
 use catasto_digest::sha256_file;
 
 /// File name of the lockfile, relative to the workspace root.
@@ -84,7 +84,10 @@ impl Lock {
         let file = root.join(LOCK_FILE);
         match std::fs::read_to_string(&file) {
             Ok(text) => Self::parse(&text).with_context(|| format!("invalid {}", file.display())),
-            Err(e) if e.kind() == ErrorKind::NotFound => Ok(Self::default()),
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                reject_misnamed(root, LOCK_FILE)?;
+                Ok(Self::default())
+            }
             Err(e) => Err(e).with_context(|| format!("cannot read {}", file.display())),
         }
     }
@@ -388,6 +391,17 @@ mod tests {
     fn missing_lock_is_empty() {
         let dir = tempfile::tempdir().unwrap();
         assert_eq!(Lock::load(dir.path()).unwrap(), Lock::default());
+    }
+
+    #[test]
+    fn a_lock_spelled_in_another_case_is_named_not_read_as_empty() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("Catasto.lock"), "").unwrap();
+        let err = Lock::load(dir.path()).unwrap_err().to_string();
+        assert!(
+            err.contains("found Catasto.lock") && err.contains("rename it"),
+            "{err}"
+        );
     }
 
     #[test]

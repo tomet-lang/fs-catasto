@@ -303,13 +303,13 @@ fn the_workspace_can_be_given_with_c_or_as_a_trailing_path() {
 }
 
 #[test]
-fn a_manifest_under_an_old_name_is_named_not_ignored() {
+fn a_manifest_spelled_in_another_case_is_named_not_ignored() {
     let w = World::new();
-    std::fs::write(w.vault.join("catasto.motm"), "").unwrap();
+    std::fs::write(w.vault.join("Catasto.ctmt"), "").unwrap();
     for args in [&["init"][..], &["check"], &["list"], &["sync"]] {
         let error = w.fails(args);
         assert!(
-            error.contains("found catasto.motm") && error.contains("rename it"),
+            error.contains("found Catasto.ctmt") && error.contains("rename it"),
             "{args:?}: {error}"
         );
     }

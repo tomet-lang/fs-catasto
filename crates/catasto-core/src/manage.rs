@@ -14,7 +14,7 @@ use crate::check::{ViolationKind, check};
 use crate::edit::{self, SourceText, UpstreamText};
 use crate::lockfile::{LOCK_FILE, Lock};
 use crate::manifest::{
-    MANIFEST_FILE, Manifest, Source, UpstreamInfo, reject_old_names, upstreams_of,
+    MANIFEST_FILE, Manifest, Source, UpstreamInfo, reject_misnamed, upstreams_of,
 };
 use crate::sync::{SyncMode, sync_only};
 
@@ -48,7 +48,7 @@ pub fn init(root: &Path) -> Result<PathBuf> {
     if file.exists() {
         bail!("{} already exists", file.display());
     }
-    reject_old_names(root)?;
+    reject_misnamed(root, MANIFEST_FILE)?;
     std::fs::write(&file, SKELETON).with_context(|| format!("cannot write {}", file.display()))?;
     Ok(file)
 }
@@ -203,7 +203,7 @@ fn read_manifest(root: &Path) -> Result<String> {
     match std::fs::read_to_string(&file) {
         Ok(text) => Ok(text),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            reject_old_names(root)?;
+            reject_misnamed(root, MANIFEST_FILE)?;
             bail!(
                 "no {MANIFEST_FILE} in {}: run `catasto init`",
                 root.display()
@@ -312,9 +312,9 @@ mod tests {
     }
 
     #[test]
-    fn an_old_manifest_name_is_named_in_the_error() {
+    fn a_manifest_spelled_in_another_case_is_named_in_the_error() {
         let fx = Fixture::new();
-        std::fs::write(fx.root.join("catasto.motm"), "").unwrap();
+        std::fs::write(fx.root.join("Catasto.ctmt"), "").unwrap();
         for err in [
             init(&fx.root).unwrap_err(),
             Manifest::load(&fx.root).unwrap_err(),
@@ -322,7 +322,7 @@ mod tests {
         ] {
             let text = err.to_string();
             assert!(
-                text.contains("catasto.motm") && text.contains("rename it"),
+                text.contains("found Catasto.ctmt") && text.contains("rename it"),
                 "{text}"
             );
         }

@@ -50,7 +50,7 @@ The commands edit `catasto.ctmt` without rewriting it: comments, order and layou
 
 `check` exits with 1 when it finds drift, and never touches the network. It names the command that puts each file right. Files that are neither declared nor locked are unmanaged and never reported.
 
-A workspace that still has `catasto.motm` or `catasto.mtm` is told to rename it; catasto reads the manifest under no other name than `catasto.ctmt`.
+The names are exact: `catasto.ctmt` and `catasto.lock`, and `init` takes no other. A workspace that has `Catasto.ctmt` or `CATASTO.lock` instead is told to rename it, rather than being read as one with nothing declared or locked, which is what a case-sensitive filesystem would otherwise make of it.
 
 ## Files
 

@@ -53,18 +53,20 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 /// File name of the manifest, relative to the workspace root.
 pub const MANIFEST_FILE: &str = "catasto.ctmt";
 
-/// The names the manifest had before it was `catasto.ctmt`. Nothing reads them; a workspace that still
-/// has one is told to rename it.
-const OLD_NAMES: [&str; 2] = ["catasto.motm", "catasto.mtm"];
-
-/// Fails when the manifest is missing but one under an old name is there.
-pub(crate) fn reject_old_names(root: &Path) -> Result<()> {
-    for old in OLD_NAMES {
-        if root.join(old).exists() {
-            bail!(
-                "found {old}, but the manifest is {MANIFEST_FILE} now: rename it \
-                 (catasto reads nothing under the old name)"
-            );
+/// Fails when `expected` is missing from `root` but a file whose name differs from it only in case is there.
+///
+/// The names catasto reads are exact. On a case-sensitive filesystem `Catasto.ctmt` would otherwise be read as
+/// "no manifest" without a word, while on a case-insensitive one it would work, so one tree would behave
+/// differently from one machine to the next.
+pub(crate) fn reject_misnamed(root: &Path, expected: &str) -> Result<()> {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Ok(());
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(name) = name.to_str() else { continue };
+        if name != expected && name.eq_ignore_ascii_case(expected) {
+            bail!("found {name}, but catasto reads only {expected}: rename it");
         }
     }
     Ok(())
@@ -280,7 +282,7 @@ impl Manifest {
         match std::fs::read_to_string(&file) {
             Ok(text) => Self::parse(&text).with_context(|| format!("invalid {}", file.display())),
             Err(e) if e.kind() == ErrorKind::NotFound => {
-                reject_old_names(root)?;
+                reject_misnamed(root, MANIFEST_FILE)?;
                 Ok(Self::default())
             }
             Err(e) => Err(e).with_context(|| format!("cannot read {}", file.display())),
