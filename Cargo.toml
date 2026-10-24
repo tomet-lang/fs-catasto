@@ -24,7 +24,7 @@ catasto-cli = { path = "app" }
 jobserver-gate = { git = "https://github.com/tomet-lang/jobserver-gate.git" }
 
 #= Tomet
-motem = { git = "https://github.com/tomet-lang/tomet.git" }
+cotomet = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-ast = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-config = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-load = { git = "https://github.com/tomet-lang/tomet.git" }

@@ -194,7 +194,7 @@ mod tests {
         let source = tmp.path().join("vocabularies/writ.tmt");
         std::fs::create_dir_all(&vault).unwrap();
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
-        std::fs::write(vault.join("catasto.motm"), MANIFEST).unwrap();
+        std::fs::write(vault.join("catasto.ctmt"), MANIFEST).unwrap();
         std::fs::write(&source, "canonical").unwrap();
         (tmp, vault, source)
     }
@@ -266,7 +266,7 @@ mod tests {
             let repo = TestRepo::new();
             repo.commit("shared/w.tmt", "one");
             std::fs::write(
-                vault.join("catasto.motm"),
+                vault.join("catasto.ctmt"),
                 format!(
                     "\"vocab/w.tmt\": {{ source: {{ git: {:?}, rev: main, path: \"shared/w.tmt\" }} }}\n",
                     repo.url()
@@ -347,9 +347,9 @@ mod tests {
         fx.repo.tag("v1");
         let moved = fx.repo.commit("shared/w.tmt", "two");
         fx.repo.tag("v2");
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.motm")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.ctmt")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.motm"),
+            fx.vault.join("catasto.ctmt"),
             manifest.replace("rev: main", "rev: v2"),
         )
         .unwrap();
@@ -371,9 +371,9 @@ mod tests {
             .to_str()
             .unwrap()
             .to_owned();
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.motm")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.ctmt")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.motm"),
+            fx.vault.join("catasto.ctmt"),
             manifest.replace(&fx.repo.url(), &format!("../../{repo_name}")),
         )
         .unwrap();
@@ -398,7 +398,7 @@ mod tests {
         let second = TestRepo::new();
         second.commit("b1.tmt", "second b1");
         std::fs::write(
-            vault.join("catasto.motm"),
+            vault.join("catasto.ctmt"),
             format!(
                 "\"v/a1.tmt\": {{ source: {{ git: {first:?}, rev: main, path: \"a1.tmt\" }} }}\n\
                  \"v/b1.tmt\": {{ source: {{ git: {second:?}, rev: main, path: \"b1.tmt\" }} }}\n\
@@ -464,7 +464,7 @@ mod tests {
         let (_tmp, vault, cache, first, second) = two_repositories();
         // Both repositories fail, the second one's entry is written first.
         std::fs::write(
-            vault.join("catasto.motm"),
+            vault.join("catasto.ctmt"),
             format!(
                 "\"v/b.tmt\": {{ source: {{ git: {second:?}, rev: main, path: \"missing-b.tmt\" }} }}\n\
                  \"v/a.tmt\": {{ source: {{ git: {first:?}, rev: main, path: \"missing-a.tmt\" }} }}\n",
@@ -484,9 +484,9 @@ mod tests {
     #[test]
     fn a_git_failure_leaves_the_workspace_untouched() {
         let fx = GitFixture::new();
-        let manifest = std::fs::read_to_string(fx.vault.join("catasto.motm")).unwrap();
+        let manifest = std::fs::read_to_string(fx.vault.join("catasto.ctmt")).unwrap();
         std::fs::write(
-            fx.vault.join("catasto.motm"),
+            fx.vault.join("catasto.ctmt"),
             manifest.replace("rev: main", "rev: nope"),
         )
         .unwrap();

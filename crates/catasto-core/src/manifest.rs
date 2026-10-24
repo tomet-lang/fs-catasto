@@ -1,6 +1,6 @@
-//! The hand-written `catasto.motm` declaration.
+//! The hand-written `catasto.ctmt` declaration.
 //!
-//! A manifest is a motem map from a path inside the workspace to what
+//! A manifest is a cotomet map from a path inside the workspace to what
 //! catasto knows about that path. Today an entry says where the file comes
 //! from:
 //!
@@ -15,7 +15,7 @@
 //! The key comes first because every declaration catasto will take is about a
 //! path, and the lockfile is keyed by path too. An entry is always a map; a
 //! `source` is a string for a local file, or a map for a git repository.
-//! Quote a `rev` that reads as a number (`rev: "1.2"`), or motem reads it as
+//! Quote a `rev` that reads as a number (`rev: "1.2"`), or cotomet reads it as
 //! one.
 //!
 //! A place that several entries come from is named once, in an `::upstreams`
@@ -51,7 +51,7 @@ use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 /// File name of the manifest, relative to the workspace root.
-pub const MANIFEST_FILE: &str = "catasto.motm";
+pub const MANIFEST_FILE: &str = "catasto.ctmt";
 
 /// The set of files catasto manages in a workspace.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -77,7 +77,7 @@ struct Entry {
 }
 
 impl<'de> Deserialize<'de> for Manifest {
-    /// Reads the entries in the order they were written. The motem parser
+    /// Reads the entries in the order they were written. The cotomet parser
     /// already rejects a path written twice, so a manifest read from text has
     /// no duplicates; validation still checks one built in code.
     fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
@@ -154,7 +154,7 @@ struct GitSource {
     path: PathBuf,
 }
 
-/// Reads a `rev`, which must be a string. motem reads `1.2` and `20260101` as
+/// Reads a `rev`, which must be a string. cotomet reads `1.2` and `20260101` as
 /// numbers, and a tag that is one has to be quoted.
 fn quoted_rev<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
     struct Rev;
@@ -257,7 +257,7 @@ impl Serialize for Source {
 }
 
 impl Manifest {
-    /// Loads `catasto.motm` from `root`. A missing file is an empty manifest.
+    /// Loads `catasto.ctmt` from `root`. A missing file is an empty manifest.
     pub fn load(root: &Path) -> Result<Self> {
         let file = root.join(MANIFEST_FILE);
         match std::fs::read_to_string(&file) {
@@ -274,10 +274,10 @@ impl Manifest {
     /// as if they had been written in full. A file with nothing but comments
     /// is the empty manifest.
     pub fn parse(text: &str) -> Result<Self> {
-        let file = motem::syntax::parse_file(text).map_err(|e| anyhow!("{e}"))?;
+        let file = cotomet::syntax::parse_file(text).map_err(|e| anyhow!("{e}"))?;
         let upstreams = Upstreams::from_header(&file.header)?;
         let body = upstreams.resolve(file.body)?;
-        let manifest: Self = motem::from_value(body).map_err(|e| anyhow!("{e}"))?;
+        let manifest: Self = cotomet::from_value(body).map_err(|e| anyhow!("{e}"))?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -329,7 +329,7 @@ struct Upstreams {
 impl Upstreams {
     /// Reads the declarations before the first entry. `::upstreams` is the
     /// only one catasto knows, and it may appear once.
-    fn from_header(header: &[motem::syntax::Declaration]) -> Result<Self> {
+    fn from_header(header: &[cotomet::syntax::Declaration]) -> Result<Self> {
         let mut upstreams = None;
         for declaration in header {
             if declaration.name != "upstreams" {
@@ -346,14 +346,14 @@ impl Upstreams {
                     "`::upstreams` takes a map, not arguments: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
                 );
             }
-            let Some(motem::Value::Map(entries)) = &declaration.data else {
+            let Some(cotomet::Value::Map(entries)) = &declaration.data else {
                 bail!(
                     "`::upstreams` needs a map of names: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
                 );
             };
             let mut named = Vec::with_capacity(entries.len());
             for (name, value) in entries {
-                let upstream: Upstream = motem::from_value(value.clone())
+                let upstream: Upstream = cotomet::from_value(value.clone())
                     .map_err(|e| anyhow!("upstream `{name}`: {e}"))?;
                 check_git(&upstream.git, &upstream.rev)
                     .map_err(|e| anyhow!("upstream `{name}`: {e}"))?;
@@ -376,38 +376,38 @@ impl Upstreams {
     /// `{ upstream: n, path: p }` becomes `{ git: …, rev: …, path: p }`.
     /// Anything else in the body is left as it is, for the entry types to read
     /// and reject.
-    fn resolve(&self, body: motem::Value) -> Result<motem::Value> {
-        let motem::Value::Map(entries) = body else {
+    fn resolve(&self, body: cotomet::Value) -> Result<cotomet::Value> {
+        let cotomet::Value::Map(entries) = body else {
             return Ok(body);
         };
         let mut resolved = Vec::with_capacity(entries.len());
         for (path, entry) in entries {
             let entry = match entry {
-                motem::Value::Map(fields) => {
+                cotomet::Value::Map(fields) => {
                     let mut out = Vec::with_capacity(fields.len());
                     for (key, value) in fields {
                         let value = match (key.as_str(), value) {
-                            ("source", motem::Value::Map(source)) => {
-                                motem::Value::Map(self.resolve_source(&path, source)?)
+                            ("source", cotomet::Value::Map(source)) => {
+                                cotomet::Value::Map(self.resolve_source(&path, source)?)
                             }
                             (_, value) => value,
                         };
                         out.push((key, value));
                     }
-                    motem::Value::Map(out)
+                    cotomet::Value::Map(out)
                 }
                 other => other,
             };
             resolved.push((path, entry));
         }
-        Ok(motem::Value::Map(resolved))
+        Ok(cotomet::Value::Map(resolved))
     }
 
     fn resolve_source(
         &self,
         path: &str,
-        source: Vec<(String, motem::Value)>,
-    ) -> Result<Vec<(String, motem::Value)>> {
+        source: Vec<(String, cotomet::Value)>,
+    ) -> Result<Vec<(String, cotomet::Value)>> {
         let Some(at) = source.iter().position(|(key, _)| key == "upstream") else {
             return Ok(source);
         };
@@ -416,7 +416,7 @@ impl Upstreams {
                 "{path}: `upstream` already says where the file is; remove `{key}` (or `upstream`, and write `git` and `rev`)"
             );
         }
-        let motem::Value::String(name) = &source[at].1 else {
+        let cotomet::Value::String(name) = &source[at].1 else {
             bail!(
                 "{path}: `upstream` is the name of a declared upstream, e.g. `upstream: vocabularies`"
             );
@@ -431,19 +431,25 @@ impl Upstreams {
             bail!("{path}: unknown upstream `{name}` ({known})");
         };
         let mut out = Vec::with_capacity(source.len() + 1);
-        out.push(("git".to_owned(), motem::Value::String(upstream.git.clone())));
-        out.push(("rev".to_owned(), motem::Value::String(upstream.rev.clone())));
+        out.push((
+            "git".to_owned(),
+            cotomet::Value::String(upstream.git.clone()),
+        ));
+        out.push((
+            "rev".to_owned(),
+            cotomet::Value::String(upstream.rev.clone()),
+        ));
         for (key, value) in source {
             match (key.as_str(), value) {
                 ("upstream", _) => {}
                 // `path` is read from `root`, and the lock records it from the
                 // top of the repository, as when it is written out in full.
-                ("path", motem::Value::String(path)) => {
+                ("path", cotomet::Value::String(path)) => {
                     let full = match &upstream.root {
                         Some(root) => root.join(path).to_string_lossy().into_owned(),
                         None => path,
                     };
-                    out.push((key, motem::Value::String(full)));
+                    out.push((key, cotomet::Value::String(full)));
                 }
                 (_, value) => out.push((key, value)),
             }

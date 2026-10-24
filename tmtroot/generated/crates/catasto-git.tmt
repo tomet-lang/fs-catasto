@@ -46,7 +46,7 @@ There is deliberately no ssh: `git@host:path`, `ssh://`, `git://` and plain
 
 ===[fn classify]
 
-Classifies a `git` value from `catasto.motm`.
+Classifies a `git` value from `catasto.ctmt`.
 
 ===[fn resolve_url]
 

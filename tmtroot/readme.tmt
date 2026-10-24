@@ -27,14 +27,14 @@ Just as a cadastre (*catasto*) records the boundaries, parcels, and ownership of
 catasto sync [path]            # fetch every managed file from its source, then lock
 catasto sync --update [path]   # also resolve every git rev again
 catasto lock [path]            # record the sha256 of every managed file in catasto.lock
-catasto check [path]           # report drift between catasto.motm, catasto.lock, and the files
+catasto check [path]           # report drift between catasto.ctmt, catasto.lock, and the files
 ```
 
 `check` exits with 1 when it finds drift, and never touches the network. Files that are neither declared nor locked are unmanaged and never reported.
 
 ==[ Files ]
 
-`catasto.motm` is written by hand, in motem, the data language of the Tomet ecosystem. It maps each managed path to what is known about it, and today that is where its content comes from.
+`catasto.ctmt` is written by hand, in cotomet, the data language of the Tomet ecosystem. It maps each managed path to what is known about it, and today that is where its content comes from.
 
 ```text
 "docs/shared/terms.tmt": { source: "../shared/terms.tmt" }
@@ -56,7 +56,7 @@ A `source` is one of three kinds:
 
 ==[ Upstreams ]
 
-Files that come from the same place name it once. `::upstreams` goes at the top of `catasto.motm`, before the first path, as a map from a name to `git` and `rev`, and optionally a `root`:
+Files that come from the same place name it once. `::upstreams` goes at the top of `catasto.ctmt`, before the first path, as a map from a name to `git` and `rev`, and optionally a `root`:
 
 ```text
 ::upstreams{
@@ -78,7 +78,7 @@ An upstream is not a macro and the name does not leave the manifest. It is read 
 
 Git sources are read through the system `git`, restricted to the `https` and `file` transports. ssh is not supported on purpose, so catasto never depends on keys, agents or host aliases: `git@host:path`, `ssh://`, `git://` and `http://` are rejected when the manifest is loaded. Each URL gets one bare clone in `$CATASTO_CACHE_DIR`, else `$XDG_CACHE_HOME/catasto`, else `~/.cache/catasto`. Nothing is written into the workspace besides the managed files and `catasto.lock`.
 
-`catasto sync` reads different URLs at the same time and the files of one URL one after another, since a URL has one clone to update. How many run at once is the jobserver's to say: the one a parent such as `make`, `cargo` or `sisho` passes down in `MAKEFLAGS`, else one per available CPU. The result does not depend on which URL answers first: files are written in the order of `catasto.motm`, and when several sources fail the error reported is the first of them in that order. The Nix package puts a `git` after the one on `PATH`, so `sync` works where none is installed.
+`catasto sync` reads different URLs at the same time and the files of one URL one after another, since a URL has one clone to update. How many run at once is the jobserver's to say: the one a parent such as `make`, `cargo` or `sisho` passes down in `MAKEFLAGS`, else one per available CPU. The result does not depend on which URL answers first: files are written in the order of `catasto.ctmt`, and when several sources fail the error reported is the first of them in that order. The Nix package puts a `git` after the one on `PATH`, so `sync` works where none is installed.
 
 The lock records the commit that `rev` resolved to. Like `cargo build`, `catasto sync` reproduces that commit, restoring a modified file to it, and only touches the network when the commit is not cached yet. A source whose declaration changed is resolved again. `catasto sync --update` resolves every `rev` again, like `cargo update`.
 

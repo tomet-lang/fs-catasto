@@ -111,9 +111,9 @@ dependencies = [
  "anyhow",
  "catasto-digest",
  "catasto-git",
+ "cotomet",
  "ignore",
  "jobserver-gate",
- "motem",
  "serde",
  "serde_json",
  "tempfile",
@@ -205,6 +205,24 @@ name = "const-oid"
 version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
+
+[[package]]
+name = "cotomet"
+version = "0.4.0"
+source = "git+https://github.com/tomet-lang/tomet.git#1d7923bef7f063761201bd7fe69980d403955f73"
+dependencies = [
+ "cotomet-syntax",
+ "serde_cotomet",
+]
+
+[[package]]
+name = "cotomet-syntax"
+version = "0.4.0"
+source = "git+https://github.com/tomet-lang/tomet.git#1d7923bef7f063761201bd7fe69980d403955f73"
+dependencies = [
+ "tomet-ast",
+ "tomet-lexer",
+]
 
 [[package]]
 name = "countme"
@@ -422,24 +440,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "motem"
-version = "0.3.0"
-source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
-dependencies = [
- "motem-syntax",
- "serde_motem",
-]
-
-[[package]]
-name = "motem-syntax"
-version = "0.3.0"
-source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
-dependencies = [
- "tomet-ast",
- "tomet-lexer",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -552,6 +552,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "serde_cotomet"
+version = "0.4.0"
+source = "git+https://github.com/tomet-lang/tomet.git#1d7923bef7f063761201bd7fe69980d403955f73"
+dependencies = [
+ "cotomet-syntax",
+ "serde",
+ "tomet-ast",
+]
+
+[[package]]
 name = "serde_derive"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -573,16 +583,6 @@ dependencies = [
  "serde",
  "serde_core",
  "zmij",
-]
-
-[[package]]
-name = "serde_motem"
-version = "0.3.0"
-source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
-dependencies = [
- "motem-syntax",
- "serde",
- "tomet-ast",
 ]
 
 [[package]]
@@ -640,8 +640,8 @@ checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
 
 [[package]]
 name = "tomet-ast"
-version = "0.3.0"
-source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
+version = "0.4.0"
+source = "git+https://github.com/tomet-lang/tomet.git#1d7923bef7f063761201bd7fe69980d403955f73"
 dependencies = [
  "serde",
  "tomet-cst",
@@ -650,16 +650,16 @@ dependencies = [
 
 [[package]]
 name = "tomet-cst"
-version = "0.3.0"
-source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
+version = "0.4.0"
+source = "git+https://github.com/tomet-lang/tomet.git#1d7923bef7f063761201bd7fe69980d403955f73"
 dependencies = [
  "rowan",
 ]
 
 [[package]]
 name = "tomet-lexer"
-version = "0.3.0"
-source = "git+https://github.com/tomet-lang/tomet.git#5e2f48f8f00b84b83df1f9ae1be3e1cfeab55ba3"
+version = "0.4.0"
+source = "git+https://github.com/tomet-lang/tomet.git#1d7923bef7f063761201bd7fe69980d403955f73"
 dependencies = [
  "tomet-ast",
  "tomet-cst",

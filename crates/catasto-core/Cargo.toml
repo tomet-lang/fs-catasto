@@ -11,7 +11,7 @@ publish = false
 catasto-digest = { workspace = true }
 catasto-git = { workspace = true }
 jobserver-gate = { workspace = true }
-motem = { workspace = true }
+cotomet = { workspace = true }
 
 #= Crates.io
 anyhow = { workspace = true }
