@@ -10,12 +10,11 @@ are left open.
   The entry type is a struct with one field today.
 - Media: a file entry with extra metadata (license, origin), not a second
   section.
-- A manifest that holds only comments is rejected with `expected a value`:
-  motem has no standalone-document entry point where an empty document is the
-  empty map. Fix it in motem (tomet's `.agents/tasks/mtm-standalone-file.md`).
 - `nix build` of the package has not been run since `Cargo.lock` gained a git
   dependency on `tomet-lang/tomet`.
-- Settings that belong to no path have no place yet (editorconfig's `root`).
-  Decide when the first one is needed.
+- Settings that belong to no path go in the header of `catasto.motm` as a
+  `::name` declaration; `::upstreams` is the first. A setting like
+  editorconfig's `root` (stop looking at parent manifests) would be one of
+  those, not a key among the paths.
 
 Delete this file when these are taken up as their own tasks.

@@ -17,6 +17,28 @@
 //! `source` is a string for a local file, or a map for a git repository.
 //! Quote a `rev` that reads as a number (`rev: "1.2"`), or motem reads it as
 //! one.
+//!
+//! A place that several entries come from is named once, in an `::upstreams`
+//! declaration at the top of the file, and each entry refers to it:
+//!
+//! ```text
+//! ::upstreams{
+//!   vocabularies: { git: "https://example.com/vocabularies.git", rev: v1 }
+//! }
+//!
+//! "tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
+//!   source: { upstream: vocabularies, path: "rust.vocabulary.tmt" }
+//! }
+//! ```
+//!
+//! An upstream may name a `root`, the directory of the repository that its
+//! entries' `path`s start from: with `root: vocabularies` in the declaration,
+//! `path: "rust/rust.vocabulary.tmt"` is the file `vocabularies/rust/rust.vocabulary.tmt`.
+//!
+//! An upstream is not a macro: it is resolved while the file is read, into
+//! the `git`, `rev` and `path` map written out in full (the `root` joined in
+//! front of the `path`), so everything after the parse, and the lockfile, see
+//! the same [`Source`] either way.
 
 use std::collections::HashSet;
 use std::fmt;
@@ -166,13 +188,19 @@ fn quoted_rev<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::E
 
 const NUMBER_REV: &str = "`rev` reads as a number; write it in quotes, e.g. `rev: \"1.2\"`";
 
+/// Checks the part of a git source that an upstream also names.
+fn check_git(git: &str, rev: &str) -> Result<(), String> {
+    catasto_git::classify(git)?;
+    if rev.is_empty() || rev.starts_with('-') {
+        return Err(format!("invalid rev: {rev:?}"));
+    }
+    Ok(())
+}
+
 impl GitSource {
     fn into_source(self) -> Result<Source, String> {
         let GitSource { git, rev, path } = self;
-        catasto_git::classify(&git)?;
-        if rev.is_empty() || rev.starts_with('-') {
-            return Err(format!("invalid rev: {rev:?}"));
-        }
+        check_git(&git, &rev)?;
         if !is_inside_workspace(&path) {
             return Err(format!(
                 "git path must be relative and stay inside the repository: {}",
@@ -240,11 +268,16 @@ impl Manifest {
     }
 
     /// Parses and validates manifest text.
+    ///
+    /// The `::upstreams` declaration at the top is read first and its names
+    /// are written into the entries that use them; the entries are then read
+    /// as if they had been written in full. A file with nothing but comments
+    /// is the empty manifest.
     pub fn parse(text: &str) -> Result<Self> {
-        if text.trim().is_empty() {
-            return Ok(Self::default());
-        }
-        let manifest: Self = motem::from_str(text).map_err(|e| anyhow!("{e}"))?;
+        let file = motem::syntax::parse_file(text).map_err(|e| anyhow!("{e}"))?;
+        let upstreams = Upstreams::from_header(&file.header)?;
+        let body = upstreams.resolve(file.body)?;
+        let manifest: Self = motem::from_value(body).map_err(|e| anyhow!("{e}"))?;
         manifest.validate()?;
         Ok(manifest)
     }
@@ -263,6 +296,159 @@ impl Manifest {
             }
         }
         Ok(())
+    }
+}
+
+/// What `::upstreams` names: a git repository at a `rev`, and the directory
+/// of it that the entries' `path`s are relative to.
+#[derive(Deserialize)]
+#[serde(
+    deny_unknown_fields,
+    expecting = "a map with `git`, `rev` and optionally `root`"
+)]
+struct Upstream {
+    git: String,
+    #[serde(deserialize_with = "quoted_rev")]
+    rev: String,
+    /// The directory inside the repository that `path` starts from. Without
+    /// it, `path` starts at the root of the repository.
+    root: Option<PathBuf>,
+}
+
+/// The places an entry's `source` can name with `upstream:`.
+///
+/// Declared once, as a map from a name to where it is, at the top of the
+/// manifest. Only the manifest knows them: [`Upstreams::resolve`] writes each
+/// into the entries that use it, and the lockfile never sees the name.
+#[derive(Default)]
+struct Upstreams {
+    /// In the order they were declared, which is the order an error lists them.
+    named: Vec<(String, Upstream)>,
+}
+
+impl Upstreams {
+    /// Reads the declarations before the first entry. `::upstreams` is the
+    /// only one catasto knows, and it may appear once.
+    fn from_header(header: &[motem::syntax::Declaration]) -> Result<Self> {
+        let mut upstreams = None;
+        for declaration in header {
+            if declaration.name != "upstreams" {
+                bail!(
+                    "unknown declaration `::{}`; the only one catasto reads is `::upstreams`",
+                    declaration.name
+                );
+            }
+            if upstreams.is_some() {
+                bail!("`::upstreams` is declared twice; put every upstream in the one");
+            }
+            if !declaration.args.is_empty() {
+                bail!(
+                    "`::upstreams` takes a map, not arguments: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
+                );
+            }
+            let Some(motem::Value::Map(entries)) = &declaration.data else {
+                bail!(
+                    "`::upstreams` needs a map of names: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
+                );
+            };
+            let mut named = Vec::with_capacity(entries.len());
+            for (name, value) in entries {
+                let upstream: Upstream = motem::from_value(value.clone())
+                    .map_err(|e| anyhow!("upstream `{name}`: {e}"))?;
+                check_git(&upstream.git, &upstream.rev)
+                    .map_err(|e| anyhow!("upstream `{name}`: {e}"))?;
+                if let Some(root) = &upstream.root
+                    && !is_inside_workspace(root)
+                {
+                    bail!(
+                        "upstream `{name}`: `root` must be relative and stay inside the repository: {}",
+                        root.display()
+                    );
+                }
+                named.push((name.clone(), upstream));
+            }
+            upstreams = Some(Self { named });
+        }
+        Ok(upstreams.unwrap_or_default())
+    }
+
+    /// Writes the named upstreams into the entries of `body`: a `source` of
+    /// `{ upstream: n, path: p }` becomes `{ git: …, rev: …, path: p }`.
+    /// Anything else in the body is left as it is, for the entry types to read
+    /// and reject.
+    fn resolve(&self, body: motem::Value) -> Result<motem::Value> {
+        let motem::Value::Map(entries) = body else {
+            return Ok(body);
+        };
+        let mut resolved = Vec::with_capacity(entries.len());
+        for (path, entry) in entries {
+            let entry = match entry {
+                motem::Value::Map(fields) => {
+                    let mut out = Vec::with_capacity(fields.len());
+                    for (key, value) in fields {
+                        let value = match (key.as_str(), value) {
+                            ("source", motem::Value::Map(source)) => {
+                                motem::Value::Map(self.resolve_source(&path, source)?)
+                            }
+                            (_, value) => value,
+                        };
+                        out.push((key, value));
+                    }
+                    motem::Value::Map(out)
+                }
+                other => other,
+            };
+            resolved.push((path, entry));
+        }
+        Ok(motem::Value::Map(resolved))
+    }
+
+    fn resolve_source(
+        &self,
+        path: &str,
+        source: Vec<(String, motem::Value)>,
+    ) -> Result<Vec<(String, motem::Value)>> {
+        let Some(at) = source.iter().position(|(key, _)| key == "upstream") else {
+            return Ok(source);
+        };
+        if let Some((key, _)) = source.iter().find(|(key, _)| key == "git" || key == "rev") {
+            bail!(
+                "{path}: `upstream` already says where the file is; remove `{key}` (or `upstream`, and write `git` and `rev`)"
+            );
+        }
+        let motem::Value::String(name) = &source[at].1 else {
+            bail!(
+                "{path}: `upstream` is the name of a declared upstream, e.g. `upstream: vocabularies`"
+            );
+        };
+        let Some((_, upstream)) = self.named.iter().find(|(known, _)| known == name) else {
+            let known = if self.named.is_empty() {
+                "none is declared; add `::upstreams{ … }` at the top".to_owned()
+            } else {
+                let names: Vec<_> = self.named.iter().map(|(known, _)| known.as_str()).collect();
+                format!("declared: {}", names.join(", "))
+            };
+            bail!("{path}: unknown upstream `{name}` ({known})");
+        };
+        let mut out = Vec::with_capacity(source.len() + 1);
+        out.push(("git".to_owned(), motem::Value::String(upstream.git.clone())));
+        out.push(("rev".to_owned(), motem::Value::String(upstream.rev.clone())));
+        for (key, value) in source {
+            match (key.as_str(), value) {
+                ("upstream", _) => {}
+                // `path` is read from `root`, and the lock records it from the
+                // top of the repository, as when it is written out in full.
+                ("path", motem::Value::String(path)) => {
+                    let full = match &upstream.root {
+                        Some(root) => root.join(path).to_string_lossy().into_owned(),
+                        None => path,
+                    };
+                    out.push((key, motem::Value::String(full)));
+                }
+                (_, value) => out.push((key, value)),
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -327,6 +513,176 @@ mod tests {
     fn empty_text_is_an_empty_manifest() {
         assert_eq!(Manifest::parse("").unwrap(), Manifest::default());
         assert_eq!(Manifest::parse("\n  \n").unwrap(), Manifest::default());
+    }
+
+    #[test]
+    fn a_manifest_with_only_comments_is_empty() {
+        assert_eq!(
+            Manifest::parse("// nothing managed yet\n").unwrap(),
+            Manifest::default()
+        );
+    }
+
+    const VOCABULARIES: &str =
+        "::upstreams{\n  vocabularies: { git: \"https://example.com/v.git\", rev: main }\n}\n";
+
+    #[test]
+    fn an_upstream_reads_as_the_entry_written_in_full() {
+        let named = Manifest::parse(&format!(
+            "{VOCABULARIES}\n\"a.tmt\": {{ source: {{ upstream: vocabularies, path: \"x/a.tmt\" }} }}\n"
+        ))
+        .unwrap();
+        let written = Manifest::parse(
+            "\"a.tmt\": { source: { git: \"https://example.com/v.git\", rev: main, path: \"x/a.tmt\" } }",
+        )
+        .unwrap();
+        assert_eq!(named, written);
+    }
+
+    #[test]
+    fn a_root_is_joined_in_front_of_the_path() {
+        let rooted = Manifest::parse(
+            "::upstreams{ v: { git: \"https://example.com/v.git\", rev: main, root: vocabularies } }\n\
+             \"a.tmt\": { source: { upstream: v, path: \"rust/a.tmt\" } }\n",
+        )
+        .unwrap();
+        let written = Manifest::parse(
+            "\"a.tmt\": { source: { git: \"https://example.com/v.git\", rev: main, path: \"vocabularies/rust/a.tmt\" } }",
+        )
+        .unwrap();
+        assert_eq!(rooted, written);
+    }
+
+    #[test]
+    fn a_root_is_checked_where_it_is_declared() {
+        for root in ["/etc", "../outside", "a/../b", "\"\""] {
+            let err = Manifest::parse(&format!(
+                "::upstreams{{ v: {{ git: \"https://example.com/v.git\", rev: main, root: {root} }} }}"
+            ))
+            .unwrap_err();
+            assert!(
+                err.to_string()
+                    .contains("`root` must be relative and stay inside"),
+                "{root}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_path_cannot_climb_out_of_the_root() {
+        let err = Manifest::parse(
+            "::upstreams{ v: { git: \"https://example.com/v.git\", rev: main, root: vocabularies } }\n\
+             \"a.tmt\": { source: { upstream: v, path: \"../secret.tmt\" } }\n",
+        )
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("stay inside the repository"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn two_entries_share_an_upstream_and_keep_their_order() {
+        let manifest = Manifest::parse(&format!(
+            "{VOCABULARIES}\n\
+             \"b.tmt\": {{ source: {{ upstream: vocabularies, path: \"b.tmt\" }} }}\n\
+             \"a.tmt\": {{ source: {{ upstream: vocabularies, path: \"a.tmt\" }} }}\n"
+        ))
+        .unwrap();
+        let paths: Vec<_> = manifest.managed.iter().map(|m| m.path.clone()).collect();
+        assert_eq!(paths, [PathBuf::from("b.tmt"), PathBuf::from("a.tmt")]);
+        for managed in &manifest.managed {
+            assert!(matches!(
+                &managed.source,
+                Source::Git { git, rev, .. } if git == "https://example.com/v.git" && rev == "main"
+            ));
+        }
+    }
+
+    #[test]
+    fn a_local_source_and_a_written_out_git_source_need_no_upstream() {
+        let manifest = Manifest::parse(&format!(
+            "{VOCABULARIES}\n\
+             \"a.tmt\": {{ source: \"../a.tmt\" }}\n\
+             \"b.tmt\": {{ source: {{ git: \"https://example.com/o.git\", rev: v1, path: \"b.tmt\" }} }}\n"
+        ))
+        .unwrap();
+        assert_eq!(manifest.managed[0].source, path_source("../a.tmt"));
+        assert!(matches!(manifest.managed[1].source, Source::Git { .. }));
+    }
+
+    #[test]
+    fn an_unknown_upstream_lists_the_declared_ones() {
+        let err = Manifest::parse(&format!(
+            "{VOCABULARIES}\n\"a.tmt\": {{ source: {{ upstream: vocabularis, path: \"a.tmt\" }} }}\n"
+        ))
+        .unwrap_err();
+        assert_eq!(
+            err.to_string(),
+            "a.tmt: unknown upstream `vocabularis` (declared: vocabularies)"
+        );
+    }
+
+    #[test]
+    fn an_upstream_with_none_declared_says_where_to_declare() {
+        let err =
+            Manifest::parse("\"a.tmt\": { source: { upstream: v, path: \"a.tmt\" } }").unwrap_err();
+        assert!(err.to_string().contains("add `::upstreams{ … }`"), "{err}");
+    }
+
+    #[test]
+    fn an_upstream_does_not_mix_with_git_or_rev() {
+        for extra in ["git: \"https://example.com/o.git\"", "rev: v2"] {
+            let err = Manifest::parse(&format!(
+                "{VOCABULARIES}\n\"a.tmt\": {{ source: {{ upstream: vocabularies, {extra}, path: \"a.tmt\" }} }}\n"
+            ))
+            .unwrap_err();
+            assert!(err.to_string().contains("`upstream` already says"), "{err}");
+        }
+    }
+
+    #[test]
+    fn an_upstream_needs_a_path_like_a_git_source_does() {
+        let err = Manifest::parse(&format!(
+            "{VOCABULARIES}\n\"a.tmt\": {{ source: {{ upstream: vocabularies }} }}\n"
+        ))
+        .unwrap_err();
+        assert!(err.to_string().contains("missing field `path`"), "{err}");
+    }
+
+    #[test]
+    fn an_upstream_is_checked_where_it_is_declared() {
+        let err =
+            Manifest::parse("::upstreams{ v: { git: \"git@example.com:o/v.git\", rev: main } }")
+                .unwrap_err();
+        assert!(err.to_string().starts_with("upstream `v`: "), "{err}");
+
+        let err =
+            Manifest::parse("::upstreams{ v: { git: \"https://example.com/v.git\", rev: 1.2 } }")
+                .unwrap_err();
+        assert!(err.to_string().contains("write it in quotes"), "{err}");
+
+        let err = Manifest::parse("::upstreams{ v: { git: \"https://example.com/v.git\" } }")
+            .unwrap_err();
+        assert!(err.to_string().contains("missing field `rev`"), "{err}");
+    }
+
+    #[test]
+    fn the_upstreams_declaration_is_one_map_and_the_only_declaration() {
+        let err = Manifest::parse(&format!("{VOCABULARIES}{VOCABULARIES}")).unwrap_err();
+        assert!(err.to_string().contains("declared twice"), "{err}");
+
+        let err = Manifest::parse("::upstreams(v)").unwrap_err();
+        assert!(err.to_string().contains("takes a map"), "{err}");
+
+        let err = Manifest::parse("::upstreams").unwrap_err();
+        assert!(err.to_string().contains("needs a map"), "{err}");
+
+        let err = Manifest::parse("::kind(catalog)").unwrap_err();
+        assert!(
+            err.to_string().contains("unknown declaration `::kind`"),
+            "{err}"
+        );
     }
 
     #[test]
