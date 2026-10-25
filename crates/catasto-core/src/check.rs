@@ -4,9 +4,10 @@ use std::fmt;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
+use rayon::prelude::*;
 
 use crate::lockfile::Lock;
-use crate::manifest::{Manifest, Source, Symlink};
+use crate::manifest::{Managed, Manifest, Source, Symlink};
 use catasto_digest::{sha256_file, sha256_link};
 
 /// How a managed file has drifted.
@@ -97,65 +98,32 @@ pub fn check(root: &Path) -> Result<CheckReport> {
 
     let manifest = Manifest::load(root)?;
     let lock = Lock::load(root)?;
-    let mut violations = Vec::new();
-    let mut report = |path: &Path, kind| {
-        violations.push(Violation {
-            path: path.to_path_buf(),
-            kind,
-        });
-    };
 
-    for managed in &manifest.managed {
-        let Some(locked) = lock.get(&managed.path).filter(|locked| {
-            locked.source == managed.source
-                && matches!(managed.source, Source::Git { .. }) == locked.commit.is_some()
-        }) else {
-            report(&managed.path, ViolationKind::Unlocked);
-            continue;
-        };
+    let entry_violations: Result<Vec<Vec<Violation>>> = manifest
+        .managed
+        .par_iter()
+        .map(|managed| {
+            let kinds = check_entry(root, &lock, managed)?;
+            let v = kinds
+                .into_iter()
+                .map(|kind| Violation {
+                    path: managed.path.clone(),
+                    kind,
+                })
+                .collect();
+            Ok(v)
+        })
+        .collect();
+    jobserver_gate::reclaim_implicit_token();
 
-        let file = root.join(&managed.path);
-        let meta = match std::fs::symlink_metadata(&file) {
-            Ok(m) => Some(m),
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
-            Err(e) => return Err(e).with_context(|| format!("cannot inspect {}", file.display())),
-        };
-
-        let is_keep = matches!(
-            &managed.source,
-            Source::Git {
-                symlink: Symlink::Keep,
-                ..
-            }
-        );
-
-        match (is_keep, meta) {
-            (_, None) => {
-                report(&managed.path, ViolationKind::Missing);
-            }
-            (true, Some(meta)) => {
-                if !meta.is_symlink() || sha256_link(&file)? != locked.sha256 {
-                    report(&managed.path, ViolationKind::Modified);
-                }
-            }
-            (false, Some(meta)) => {
-                if meta.is_symlink() || !meta.is_file() || sha256_file(&file)? != locked.sha256 {
-                    report(&managed.path, ViolationKind::Modified);
-                }
-            }
-        }
-
-        let readable_source = managed.source.local_path(root).filter(|s| s.is_file());
-        if let Some(source) = readable_source {
-            if sha256_file(&source)? != locked.sha256 {
-                report(&managed.path, ViolationKind::Stale);
-            }
-        }
-    }
+    let mut violations: Vec<Violation> = entry_violations?.into_iter().flatten().collect();
 
     for locked in &lock.locked {
         if !manifest.managed.iter().any(|m| m.path == locked.path) {
-            report(&locked.path, ViolationKind::Orphaned);
+            violations.push(Violation {
+                path: locked.path.clone(),
+                kind: ViolationKind::Orphaned,
+            });
         }
     }
 
@@ -163,6 +131,58 @@ pub fn check(root: &Path) -> Result<CheckReport> {
         root: root.to_path_buf(),
         violations,
     })
+}
+
+fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<ViolationKind>> {
+    let _token = jobserver_gate::acquire();
+    let Some(locked) = lock.get(&managed.path).filter(|locked| {
+        locked.source == managed.source
+            && matches!(managed.source, Source::Git { .. }) == locked.commit.is_some()
+    }) else {
+        return Ok(vec![ViolationKind::Unlocked]);
+    };
+
+    let file = root.join(&managed.path);
+    let meta = match std::fs::symlink_metadata(&file) {
+        Ok(m) => Some(m),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+        Err(e) => return Err(e).with_context(|| format!("cannot inspect {}", file.display())),
+    };
+
+    let is_keep = matches!(
+        &managed.source,
+        Source::Git {
+            symlink: Symlink::Keep,
+            ..
+        }
+    );
+
+    let mut kinds = Vec::new();
+
+    match (is_keep, meta) {
+        (_, None) => {
+            kinds.push(ViolationKind::Missing);
+        }
+        (true, Some(meta)) => {
+            if !meta.is_symlink() || sha256_link(&file)? != locked.sha256 {
+                kinds.push(ViolationKind::Modified);
+            }
+        }
+        (false, Some(meta)) => {
+            if meta.is_symlink() || !meta.is_file() || sha256_file(&file)? != locked.sha256 {
+                kinds.push(ViolationKind::Modified);
+            }
+        }
+    }
+
+    let readable_source = managed.source.local_path(root).filter(|s| s.is_file());
+    if let Some(source) = readable_source {
+        if sha256_file(&source)? != locked.sha256 {
+            kinds.push(ViolationKind::Stale);
+        }
+    }
+
+    Ok(kinds)
 }
 
 #[cfg(test)]

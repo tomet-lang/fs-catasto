@@ -6,6 +6,7 @@
 //! not load is never saved. The file is replaced by renaming a temporary
 //! beside it, so a crash leaves the old one or the new one.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
@@ -149,13 +150,31 @@ pub struct Row {
 
 /// Every declared file with its source and its state.
 pub fn list(root: &Path) -> Result<Vec<Row>> {
-    let manifest = Manifest::load(root)?;
+    let manifest_file = root.join(MANIFEST_FILE);
+    let (manifest, upstreams) = match std::fs::read_to_string(&manifest_file) {
+        Ok(text) => (
+            Manifest::parse(&text)
+                .with_context(|| format!("invalid {}", manifest_file.display()))?,
+            upstreams_of(&text)?,
+        ),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            reject_misnamed(root, MANIFEST_FILE)?;
+            (Manifest::default(), Vec::new())
+        }
+        Err(e) => {
+            return Err(e).with_context(|| format!("cannot read {}", manifest_file.display()));
+        }
+    };
+
     let lock = Lock::load(root)?;
     let report = check(root)?;
-    let upstreams = match std::fs::read_to_string(root.join(MANIFEST_FILE)) {
-        Ok(text) => upstreams_of(&text)?,
-        Err(_) => Vec::new(),
-    };
+
+    let mut violations_by_path = HashMap::new();
+    for violation in &report.violations {
+        violations_by_path
+            .entry(&violation.path)
+            .or_insert(violation.kind);
+    }
 
     Ok(manifest
         .managed
@@ -163,11 +182,7 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
         .map(|managed| Row {
             path: managed.path.clone(),
             from: describe(&managed.source, &upstreams),
-            state: report
-                .violations
-                .iter()
-                .find(|violation| violation.path == managed.path)
-                .map(|violation| violation.kind),
+            state: violations_by_path.get(&managed.path).copied(),
             commit: lock
                 .get(&managed.path)
                 .and_then(|locked| locked.commit.clone()),

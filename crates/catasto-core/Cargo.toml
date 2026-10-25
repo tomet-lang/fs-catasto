@@ -16,6 +16,7 @@ cotomet = { workspace = true }
 #= Crates.io
 anyhow = { workspace = true }
 ignore = { workspace = true }
+rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 walkdir = { workspace = true }

@@ -23,6 +23,7 @@ use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::manifest::{Manifest, Source, Symlink, reject_misnamed};
@@ -194,73 +195,99 @@ pub(crate) fn write_lock_selected(
     manifest: Manifest,
     commits: &HashMap<PathBuf, String>,
     previous: &Lock,
-    selected: &dyn Fn(&Path) -> bool,
+    selected: &(dyn Fn(&Path) -> bool + Sync),
 ) -> Result<Lock> {
-    let mut locked = Vec::with_capacity(manifest.managed.len());
-    for managed in manifest.managed {
-        if !selected(&managed.path) {
-            if let Some(kept) = previous
-                .get(&managed.path)
-                .filter(|kept| kept.source == managed.source)
-            {
-                locked.push(kept.clone());
-            }
-            continue;
-        }
-        let file = root.join(&managed.path);
-        let meta = match std::fs::symlink_metadata(&file) {
-            Ok(m) => m,
-            Err(e) if e.kind() == ErrorKind::NotFound => {
-                bail!("managed file does not exist: {}", managed.path.display());
-            }
-            Err(e) => return Err(e).with_context(|| format!("cannot inspect {}", file.display())),
-        };
+    write_lock_selected_with_hashes(root, manifest, commits, previous, selected, &HashMap::new())
+}
 
-        let is_keep = matches!(
-            &managed.source,
-            Source::Git {
-                symlink: Symlink::Keep,
-                ..
+/// Like [`write_lock_selected`], reusing precomputed hashes from `known_hashes`
+/// instead of reading file contents from disk again.
+pub(crate) fn write_lock_selected_with_hashes(
+    root: &Path,
+    manifest: Manifest,
+    commits: &HashMap<PathBuf, String>,
+    previous: &Lock,
+    selected: &(dyn Fn(&Path) -> bool + Sync),
+    known_hashes: &HashMap<PathBuf, String>,
+) -> Result<Lock> {
+    let locked_results: Result<Vec<Option<Locked>>> = manifest
+        .managed
+        .into_par_iter()
+        .map(|managed| {
+            if !selected(&managed.path) {
+                let kept = previous
+                    .get(&managed.path)
+                    .filter(|kept| kept.source == managed.source)
+                    .cloned();
+                return Ok(kept);
             }
-        );
+            let _token = jobserver_gate::acquire();
+            let file = root.join(&managed.path);
+            let meta = match std::fs::symlink_metadata(&file) {
+                Ok(m) => m,
+                Err(e) if e.kind() == ErrorKind::NotFound => {
+                    bail!("managed file does not exist: {}", managed.path.display());
+                }
+                Err(e) => {
+                    return Err(e).with_context(|| format!("cannot inspect {}", file.display()));
+                }
+            };
 
-        let sha256 = if is_keep {
-            if !meta.is_symlink() {
-                bail!(
-                    "`symlink: keep` declared for {}, but destination is not a symlink",
-                    managed.path.display()
-                );
-            }
-            sha256_link(&file)?
-        } else {
-            if meta.is_symlink() {
-                bail!(
-                    "managed file {} is a symlink; expected a regular file",
-                    managed.path.display()
-                );
-            }
-            if !meta.is_file() {
-                bail!("managed file does not exist: {}", managed.path.display());
-            }
-            sha256_file(&file)?
-        };
+            let is_keep = matches!(
+                &managed.source,
+                Source::Git {
+                    symlink: Symlink::Keep,
+                    ..
+                }
+            );
 
-        let commit = match managed.source {
-            Source::Path(_) => None,
-            Source::Git { .. } => Some(commits.get(&managed.path).cloned().with_context(|| {
-                format!(
-                    "no locked commit for {}: run `catasto sync`",
-                    managed.path.display()
-                )
-            })?),
-        };
-        locked.push(Locked {
-            sha256,
-            path: managed.path,
-            source: managed.source,
-            commit,
-        });
-    }
+            if is_keep {
+                if !meta.is_symlink() {
+                    bail!(
+                        "`symlink: keep` declared for {}, but destination is not a symlink",
+                        managed.path.display()
+                    );
+                }
+            } else {
+                if meta.is_symlink() {
+                    bail!(
+                        "managed file {} is a symlink; expected a regular file",
+                        managed.path.display()
+                    );
+                }
+                if !meta.is_file() {
+                    bail!("managed file does not exist: {}", managed.path.display());
+                }
+            }
+
+            let sha256 = match known_hashes.get(&managed.path) {
+                Some(hash) => hash.clone(),
+                None if is_keep => sha256_link(&file)?,
+                None => sha256_file(&file)?,
+            };
+
+            let commit = match managed.source {
+                Source::Path(_) => None,
+                Source::Git { .. } => {
+                    Some(commits.get(&managed.path).cloned().with_context(|| {
+                        format!(
+                            "no locked commit for {}: run `catasto sync`",
+                            managed.path.display()
+                        )
+                    })?)
+                }
+            };
+            Ok(Some(Locked {
+                sha256,
+                path: managed.path,
+                source: managed.source,
+                commit,
+            }))
+        })
+        .collect();
+    jobserver_gate::reclaim_implicit_token();
+
+    let locked: Vec<Locked> = locked_results?.into_iter().flatten().collect();
 
     let lock = Lock::new(locked);
     let file = root.join(LOCK_FILE);

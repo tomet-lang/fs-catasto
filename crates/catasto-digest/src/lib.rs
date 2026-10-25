@@ -1,6 +1,5 @@
 //! `catasto-digest` -- SHA-256 content hashing for catasto.
 
-use std::fmt::Write as _;
 use std::fs::File;
 use std::io::Read;
 use std::path::Path;
@@ -41,10 +40,13 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     to_hex(Sha256::digest(bytes).as_slice())
 }
 
+const HEX_CHARS: &[u8; 16] = b"0123456789abcdef";
+
 fn to_hex(bytes: &[u8]) -> String {
     let mut hex = String::with_capacity(bytes.len() * 2);
-    for byte in bytes {
-        write!(hex, "{byte:02x}").expect("writing to a String cannot fail");
+    for &byte in bytes {
+        hex.push(char::from(HEX_CHARS[usize::from(byte >> 4)]));
+        hex.push(char::from(HEX_CHARS[usize::from(byte & 0x0f)]));
     }
     hex
 }

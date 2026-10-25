@@ -1,9 +1,17 @@
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
+use std::sync::{LazyLock, Mutex};
 
 use anyhow::{Context, Result, bail};
 
 use crate::cmd::{repo_path, run};
 use crate::{Content, SymlinkMode};
+
+/// `(repository, commit id, path)` of one `ls-tree` lookup.
+type CacheKey = (PathBuf, String, String);
+
+static LS_TREE_CACHE: LazyLock<Mutex<HashMap<CacheKey, Option<TreeEntry>>>> =
+    LazyLock::new(|| Mutex::new(HashMap::new()));
 
 #[derive(Debug, Clone)]
 pub(crate) struct TreeEntry {
@@ -37,10 +45,23 @@ pub(crate) fn parse_ls_tree_output(stdout: &[u8]) -> Result<Vec<TreeEntry>> {
     Ok(entries)
 }
 
+/// Looks up one path in a commit's tree, memoised per process.
+///
+/// `commit` is always a full commit id (see `GitCache::read`), which names an
+/// immutable tree, so a cached entry can never go stale. The lock is not held
+/// while git runs.
 pub(crate) fn ls_tree_one(repo: &Path, commit: &str, path_in_repo: &str) -> Result<Option<TreeEntry>> {
+    let key = (repo.to_path_buf(), commit.to_owned(), path_in_repo.to_owned());
+    if let Some(cached) = LS_TREE_CACHE.lock().ok().and_then(|c| c.get(&key).cloned()) {
+        return Ok(cached);
+    }
     let output = run(Some(repo), &["ls-tree", "-z", commit, "--", path_in_repo])?;
     let entries = parse_ls_tree_output(&output.stdout)?;
-    Ok(entries.into_iter().find(|e| e.path == path_in_repo))
+    let entry = entries.into_iter().find(|e| e.path == path_in_repo);
+    if let Ok(mut cache) = LS_TREE_CACHE.lock() {
+        cache.insert(key, entry.clone());
+    }
+    Ok(entry)
 }
 
 pub(crate) fn check_parent_components_not_symlinks(

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::lockfile::{Lock, write_lock_selected};
+use crate::lockfile::{Lock, write_lock_selected_with_hashes};
 use crate::manifest::{Managed, Manifest, Source};
 use catasto_git::{Content, Fetched, GitCache, resolve_url};
 
@@ -58,6 +58,7 @@ pub fn sync_only(
     let mut fetched_git = fetch_git(root, mode, cache_dir, &manifest, &lock, &selected)?;
 
     let mut commits = HashMap::new();
+    let mut hashes = HashMap::new();
     let mut fetched = Vec::with_capacity(manifest.managed.len());
     for (index, managed) in manifest.managed.iter().enumerate() {
         if !selected(&managed.path) {
@@ -73,11 +74,16 @@ pub fn sync_only(
             }
             local => Content::File(read_local(root, &managed.path, local)?),
         };
+        let hash = match &content {
+            Content::File(bytes) => catasto_digest::sha256_hex(bytes),
+            Content::Link(link_target) => catasto_digest::sha256_hex(link_target.as_bytes()),
+        };
+        hashes.insert(managed.path.clone(), hash);
         fetched.push((root.join(&managed.path), content));
     }
 
     write_all(fetched)?;
-    write_lock_selected(root, manifest, &commits, &lock, &selected)
+    write_lock_selected_with_hashes(root, manifest, &commits, &lock, &selected, &hashes)
 }
 
 /// Reads every git source, one result per entry of the manifest (`None` for
