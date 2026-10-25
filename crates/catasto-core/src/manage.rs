@@ -14,7 +14,7 @@ use crate::check::{ViolationKind, check};
 use crate::edit::{self, SourceText, UpstreamText};
 use crate::lockfile::{LOCK_FILE, Lock};
 use crate::manifest::{
-    MANIFEST_FILE, Manifest, Source, UpstreamInfo, reject_misnamed, upstreams_of,
+    MANIFEST_FILE, Manifest, Source, Symlink, UpstreamInfo, reject_misnamed, upstreams_of,
 };
 use crate::sync::{SyncMode, sync_only};
 
@@ -143,6 +143,8 @@ pub struct Row {
     pub state: Option<ViolationKind>,
     /// The commit it was locked at, for a git source.
     pub commit: Option<String>,
+    /// The symlink mode if explicitly keep.
+    pub symlink: Option<Symlink>,
 }
 
 /// Every declared file with its source and its state.
@@ -169,6 +171,13 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
             commit: lock
                 .get(&managed.path)
                 .and_then(|locked| locked.commit.clone()),
+            symlink: match managed.source {
+                Source::Git {
+                    symlink: Symlink::Keep,
+                    ..
+                } => Some(Symlink::Keep),
+                _ => None,
+            },
         })
         .collect())
 }
@@ -176,17 +185,26 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
 fn describe(source: &Source, upstreams: &[UpstreamInfo]) -> String {
     match source {
         Source::Path(path) => format!("local {}", path.display()),
-        Source::Git { git, rev, path } => {
+        Source::Git {
+            git,
+            rev,
+            path,
+            symlink,
+        } => {
+            let suffix = match symlink {
+                Symlink::Follow => "",
+                Symlink::Keep => " symlink: keep",
+            };
             for upstream in upstreams.iter().filter(|u| &u.git == git && &u.rev == rev) {
                 let inside = match &upstream.root {
                     Some(root) => path.strip_prefix(root).ok(),
                     None => Some(path.as_path()),
                 };
                 if let Some(inside) = inside {
-                    return format!("{}:{}", upstream.name, inside.display());
+                    return format!("{}:{}{suffix}", upstream.name, inside.display());
                 }
             }
-            format!("git {git}@{rev}:{}", path.display())
+            format!("git {git}@{rev}:{}{suffix}", path.display())
         }
     }
 }

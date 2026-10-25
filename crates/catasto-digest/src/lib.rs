@@ -26,6 +26,16 @@ pub fn sha256_file(path: &Path) -> Result<String> {
     Ok(to_hex(hasher.finalize().as_slice()))
 }
 
+/// Returns the lowercase hex SHA-256 of the symlink target text at `path`.
+pub fn sha256_link(path: &Path) -> Result<String> {
+    let target =
+        std::fs::read_link(path).with_context(|| format!("cannot read link {}", path.display()))?;
+    let text = target
+        .to_str()
+        .with_context(|| format!("symlink target is not valid UTF-8: {}", target.display()))?;
+    Ok(sha256_hex(text.as_bytes()))
+}
+
 /// Returns the lowercase hex SHA-256 of `bytes`.
 pub fn sha256_hex(bytes: &[u8]) -> String {
     to_hex(Sha256::digest(bytes).as_slice())
@@ -67,5 +77,26 @@ mod tests {
     fn missing_file_is_an_error() {
         let dir = tempfile::tempdir().unwrap();
         assert!(sha256_file(&dir.path().join("nope")).is_err());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn hashes_symlink_target_bytes() {
+        let dir = tempfile::tempdir().unwrap();
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink("abc", &link).unwrap();
+
+        assert_eq!(
+            sha256_link(&link).unwrap(),
+            "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
+        );
+    }
+
+    #[test]
+    fn not_a_symlink_is_an_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("file");
+        std::fs::write(&file, "abc").unwrap();
+        assert!(sha256_link(&file).is_err());
     }
 }

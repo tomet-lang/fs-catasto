@@ -25,8 +25,8 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::{Manifest, Source, reject_misnamed};
-use catasto_digest::sha256_file;
+use crate::manifest::{Manifest, Source, Symlink, reject_misnamed};
+use catasto_digest::{sha256_file, sha256_link};
 
 /// File name of the lockfile, relative to the workspace root.
 pub const LOCK_FILE: &str = "catasto.lock";
@@ -208,9 +208,43 @@ pub(crate) fn write_lock_selected(
             continue;
         }
         let file = root.join(&managed.path);
-        if !file.is_file() {
-            bail!("managed file does not exist: {}", managed.path.display());
-        }
+        let meta = match std::fs::symlink_metadata(&file) {
+            Ok(m) => m,
+            Err(e) if e.kind() == ErrorKind::NotFound => {
+                bail!("managed file does not exist: {}", managed.path.display());
+            }
+            Err(e) => return Err(e).with_context(|| format!("cannot inspect {}", file.display())),
+        };
+
+        let is_keep = matches!(
+            &managed.source,
+            Source::Git {
+                symlink: Symlink::Keep,
+                ..
+            }
+        );
+
+        let sha256 = if is_keep {
+            if !meta.is_symlink() {
+                bail!(
+                    "`symlink: keep` declared for {}, but destination is not a symlink",
+                    managed.path.display()
+                );
+            }
+            sha256_link(&file)?
+        } else {
+            if meta.is_symlink() {
+                bail!(
+                    "managed file {} is a symlink; expected a regular file",
+                    managed.path.display()
+                );
+            }
+            if !meta.is_file() {
+                bail!("managed file does not exist: {}", managed.path.display());
+            }
+            sha256_file(&file)?
+        };
+
         let commit = match managed.source {
             Source::Path(_) => None,
             Source::Git { .. } => Some(commits.get(&managed.path).cloned().with_context(|| {
@@ -221,7 +255,7 @@ pub(crate) fn write_lock_selected(
             })?),
         };
         locked.push(Locked {
-            sha256: sha256_file(&file)?,
+            sha256,
             path: managed.path,
             source: managed.source,
             commit,
@@ -431,6 +465,54 @@ mod tests {
                 "{\"version\":1,\"files\":{\"a\":{\"sha256\":\"x\",\"source\":\"s\",\"extra\":1}}}"
             )
             .is_err()
+        );
+    }
+
+    #[test]
+    fn lock_round_trip_with_and_without_symlink_keep() {
+        let text_without = "{\n  \"version\": 1,\n  \"files\": {\n    \"a\": {\n      \"sha256\": \"abc\",\n      \"source\": {\n        \"git\": \"https://example.com/a.git\",\n        \"rev\": \"main\",\n        \"path\": \"a\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\"\n    }\n  }\n}\n";
+        let parsed = Lock::parse(text_without).unwrap();
+        assert_eq!(parsed.render().unwrap(), text_without);
+
+        let text_with = "{\n  \"version\": 1,\n  \"files\": {\n    \"a\": {\n      \"sha256\": \"abc\",\n      \"source\": {\n        \"git\": \"https://example.com/a.git\",\n        \"rev\": \"main\",\n        \"path\": \"a\",\n        \"symlink\": \"keep\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\"\n    }\n  }\n}\n";
+        let parsed_keep = Lock::parse(text_with).unwrap();
+        assert_eq!(parsed_keep.render().unwrap(), text_with);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn lock_fails_when_destination_kind_does_not_match_symlink_declaration() {
+        let keep_manifest = "\"link\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"link\", symlink: keep } }";
+        let default_manifest =
+            "\"link\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"link\" } }";
+
+        // 1. keep declared, but destination is regular file -> error
+        let dir1 = workspace(keep_manifest, &[("link", "regular file")]);
+        std::fs::write(
+            dir1.path().join(LOCK_FILE),
+            "{\"version\":1,\"files\":{\"link\":{\"sha256\":\"x\",\"source\":{\"git\":\"https://example.com/v.git\",\"rev\":\"v1\",\"path\":\"link\",\"symlink\":\"keep\"},\"commit\":\"0123456789abcdef0123456789abcdef01234567\"}}}",
+        )
+        .unwrap();
+        let err1 = lock(dir1.path()).unwrap_err();
+        assert!(
+            err1.to_string()
+                .contains("`symlink: keep` declared for link, but destination is not a symlink"),
+            "{err1}"
+        );
+
+        // 2. default declared, but destination is symlink -> error
+        let dir2 = workspace(default_manifest, &[]);
+        std::os::unix::fs::symlink("target", dir2.path().join("link")).unwrap();
+        std::fs::write(
+            dir2.path().join(LOCK_FILE),
+            "{\"version\":1,\"files\":{\"link\":{\"sha256\":\"x\",\"source\":{\"git\":\"https://example.com/v.git\",\"rev\":\"v1\",\"path\":\"link\"},\"commit\":\"0123456789abcdef0123456789abcdef01234567\"}}}",
+        )
+        .unwrap();
+        let err2 = lock(dir2.path()).unwrap_err();
+        assert!(
+            err2.to_string()
+                .contains("managed file link is a symlink; expected a regular file"),
+            "{err2}"
         );
     }
 }

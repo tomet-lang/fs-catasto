@@ -3,11 +3,11 @@
 use std::fmt;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Result, bail};
+use anyhow::{Context, Result, bail};
 
 use crate::lockfile::Lock;
-use crate::manifest::{Manifest, Source};
-use catasto_digest::sha256_file;
+use crate::manifest::{Manifest, Source, Symlink};
+use catasto_digest::{sha256_file, sha256_link};
 
 /// How a managed file has drifted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -115,10 +115,34 @@ pub fn check(root: &Path) -> Result<CheckReport> {
         };
 
         let file = root.join(&managed.path);
-        if !file.is_file() {
-            report(&managed.path, ViolationKind::Missing);
-        } else if sha256_file(&file)? != locked.sha256 {
-            report(&managed.path, ViolationKind::Modified);
+        let meta = match std::fs::symlink_metadata(&file) {
+            Ok(m) => Some(m),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
+            Err(e) => return Err(e).with_context(|| format!("cannot inspect {}", file.display())),
+        };
+
+        let is_keep = matches!(
+            &managed.source,
+            Source::Git {
+                symlink: Symlink::Keep,
+                ..
+            }
+        );
+
+        match (is_keep, meta) {
+            (_, None) => {
+                report(&managed.path, ViolationKind::Missing);
+            }
+            (true, Some(meta)) => {
+                if !meta.is_symlink() || sha256_link(&file)? != locked.sha256 {
+                    report(&managed.path, ViolationKind::Modified);
+                }
+            }
+            (false, Some(meta)) => {
+                if meta.is_symlink() || !meta.is_file() || sha256_file(&file)? != locked.sha256 {
+                    report(&managed.path, ViolationKind::Modified);
+                }
+            }
         }
 
         let readable_source = managed.source.local_path(root).filter(|s| s.is_file());
@@ -339,5 +363,114 @@ mod tests {
             .collect();
 
         assert_eq!(kinds, [ViolationKind::Modified]);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn check_symlink_keep_and_default_table() {
+        use catasto_digest::sha256_hex;
+
+        let commit = "0123456789abcdef0123456789abcdef01234567";
+        let target_hash = sha256_hex(b"target.txt");
+
+        // Helper to setup a vault with custom manifest and lock
+        let setup_vault = |manifest_src: &str, lock_src: &str, locked_hash: &str| {
+            let tmp = tempfile::tempdir().unwrap();
+            std::fs::write(
+                tmp.path().join("catasto.ctmt"),
+                format!("\"link\": {{ source: {manifest_src} }}"),
+            )
+            .unwrap();
+            std::fs::write(
+                tmp.path().join("catasto.lock"),
+                format!(
+                    "{{\"version\":1,\"files\":{{\"link\":{{\"sha256\":\"{locked_hash}\",\"source\":{lock_src},\"commit\":\"{commit}\"}}}}}}"
+                ),
+            )
+            .unwrap();
+            tmp
+        };
+
+        let keep_manifest =
+            "{ git: \"https://example.com/v.git\", rev: main, path: \"link\", symlink: keep }";
+        let default_manifest = "{ git: \"https://example.com/v.git\", rev: main, path: \"link\" }";
+        let keep_lock = "{\"git\":\"https://example.com/v.git\",\"rev\":\"main\",\"path\":\"link\",\"symlink\":\"keep\"}";
+        let default_lock =
+            "{\"git\":\"https://example.com/v.git\",\"rev\":\"main\",\"path\":\"link\"}";
+
+        // === Keep entry tests ===
+        // 1. absent -> Missing
+        let v = setup_vault(keep_manifest, keep_lock, &target_hash);
+        assert_eq!(
+            check(v.path()).unwrap().violations[0].kind,
+            ViolationKind::Missing
+        );
+
+        // 2. present but not a symlink (regular file) -> Modified
+        let v = setup_vault(keep_manifest, keep_lock, &target_hash);
+        std::fs::write(v.path().join("link"), "regular content").unwrap();
+        assert_eq!(
+            check(v.path()).unwrap().violations[0].kind,
+            ViolationKind::Modified
+        );
+
+        // 3. symlink whose read_link digest differs -> Modified
+        let v = setup_vault(keep_manifest, keep_lock, &target_hash);
+        std::os::unix::fs::symlink("other.txt", v.path().join("link")).unwrap();
+        assert_eq!(
+            check(v.path()).unwrap().violations[0].kind,
+            ViolationKind::Modified
+        );
+
+        // 4. symlink matching digest (even if dangling target!) -> Clean
+        let v = setup_vault(keep_manifest, keep_lock, &target_hash);
+        std::os::unix::fs::symlink("target.txt", v.path().join("link")).unwrap();
+        assert!(check(v.path()).unwrap().is_ok());
+
+        // === Default entry tests ===
+        // 5. absent -> Missing
+        let v = setup_vault(default_manifest, default_lock, &target_hash);
+        assert_eq!(
+            check(v.path()).unwrap().violations[0].kind,
+            ViolationKind::Missing
+        );
+
+        // 6. destination is a symlink -> Modified
+        let v = setup_vault(default_manifest, default_lock, &target_hash);
+        std::os::unix::fs::symlink("target.txt", v.path().join("link")).unwrap();
+        assert_eq!(
+            check(v.path()).unwrap().violations[0].kind,
+            ViolationKind::Modified
+        );
+
+        // 7. regular file with matching digest -> Clean
+        let v = setup_vault(default_manifest, default_lock, &target_hash);
+        std::fs::write(v.path().join("link"), "target.txt").unwrap();
+        assert!(check(v.path()).unwrap().is_ok());
+
+        // 8. regular file with wrong digest -> Modified
+        let v = setup_vault(default_manifest, default_lock, &target_hash);
+        std::fs::write(v.path().join("link"), "wrong").unwrap();
+        assert_eq!(
+            check(v.path()).unwrap().violations[0].kind,
+            ViolationKind::Modified
+        );
+
+        // === Toggling symlink option -> Unlocked ===
+        // Manifest says keep, lock says default
+        let v = setup_vault(keep_manifest, default_lock, &target_hash);
+        std::os::unix::fs::symlink("target.txt", v.path().join("link")).unwrap();
+        assert_eq!(
+            check(v.path()).unwrap().violations[0].kind,
+            ViolationKind::Unlocked
+        );
+
+        // Manifest says default, lock says keep
+        let v = setup_vault(default_manifest, keep_lock, &target_hash);
+        std::fs::write(v.path().join("link"), "target.txt").unwrap();
+        assert_eq!(
+            check(v.path()).unwrap().violations[0].kind,
+            ViolationKind::Unlocked
+        );
     }
 }

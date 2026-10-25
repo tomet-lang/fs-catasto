@@ -126,6 +126,34 @@ impl<'de> Deserialize<'de> for Manifest {
     }
 }
 
+/// How symlinks in a git source are handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum Symlink {
+    /// Resolve symlinks inside the repository and place the target file (default).
+    #[default]
+    Follow,
+    /// Keep the symlink itself; the upstream entry must be a symlink.
+    Keep,
+}
+
+impl Serialize for Symlink {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::Follow => serializer.serialize_str("follow"),
+            Self::Keep => serializer.serialize_str("keep"),
+        }
+    }
+}
+
+impl From<Symlink> for catasto_git::SymlinkMode {
+    fn from(s: Symlink) -> Self {
+        match s {
+            Symlink::Follow => catasto_git::SymlinkMode::Follow,
+            Symlink::Keep => catasto_git::SymlinkMode::Keep,
+        }
+    }
+}
+
 /// Origin of a managed file.
 ///
 /// Written as a string for a local file, or a map for a git repository, so
@@ -134,6 +162,7 @@ impl<'de> Deserialize<'de> for Manifest {
 /// ```text
 /// source: "../vocabularies/writ.vocabulary.tmt"
 /// source: { git: "https://example.com/vocabularies.git", rev: v1, path: "writ.vocabulary.tmt" }
+/// source: { git: "https://example.com/vocabularies.git", rev: v1, path: "writ.vocabulary.tmt", symlink: keep }
 /// ```
 ///
 /// The lockfile writes the same shapes in JSON.
@@ -150,6 +179,8 @@ pub enum Source {
         rev: String,
         /// Location of the file inside the repository.
         path: PathBuf,
+        /// How symlinks in the git source are handled (`Follow` by default, or `Keep`).
+        symlink: Symlink,
     },
 }
 
@@ -171,6 +202,57 @@ struct GitSource {
     #[serde(deserialize_with = "quoted_rev")]
     rev: String,
     path: PathBuf,
+    /// How symlinks are handled (`follow` by default, or `keep`).
+    #[serde(default, deserialize_with = "deserialize_symlink")]
+    symlink: Symlink,
+}
+
+fn deserialize_symlink<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Symlink, D::Error> {
+    struct SymlinkVisitor;
+
+    impl Visitor<'_> for SymlinkVisitor {
+        type Value = Symlink;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("`keep`")
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Symlink, E> {
+            if v == "keep" {
+                Ok(Symlink::Keep)
+            } else {
+                Err(E::custom(
+                    "invalid symlink option: `keep` is the only supported value",
+                ))
+            }
+        }
+
+        fn visit_bool<E: de::Error>(self, _: bool) -> Result<Symlink, E> {
+            Err(E::custom(
+                "invalid symlink option: `keep` is the only supported value",
+            ))
+        }
+
+        fn visit_i64<E: de::Error>(self, _: i64) -> Result<Symlink, E> {
+            Err(E::custom(
+                "invalid symlink option: `keep` is the only supported value",
+            ))
+        }
+
+        fn visit_u64<E: de::Error>(self, _: u64) -> Result<Symlink, E> {
+            Err(E::custom(
+                "invalid symlink option: `keep` is the only supported value",
+            ))
+        }
+
+        fn visit_f64<E: de::Error>(self, _: f64) -> Result<Symlink, E> {
+            Err(E::custom(
+                "invalid symlink option: `keep` is the only supported value",
+            ))
+        }
+    }
+
+    deserializer.deserialize_any(SymlinkVisitor)
 }
 
 /// Reads a `rev`, which must be a string. cotomet reads `1.2` and `20260101` as
@@ -218,7 +300,12 @@ fn check_git(git: &str, rev: &str) -> Result<(), String> {
 
 impl GitSource {
     fn into_source(self) -> Result<Source, String> {
-        let GitSource { git, rev, path } = self;
+        let GitSource {
+            git,
+            rev,
+            path,
+            symlink,
+        } = self;
         check_git(&git, &rev)?;
         if !is_inside_workspace(&path) {
             return Err(format!(
@@ -226,7 +313,12 @@ impl GitSource {
                 path.display()
             ));
         }
-        Ok(Source::Git { git, rev, path })
+        Ok(Source::Git {
+            git,
+            rev,
+            path,
+            symlink,
+        })
     }
 }
 
@@ -266,11 +358,28 @@ impl Serialize for Source {
             git: &'a str,
             rev: &'a str,
             path: &'a Path,
+            #[serde(skip_serializing_if = "is_follow")]
+            symlink: Symlink,
+        }
+
+        fn is_follow(symlink: &Symlink) -> bool {
+            matches!(symlink, Symlink::Follow)
         }
 
         match self {
             Source::Path(path) => path.serialize(serializer),
-            Source::Git { git, rev, path } => GitSourceRef { git, rev, path }.serialize(serializer),
+            Source::Git {
+                git,
+                rev,
+                path,
+                symlink,
+            } => GitSourceRef {
+                git,
+                rev,
+                path,
+                symlink: *symlink,
+            }
+            .serialize(serializer),
         }
     }
 }
@@ -782,8 +891,61 @@ mod tests {
                 git: "https://example.com/v.git".into(),
                 rev: "v1".into(),
                 path: "dir/w.tmt".into(),
+                symlink: Symlink::Follow,
             }
         );
+    }
+
+    #[test]
+    fn parses_symlink_keep_in_git_source_and_upstream() {
+        let manifest = Manifest::parse(&format!(
+            "{VOCABULARIES}\n\
+             \"a\": {{ source: {{ git: \"https://example.com/v.git\", rev: v1, path: \"a\", symlink: keep }} }}\n\
+             \"b\": {{ source: {{ upstream: vocabularies, path: \"b\", symlink: keep }} }}\n"
+        ))
+        .unwrap();
+
+        assert_eq!(
+            manifest.managed[0].source,
+            Source::Git {
+                git: "https://example.com/v.git".into(),
+                rev: "v1".into(),
+                path: "a".into(),
+                symlink: Symlink::Keep,
+            }
+        );
+        assert_eq!(
+            manifest.managed[1].source,
+            Source::Git {
+                git: "https://example.com/v.git".into(),
+                rev: "main".into(),
+                path: "b".into(),
+                symlink: Symlink::Keep,
+            }
+        );
+    }
+
+    #[test]
+    fn rejects_invalid_symlink_values() {
+        for bad in ["follow", "true", "false", "123", "\"\""] {
+            let err = Manifest::parse(&format!(
+                "\"a\": {{ source: {{ git: \"https://example.com/v.git\", rev: v1, path: \"a\", symlink: {bad} }} }}"
+            ))
+            .unwrap_err();
+            assert!(
+                err.to_string().contains("keep"),
+                "expected error mentioning keep, got: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn git_source_rejects_unknown_fields_even_with_symlink() {
+        let err = Manifest::parse(
+            "\"a\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"a\", symlink: keep, extra: x } }",
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("unknown field `extra`"), "{err}");
     }
 
     #[test]
@@ -866,10 +1028,55 @@ mod tests {
                 git: "https://example.com/v.git".into(),
                 rev: "v1".into(),
                 path: "dir/w.tmt".into(),
+                symlink: Symlink::Follow,
+            },
+            Source::Git {
+                git: "https://example.com/v.git".into(),
+                rev: "v1".into(),
+                path: "dir/w.tmt".into(),
+                symlink: Symlink::Keep,
             },
         ] {
             let json = serde_json::to_string(&source).unwrap();
             assert_eq!(serde_json::from_str::<Source>(&json).unwrap(), source);
         }
+
+        // Verify that Symlink::Follow does not emit `"symlink"` in JSON (unchanged byte-for-byte)
+        let default_git = Source::Git {
+            git: "https://example.com/v.git".into(),
+            rev: "v1".into(),
+            path: "dir/w.tmt".into(),
+            symlink: Symlink::Follow,
+        };
+        let json = serde_json::to_string(&default_git).unwrap();
+        assert!(
+            !json.contains("symlink"),
+            "default git source emitted symlink in JSON: {json}"
+        );
+
+        let keep_git = Source::Git {
+            git: "https://example.com/v.git".into(),
+            rev: "v1".into(),
+            path: "dir/w.tmt".into(),
+            symlink: Symlink::Keep,
+        };
+        let json_keep = serde_json::to_string(&keep_git).unwrap();
+        assert!(json_keep.contains("\"symlink\":\"keep\""), "{json_keep}");
+    }
+
+    #[test]
+    fn upstream_with_symlink_keep_resolves_identically_to_full_form() {
+        let manifest = Manifest::parse(&format!(
+            "{VOCABULARIES}\n\
+             \"a.tmt\": {{ source: {{ upstream: vocabularies, path: \"a.tmt\", symlink: keep }} }}\n\
+             \"b.tmt\": {{ source: {{ git: \"https://example.com/v.git\", rev: main, path: \"a.tmt\", symlink: keep }} }}\n"
+        ))
+        .unwrap();
+
+        assert_eq!(manifest.managed[0].source, manifest.managed[1].source);
+        assert_eq!(
+            serde_json::to_string(&manifest.managed[0].source).unwrap(),
+            serde_json::to_string(&manifest.managed[1].source).unwrap()
+        );
     }
 }

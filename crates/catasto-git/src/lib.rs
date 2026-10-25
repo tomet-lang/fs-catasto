@@ -68,13 +68,50 @@ pub fn resolve_url(root: &Path, url: &str) -> Result<String> {
     }
 }
 
-/// A file read from a repository, with the commit it was read at.
+/// How symlinks in git repositories are handled.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum SymlinkMode {
+    /// Resolve symlinks inside the repository and return the target file (default).
+    #[default]
+    Follow,
+    /// Keep the symlink itself; the entry must be a symlink.
+    Keep,
+}
+
+/// Content read from a git repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Content {
+    /// Regular file content.
+    File(Vec<u8>),
+    /// Symlink target path string.
+    Link(String),
+}
+
+impl Content {
+    /// Returns the bytes of the file, or `None` if it is a symlink.
+    pub fn file_bytes(&self) -> Option<&[u8]> {
+        match self {
+            Self::File(bytes) => Some(bytes),
+            Self::Link(_) => None,
+        }
+    }
+
+    /// Returns the symlink target, or `None` if it is a file.
+    pub fn link_target(&self) -> Option<&str> {
+        match self {
+            Self::Link(target) => Some(target),
+            Self::File(_) => None,
+        }
+    }
+}
+
+/// A file or link read from a repository, with the commit it was read at.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fetched {
     /// Full commit id the revision resolved to (or was pinned to).
     pub commit: String,
-    /// Content of the file at that commit.
-    pub content: Vec<u8>,
+    /// Content of the file or link at that commit.
+    pub content: Content,
 }
 
 /// Bare clones of the repositories catasto reads from.
@@ -110,12 +147,23 @@ impl GitCache {
     /// the commit is not cached yet. Without it, the repository is fetched and
     /// `rev` (a tag, a branch, or a commit already reachable from one) is
     /// resolved to a commit.
+    ///
+    /// With [`SymlinkMode::Follow`], any symlinks are resolved inside the
+    /// repository up to 8 hops with loop detection, returning the final regular
+    /// file content as [`Content::File`].
+    /// With [`SymlinkMode::Keep`], the entry must be a symlink, and its target
+    /// text is returned as [`Content::Link`] without following.
+    ///
+    /// In both modes, intermediate directory components must not be symlinks,
+    /// and symlink targets are validated not to be empty, contain NUL bytes,
+    /// be absolute, or escape the repository root.
     pub fn fetch(
         &self,
         url: &str,
         rev: &str,
         path: &Path,
         pinned: Option<&str>,
+        symlink: SymlinkMode,
     ) -> Result<Fetched> {
         let repo = self.repo_dir(url);
         init_bare(&repo)?;
@@ -137,13 +185,120 @@ impl GitCache {
             }
         };
 
-        let spec = format!("{commit}:{}", repo_path(path)?);
-        let blob = run(Some(&repo), &["cat-file", "blob", &spec])
+        let initial_repo_path = repo_path(path)?;
+        check_parent_components_not_symlinks(&repo, &commit, path, &initial_repo_path)?;
+
+        let initial_entry = ls_tree_one(&repo, &commit, &initial_repo_path)?
             .with_context(|| format!("{} is not in {url} at {commit}", path.display()))?;
-        Ok(Fetched {
-            commit,
-            content: blob.stdout,
-        })
+
+        match symlink {
+            SymlinkMode::Keep => {
+                if initial_entry.mode != "120000" {
+                    bail!(
+                        "`symlink: keep`, but {} is not a symlink in {url} at {commit}",
+                        path.display()
+                    );
+                }
+                let chain = vec![initial_repo_path.clone()];
+                let text = cat_symlink_text(&repo, &initial_entry.oid, path, &chain)?;
+                let _ = resolve_symlink_target(&initial_repo_path, &text, path, &chain)?;
+                Ok(Fetched {
+                    commit,
+                    content: Content::Link(text),
+                })
+            }
+            SymlinkMode::Follow => {
+                if initial_entry.mode == "100644" || initial_entry.mode == "100755" {
+                    let bytes = cat_blob_bytes(&repo, &initial_entry.oid)?;
+                    return Ok(Fetched {
+                        commit,
+                        content: Content::File(bytes),
+                    });
+                }
+                if initial_entry.mode != "120000" {
+                    let kind = if initial_entry.mode == "040000" || initial_entry.kind == "tree" {
+                        "a directory"
+                    } else if initial_entry.mode == "160000" || initial_entry.kind == "commit" {
+                        "a git submodule"
+                    } else {
+                        "an unsupported git object"
+                    };
+                    bail!(
+                        "cannot fetch {}: {initial_repo_path} is {kind}, not a file",
+                        path.display()
+                    );
+                }
+
+                let mut current_path = initial_repo_path.clone();
+                let mut current_oid = initial_entry.oid;
+                let mut chain = vec![initial_repo_path];
+                let mut hops = 0;
+
+                loop {
+                    hops += 1;
+                    if hops > 8 {
+                        bail!(
+                            "cannot fetch {}: too many levels of symbolic links (link chain: {})",
+                            path.display(),
+                            chain.join(" -> ")
+                        );
+                    }
+
+                    let text = cat_symlink_text(&repo, &current_oid, path, &chain)?;
+                    let next_path = resolve_symlink_target(&current_path, &text, path, &chain)?;
+
+                    if chain.contains(&next_path) {
+                        chain.push(next_path);
+                        bail!(
+                            "cannot fetch {}: symlink loop detected (link chain: {})",
+                            path.display(),
+                            chain.join(" -> ")
+                        );
+                    }
+
+                    check_parent_components_not_symlinks(&repo, &commit, path, &next_path)?;
+
+                    let next_entry = match ls_tree_one(&repo, &commit, &next_path)? {
+                        Some(e) => e,
+                        None => {
+                            chain.push(next_path.clone());
+                            bail!(
+                                "cannot fetch {}: symlink target `{next_path}` does not exist (link chain: {})",
+                                path.display(),
+                                chain.join(" -> ")
+                            );
+                        }
+                    };
+
+                    chain.push(next_path.clone());
+
+                    if next_entry.mode == "100644" || next_entry.mode == "100755" {
+                        let bytes = cat_blob_bytes(&repo, &next_entry.oid)?;
+                        return Ok(Fetched {
+                            commit,
+                            content: Content::File(bytes),
+                        });
+                    } else if next_entry.mode == "120000" {
+                        current_path = next_path;
+                        current_oid = next_entry.oid;
+                        continue;
+                    } else {
+                        let kind = if next_entry.mode == "040000" || next_entry.kind == "tree" {
+                            "a directory"
+                        } else if next_entry.mode == "160000" || next_entry.kind == "commit" {
+                            "a git submodule"
+                        } else {
+                            "an unsupported git object"
+                        };
+                        bail!(
+                            "cannot fetch {}: symlink target `{next_path}` is {kind} (link chain: {})",
+                            path.display(),
+                            chain.join(" -> ")
+                        );
+                    }
+                }
+            }
+        }
     }
 
     fn repo_dir(&self, url: &str) -> PathBuf {
@@ -254,6 +409,167 @@ fn run(git_dir: Option<&Path>, args: &[&str]) -> Result<Output> {
     Ok(output)
 }
 
+#[derive(Debug, Clone)]
+struct TreeEntry {
+    mode: String,
+    kind: String,
+    oid: String,
+    path: String,
+}
+
+fn parse_ls_tree_output(stdout: &[u8]) -> Result<Vec<TreeEntry>> {
+    let mut entries = Vec::new();
+    for item in stdout.split(|&b| b == 0) {
+        if item.is_empty() {
+            continue;
+        }
+        let item_str =
+            std::str::from_utf8(item).context("git ls-tree output is not valid UTF-8")?;
+        let (meta, path) = item_str
+            .split_once('\t')
+            .context("invalid git ls-tree output: missing tab")?;
+        let mut meta_parts = meta.split_whitespace();
+        let mode = meta_parts
+            .next()
+            .context("missing mode in ls-tree")?
+            .to_owned();
+        let kind = meta_parts
+            .next()
+            .context("missing kind in ls-tree")?
+            .to_owned();
+        let oid = meta_parts
+            .next()
+            .context("missing oid in ls-tree")?
+            .to_owned();
+        entries.push(TreeEntry {
+            mode,
+            kind,
+            oid,
+            path: path.to_owned(),
+        });
+    }
+    Ok(entries)
+}
+
+fn ls_tree_one(repo: &Path, commit: &str, path_in_repo: &str) -> Result<Option<TreeEntry>> {
+    let output = run(Some(repo), &["ls-tree", "-z", commit, "--", path_in_repo])?;
+    let entries = parse_ls_tree_output(&output.stdout)?;
+    Ok(entries.into_iter().find(|e| e.path == path_in_repo))
+}
+
+fn check_parent_components_not_symlinks(
+    repo: &Path,
+    commit: &str,
+    manifest_path: &Path,
+    path_in_repo: &str,
+) -> Result<()> {
+    let parts: Vec<&str> = path_in_repo.split('/').filter(|s| !s.is_empty()).collect();
+    let mut current = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        if i == parts.len() - 1 {
+            break;
+        }
+        if !current.is_empty() {
+            current.push('/');
+        }
+        current.push_str(part);
+
+        if let Some(entry) = ls_tree_one(repo, commit, &current)? {
+            if entry.mode == "120000" {
+                bail!(
+                    "directory component `{current}` of {} is a symlink",
+                    manifest_path.display()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+fn resolve_symlink_target(
+    link_in_repo: &str,
+    target: &str,
+    manifest_path: &Path,
+    chain: &[String],
+) -> Result<String> {
+    let chain_info = format!("link chain: {}", chain.join(" -> "));
+    if target.is_empty() {
+        bail!(
+            "cannot fetch {}: symlink target is empty ({chain_info})",
+            manifest_path.display()
+        );
+    }
+    if target.contains('\0') {
+        bail!(
+            "cannot fetch {}: symlink target contains NUL byte ({chain_info})",
+            manifest_path.display()
+        );
+    }
+    if target.starts_with('/') || target.starts_with('\\') {
+        bail!(
+            "cannot fetch {}: symlink target is absolute: {target} ({chain_info})",
+            manifest_path.display()
+        );
+    }
+
+    let parent = match link_in_repo.rfind('/') {
+        Some(idx) => &link_in_repo[..idx],
+        None => "",
+    };
+
+    let mut parts: Vec<&str> = if parent.is_empty() {
+        Vec::new()
+    } else {
+        parent.split('/').filter(|s| !s.is_empty()).collect()
+    };
+
+    for comp in target.split('/') {
+        match comp {
+            "" | "." => {}
+            ".." => {
+                if parts.is_empty() {
+                    bail!(
+                        "cannot fetch {}: symlink target climbs out of the repository: {target} ({chain_info})",
+                        manifest_path.display()
+                    );
+                }
+                parts.pop();
+            }
+            c => parts.push(c),
+        }
+    }
+
+    let resolved = parts.join("/");
+    if resolved.is_empty() {
+        bail!(
+            "cannot fetch {}: symlink target points to the repository root ({chain_info})",
+            manifest_path.display()
+        );
+    }
+    Ok(resolved)
+}
+
+fn cat_blob_bytes(repo: &Path, oid: &str) -> Result<Vec<u8>> {
+    let output = run(Some(repo), &["cat-file", "blob", oid])?;
+    Ok(output.stdout)
+}
+
+fn cat_symlink_text(
+    repo: &Path,
+    oid: &str,
+    manifest_path: &Path,
+    chain: &[String],
+) -> Result<String> {
+    let bytes = cat_blob_bytes(repo, oid)?;
+    String::from_utf8(bytes).map_err(|_| {
+        let chain_info = format!("link chain: {}", chain.join(" -> "));
+        anyhow::anyhow!(
+            "cannot fetch {}: symlink target is not valid UTF-8 ({chain_info})",
+            manifest_path.display()
+        )
+    })
+}
+
 /// Throwaway repositories for tests, behind the `testing` feature.
 #[cfg(any(test, feature = "testing"))]
 pub mod testing {
@@ -291,6 +607,25 @@ pub mod testing {
             std::fs::write(file, content).unwrap();
             self.git(&["add", "--all"]);
             self.git(&["commit", "--quiet", "-m", content]);
+            self.git(&["rev-parse", "HEAD"])
+        }
+
+        /// Creates a symlink at `path` pointing to `target`, commits it, and returns the commit id.
+        #[cfg(unix)]
+        pub fn commit_symlink(&self, path: &str, target: &str) -> String {
+            let link = self.dir.path().join(path);
+            if let Some(parent) = link.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            let _ = std::fs::remove_file(&link);
+            std::os::unix::fs::symlink(target, &link).unwrap();
+            self.git(&["add", "--all"]);
+            self.git(&[
+                "commit",
+                "--quiet",
+                "-m",
+                &format!("link {path} -> {target}"),
+            ]);
             self.git(&["rev-parse", "HEAD"])
         }
 
@@ -352,17 +687,23 @@ mod tests {
         let (_dir, cache) = cache();
         let path = Path::new("dir/w.tmt");
 
-        let by_branch = cache.fetch(&repo.url(), "main", path, None).unwrap();
-        let by_tag = cache.fetch(&repo.url(), "v1", path, None).unwrap();
-        let by_commit = cache.fetch(&repo.url(), &first, path, None).unwrap();
+        let by_branch = cache
+            .fetch(&repo.url(), "main", path, None, SymlinkMode::Follow)
+            .unwrap();
+        let by_tag = cache
+            .fetch(&repo.url(), "v1", path, None, SymlinkMode::Follow)
+            .unwrap();
+        let by_commit = cache
+            .fetch(&repo.url(), &first, path, None, SymlinkMode::Follow)
+            .unwrap();
 
         assert_eq!(
             (by_branch.commit.as_str(), by_branch.content),
-            (second.as_str(), b"two".to_vec())
+            (second.as_str(), Content::File(b"two".to_vec()))
         );
         assert_eq!(
             (by_tag.commit.as_str(), by_tag.content),
-            (first.as_str(), b"one".to_vec())
+            (first.as_str(), Content::File(b"one".to_vec()))
         );
         assert_eq!(by_commit.commit, first);
     }
@@ -375,11 +716,17 @@ mod tests {
         let (_dir, cache) = cache();
 
         let fetched = cache
-            .fetch(&repo.url(), "main", Path::new("w.tmt"), Some(&first))
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("w.tmt"),
+                Some(&first),
+                SymlinkMode::Follow,
+            )
             .unwrap();
 
         assert_eq!(fetched.commit, first);
-        assert_eq!(fetched.content, b"one");
+        assert_eq!(fetched.content, Content::File(b"one".to_vec()));
     }
 
     #[test]
@@ -388,16 +735,28 @@ mod tests {
         let first = repo.commit("w.tmt", "one");
         let (_dir, cache) = cache();
         cache
-            .fetch(&repo.url(), "main", Path::new("w.tmt"), None)
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("w.tmt"),
+                None,
+                SymlinkMode::Follow,
+            )
             .unwrap();
         let url = repo.url();
         drop(repo);
 
         let fetched = cache
-            .fetch(&url, "main", Path::new("w.tmt"), Some(&first))
+            .fetch(
+                &url,
+                "main",
+                Path::new("w.tmt"),
+                Some(&first),
+                SymlinkMode::Follow,
+            )
             .unwrap();
 
-        assert_eq!(fetched.content, b"one");
+        assert_eq!(fetched.content, Content::File(b"one".to_vec()));
     }
 
     #[test]
@@ -412,6 +771,7 @@ mod tests {
                 "main",
                 Path::new("w.tmt"),
                 Some(&"0".repeat(40)),
+                SymlinkMode::Follow,
             )
             .unwrap_err();
 
@@ -425,7 +785,13 @@ mod tests {
         let (_dir, cache) = cache();
 
         for bad in ["--upload-pack=x", "abc", "main"] {
-            let result = cache.fetch(&repo.url(), "main", Path::new("w.tmt"), Some(bad));
+            let result = cache.fetch(
+                &repo.url(),
+                "main",
+                Path::new("w.tmt"),
+                Some(bad),
+                SymlinkMode::Follow,
+            );
             assert!(result.is_err(), "accepted {bad:?}");
         }
     }
@@ -437,7 +803,13 @@ mod tests {
         let (_dir, cache) = cache();
 
         let err = cache
-            .fetch(&repo.url(), "nope", Path::new("w.tmt"), None)
+            .fetch(
+                &repo.url(),
+                "nope",
+                Path::new("w.tmt"),
+                None,
+                SymlinkMode::Follow,
+            )
             .unwrap_err();
 
         assert!(err.to_string().contains("\"nope\" not found"), "{err}");
@@ -450,7 +822,13 @@ mod tests {
         let (_dir, cache) = cache();
 
         let err = cache
-            .fetch(&repo.url(), "main", Path::new("nope.tmt"), None)
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("nope.tmt"),
+                None,
+                SymlinkMode::Follow,
+            )
             .unwrap_err();
 
         assert!(err.to_string().contains("nope.tmt is not in"), "{err}");
@@ -463,11 +841,15 @@ mod tests {
         repo.branch("stable");
         let (_dir, cache) = cache();
         let path = Path::new("w.tmt");
-        cache.fetch(&repo.url(), "stable", path, None).unwrap();
+        cache
+            .fetch(&repo.url(), "stable", path, None, SymlinkMode::Follow)
+            .unwrap();
         repo.git(&["checkout", "--quiet", "stable"]);
         let moved = repo.commit("w.tmt", "two");
 
-        let fetched = cache.fetch(&repo.url(), "stable", path, None).unwrap();
+        let fetched = cache
+            .fetch(&repo.url(), "stable", path, None, SymlinkMode::Follow)
+            .unwrap();
 
         assert_eq!(fetched.commit, moved);
     }
@@ -526,7 +908,13 @@ mod tests {
         let (_dir, cache) = cache();
 
         let err = cache
-            .fetch("ssh://localhost/repo.git", "main", Path::new("w.tmt"), None)
+            .fetch(
+                "ssh://localhost/repo.git",
+                "main",
+                Path::new("w.tmt"),
+                None,
+                SymlinkMode::Follow,
+            )
             .unwrap_err();
 
         assert!(format!("{err:#}").contains("not allowed"), "{err:#}");
@@ -542,12 +930,316 @@ mod tests {
         let path = Path::new("w.tmt");
 
         assert_eq!(
-            cache.fetch(&a.url(), "main", path, None).unwrap().content,
-            b"a"
+            cache
+                .fetch(&a.url(), "main", path, None, SymlinkMode::Follow)
+                .unwrap()
+                .content,
+            Content::File(b"a".to_vec())
         );
         assert_eq!(
-            cache.fetch(&b.url(), "main", path, None).unwrap().content,
-            b"b"
+            cache
+                .fetch(&b.url(), "main", path, None, SymlinkMode::Follow)
+                .unwrap()
+                .content,
+            Content::File(b"b".to_vec())
         );
+    }
+
+    #[test]
+    fn fetches_a_tree_as_error() {
+        let repo = TestRepo::new();
+        repo.commit("dir/file.txt", "content");
+        let (_dir, cache) = cache();
+
+        let err = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("dir"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap_err();
+
+        assert!(
+            err.to_string().contains("is a directory, not a file"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn follow_one_hop_and_several_hops_inside_repo() {
+        let repo = TestRepo::new();
+        repo.commit("target/real.txt", "hello");
+        repo.commit_symlink("link1", "target/real.txt");
+        repo.commit_symlink("nested/link2", "../link1");
+        repo.commit_symlink("nested/deep/link3", "../link2");
+
+        let (_dir, cache) = cache();
+
+        let f1 = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("link1"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap();
+        assert_eq!(f1.content, Content::File(b"hello".to_vec()));
+
+        let f3 = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("nested/deep/link3"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap();
+        assert_eq!(f3.content, Content::File(b"hello".to_vec()));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn follow_eight_hops_ok_nine_hops_error() {
+        let repo = TestRepo::new();
+        repo.commit("real.txt", "found");
+        // link1 -> real.txt (1 hop)
+        repo.commit_symlink("l1", "real.txt");
+        for i in 2..=10 {
+            repo.commit_symlink(&format!("l{i}"), &format!("l{}", i - 1));
+        }
+
+        let (_dir, cache) = cache();
+
+        // l8 -> l7 -> l6 -> l5 -> l4 -> l3 -> l2 -> l1 -> real.txt (8 hops to reach real.txt)
+        let f8 = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("l8"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap();
+        assert_eq!(f8.content, Content::File(b"found".to_vec()));
+
+        // l9 -> 8 links before reaching real.txt requires 9 hops -> error
+        let err9 = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("l9"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap_err();
+        assert!(
+            err9.to_string()
+                .contains("too many levels of symbolic links"),
+            "{err9}"
+        );
+        assert!(err9.to_string().contains("link chain:"), "{err9}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn follow_loop_is_an_error() {
+        let repo = TestRepo::new();
+        repo.commit_symlink("a", "b");
+        repo.commit_symlink("b", "a");
+
+        let (_dir, cache) = cache();
+        let err = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("a"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap_err();
+        assert!(err.to_string().contains("symlink loop detected"), "{err}");
+        assert!(err.to_string().contains("link chain: a -> b -> a"), "{err}");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn follow_bad_target_errors() {
+        let repo = TestRepo::new();
+        repo.commit("real.txt", "ok");
+        repo.commit_symlink("abs", "/etc/passwd");
+        repo.commit_symlink("escape", "../../secret");
+        repo.commit_symlink("dangling", "missing.txt");
+        repo.commit_symlink("to_dir", "dir");
+        repo.commit("dir/inside.txt", "inside");
+
+        let (_dir, cache) = cache();
+
+        let err_abs = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("abs"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap_err();
+        assert!(
+            err_abs.to_string().contains("symlink target is absolute"),
+            "{err_abs}"
+        );
+
+        let err_escape = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("escape"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap_err();
+        assert!(
+            err_escape
+                .to_string()
+                .contains("climbs out of the repository"),
+            "{err_escape}"
+        );
+
+        let err_dangling = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("dangling"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap_err();
+        assert!(
+            err_dangling
+                .to_string()
+                .contains("target `missing.txt` does not exist"),
+            "{err_dangling}"
+        );
+
+        let err_dir = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("to_dir"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap_err();
+        assert!(
+            err_dir.to_string().contains("target `dir` is a directory"),
+            "{err_dir}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn keep_mode_checks() {
+        let repo = TestRepo::new();
+        repo.commit("real.txt", "hello");
+        repo.commit_symlink("link.txt", "target.txt");
+        repo.commit_symlink("bad_abs", "/abs");
+
+        let (_dir, cache) = cache();
+
+        // Plain link ok, even if target is dangling
+        let fetched = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("link.txt"),
+                None,
+                SymlinkMode::Keep,
+            )
+            .unwrap();
+        assert_eq!(fetched.content, Content::Link("target.txt".to_owned()));
+
+        // Not a link is an error
+        let err_not_link = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("real.txt"),
+                None,
+                SymlinkMode::Keep,
+            )
+            .unwrap_err();
+        assert!(
+            err_not_link
+                .to_string()
+                .contains("`symlink: keep`, but real.txt is not a symlink"),
+            "{err_not_link}"
+        );
+
+        // Bad target text is an error even with keep
+        let err_bad = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("bad_abs"),
+                None,
+                SymlinkMode::Keep,
+            )
+            .unwrap_err();
+        assert!(
+            err_bad.to_string().contains("symlink target is absolute"),
+            "{err_bad}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn symlinked_directory_component_is_an_error() {
+        let repo = TestRepo::new();
+        repo.commit("realdir/file.txt", "deep content");
+        repo.commit_symlink("symdir", "realdir");
+
+        let (_dir, cache) = cache();
+
+        let err = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("symdir/file.txt"),
+                None,
+                SymlinkMode::Follow,
+            )
+            .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("directory component `symdir` of symdir/file.txt is a symlink"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn pinned_commit_still_resolves_link_at_pinned_commit() {
+        let repo = TestRepo::new();
+        repo.commit("v1.txt", "version 1");
+        repo.commit("v2.txt", "version 2");
+        let first = repo.commit_symlink("link", "v1.txt");
+        repo.commit_symlink("link", "v2.txt");
+
+        let (_dir, cache) = cache();
+
+        let fetched = cache
+            .fetch(
+                &repo.url(),
+                "main",
+                Path::new("link"),
+                Some(&first),
+                SymlinkMode::Follow,
+            )
+            .unwrap();
+        assert_eq!(fetched.commit, first);
+        assert_eq!(fetched.content, Content::File(b"version 1".to_vec()));
     }
 }

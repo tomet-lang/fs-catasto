@@ -210,10 +210,28 @@ impl GitWorkspace {
         self.git(&["commit", "--quiet", "-m", content]);
     }
 
+    #[cfg(unix)]
+    fn commit_symlink(&self, path: &str, target: &str) {
+        let link = self.remote.join(path);
+        if let Some(parent) = link.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(target, &link).unwrap();
+        self.git(&["add", "--all"]);
+        self.git(&[
+            "commit",
+            "--quiet",
+            "-m",
+            &format!("link {path} -> {target}"),
+        ]);
+    }
+
     fn run(&self, args: &[&str]) -> std::process::Output {
         Command::new(env!("CARGO_BIN_EXE_catasto"))
-            .args(args)
+            .arg("-C")
             .arg(&self.vault)
+            .args(args)
             .env("CATASTO_CACHE_DIR", &self.cache)
             .output()
             .unwrap()
@@ -267,4 +285,77 @@ fn git_sync_reports_an_unknown_rev() {
     let stderr = String::from_utf8_lossy(&synced.stderr);
     assert!(stderr.contains("source of schema/w.tmt"), "{stderr}");
     assert!(!ws.vault.join("schema/w.tmt").exists());
+}
+
+#[test]
+#[cfg(unix)]
+fn e2e_git_symlink_follow() {
+    let ws = GitWorkspace::new();
+    ws.commit_symlink("link.txt", "w.tmt");
+    std::fs::write(
+        ws.vault.join("catasto.ctmt"),
+        format!(
+            "\"followed.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\" }} }}\n",
+            ws.remote
+        ),
+    )
+    .unwrap();
+
+    let synced = ws.run(&["sync"]);
+    assert_eq!(synced.status.code(), Some(0));
+    let out = ws.vault.join("followed.txt");
+    let meta = std::fs::symlink_metadata(&out).unwrap();
+    assert!(meta.is_file());
+    assert!(!meta.is_symlink());
+    assert_eq!(std::fs::read_to_string(&out).unwrap(), "one");
+
+    let checked = ws.run(&["check"]);
+    assert_eq!(checked.status.code(), Some(0));
+
+    let listed = ws.run(&["list"]);
+    assert_eq!(listed.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&listed.stdout);
+    assert!(stdout.contains("followed.txt"), "{stdout}");
+    assert!(stdout.contains("ok"), "{stdout}");
+}
+
+#[test]
+#[cfg(unix)]
+fn e2e_git_symlink_keep() {
+    let ws = GitWorkspace::new();
+    ws.commit_symlink("link.txt", "target.txt");
+    std::fs::write(
+        ws.vault.join("catasto.ctmt"),
+        format!(
+            "\"kept.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\", symlink: keep }} }}\n",
+            ws.remote
+        ),
+    )
+    .unwrap();
+
+    let synced = ws.run(&["sync"]);
+    assert_eq!(synced.status.code(), Some(0));
+    let out = ws.vault.join("kept.txt");
+    let meta = std::fs::symlink_metadata(&out).unwrap();
+    assert!(meta.is_symlink());
+    assert_eq!(
+        std::fs::read_link(&out).unwrap().to_str().unwrap(),
+        "target.txt"
+    );
+
+    let checked = ws.run(&["check"]);
+    assert_eq!(checked.status.code(), Some(0));
+
+    let listed = ws.run(&["list"]);
+    assert_eq!(listed.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&listed.stdout);
+    assert!(stdout.contains("kept.txt"), "{stdout}");
+    assert!(stdout.contains("symlink: keep"), "{stdout}");
+    assert!(stdout.contains("ok"), "{stdout}");
+
+    let listed_json = ws.run(&["list", "--json"]);
+    assert_eq!(listed_json.status.code(), Some(0));
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&listed_json.stdout)).unwrap();
+    assert_eq!(json[0]["symlink"], "keep");
 }

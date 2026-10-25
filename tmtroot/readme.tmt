@@ -76,7 +76,7 @@ The key is a path relative to the workspace and must stay inside it. Quote a pat
 A `source` is one of three kinds:
 
 -| `"..."` -- a file on the local filesystem, relative to the workspace root. It may point outside the workspace.
--| `{ git: "...", rev: "...", path: "..." }` -- a file in a git repository. `git` is an `https://` URL or a local path (relative to the workspace root), `rev` is a tag, a branch, or a commit already reachable from one, and `path` is the file's location inside the repository. Quote a `rev` that reads as a number (`rev: "1.2"`).
+-| `{ git: "...", rev: "...", path: "..." }` -- a file in a git repository. `git` is an `https://` URL or a local path (relative to the workspace root), `rev` is a tag, a branch, or a commit already reachable from one, and `path` is the file's location inside the repository. Quote a `rev` that reads as a number (`rev: "1.2"`). An optional `symlink: keep` preserves the symlink in the workspace rather than following it to write the target file content.
 -| `{ upstream: name, path: "..." }` -- the same, with the repository and `rev` named once in `::upstreams` (below).
 
 ```text
@@ -115,12 +115,14 @@ The lock records the commit that `rev` resolved to. Like `cargo build`, `catasto
 
 `catasto lock` never resolves a revision, so it cannot pin a git source that has no recorded commit. Run `catasto sync` for that.
 
+When `path` points to a symlink in the repository, catasto follows it by default (up to 8 hops) and writes the resolved target file's content as a regular file. Symlinks pointing to an empty target, containing NUL bytes, absolute paths, or escaping the repository root are refused. Intermediate directory components may not be symlinks. With `symlink: keep`, the upstream entry must be a symlink, and catasto places the symlink itself into the workspace with its exact target text intact. Writes to the destination never write through an existing symlink, replacing it atomically instead.
+
 ==[ Drift ]
 
--| `modified` -- the file differs from its locked sha256.
+-| `modified` -- the file differs from its locked sha256, or its file type (regular file vs symlink) does not match the declaration.
 -| `missing` -- the file does not exist.
 -| `stale` -- the source differs from the locked sha256. Reported only for local sources that are readable; a git source is never consulted.
--| `unlocked` -- declared, but the lock has no entry, records another source, or lacks the commit of a git source.
+-| `unlocked` -- declared, but the lock has no entry, records another source or symlink mode, or lacks the commit of a git source.
 -| `orphaned` -- locked, but no longer declared.
 
 ==[ Workspace Layout ]

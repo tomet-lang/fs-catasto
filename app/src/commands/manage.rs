@@ -101,12 +101,16 @@ pub fn list(root: &Path, json: bool) -> Result<ExitCode> {
         let rows: Vec<_> = rows
             .iter()
             .map(|row| {
-                serde_json::json!({
+                let mut map = serde_json::json!({
                     "path": row.path,
                     "from": row.from,
                     "state": row.state.map_or("ok", |state| state.label()),
                     "commit": row.commit,
-                })
+                });
+                if let Some(symlink) = row.symlink {
+                    map["symlink"] = serde_json::to_value(symlink).unwrap();
+                }
+                map
             })
             .collect();
         println!("{}", serde_json::to_string_pretty(&rows)?);

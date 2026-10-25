@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::lockfile::{Lock, write_lock_selected};
 use crate::manifest::{Managed, Manifest, Source};
-use catasto_git::{Fetched, GitCache, resolve_url};
+use catasto_git::{Content, Fetched, GitCache, resolve_url};
 
 /// How `sync` treats git sources that the lock already pins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -71,7 +71,7 @@ pub fn sync_only(
                 commits.insert(managed.path.clone(), file.commit);
                 file.content
             }
-            local => read_local(root, &managed.path, local)?,
+            local => Content::File(read_local(root, &managed.path, local)?),
         };
         fetched.push((root.join(&managed.path), content));
     }
@@ -161,7 +161,10 @@ fn fetch_entry(
     lock: &Lock,
     managed: &Managed,
 ) -> Result<Fetched> {
-    let Source::Git { rev, path, .. } = &managed.source else {
+    let Source::Git {
+        rev, path, symlink, ..
+    } = &managed.source
+    else {
         unreachable!("only git sources are grouped by URL");
     };
     let pinned = match mode {
@@ -172,7 +175,7 @@ fn fetch_entry(
             .and_then(|locked| locked.commit.as_deref()),
     };
     cache
-        .fetch(url, rev, path, pinned)
+        .fetch(url, rev, path, pinned, (*symlink).into())
         .with_context(|| format!("source of {}", managed.path.display()))
 }
 
@@ -190,16 +193,61 @@ fn read_local(root: &Path, managed: &Path, source: &Source) -> Result<Vec<u8>> {
     std::fs::read(&file).with_context(|| format!("cannot read {}", file.display()))
 }
 
-fn write_all(files: Vec<(PathBuf, Vec<u8>)>) -> Result<()> {
+fn write_all(files: Vec<(PathBuf, Content)>) -> Result<()> {
     for (target, content) in files {
         if let Some(parent) = target.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("cannot create {}", parent.display()))?;
         }
-        std::fs::write(&target, content)
-            .with_context(|| format!("cannot write {}", target.display()))?;
+        match content {
+            Content::File(bytes) => {
+                write_file_replacing_symlink(&target, &bytes)?;
+            }
+            Content::Link(link_target) => {
+                write_symlink_atomic(&target, &link_target)?;
+            }
+        }
     }
     Ok(())
+}
+
+/// Writes `bytes` to `target` as a regular file.
+///
+/// A symlink at `target` is removed first, since writing would otherwise go
+/// through it into whatever it points at. A regular file is rewritten in
+/// place, which keeps its mode.
+fn write_file_replacing_symlink(target: &Path, bytes: &[u8]) -> Result<()> {
+    if std::fs::symlink_metadata(target).is_ok_and(|meta| meta.is_symlink()) {
+        std::fs::remove_file(target)
+            .with_context(|| format!("cannot replace the symlink {}", target.display()))?;
+    }
+    std::fs::write(target, bytes).with_context(|| format!("cannot write {}", target.display()))
+}
+
+#[cfg(unix)]
+fn write_symlink_atomic(target: &Path, link_target: &str) -> Result<()> {
+    use std::time::SystemTime;
+    let parent = target.parent().unwrap_or_else(|| Path::new("."));
+    let nonce = SystemTime::now()
+        .duration_since(SystemTime::UNIX_EPOCH)
+        .map_or(0, |d| d.as_nanos());
+    let temp_path = parent.join(format!(".catasto.symlink.{nonce}.tmp"));
+    let _ = std::fs::remove_file(&temp_path);
+    std::os::unix::fs::symlink(link_target, &temp_path)
+        .with_context(|| format!("cannot create temporary symlink for {}", target.display()))?;
+    if let Err(e) = std::fs::rename(&temp_path, target) {
+        let _ = std::fs::remove_file(&temp_path);
+        return Err(e).with_context(|| format!("cannot place symlink {}", target.display()));
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn write_symlink_atomic(target: &Path, _link_target: &str) -> Result<()> {
+    bail!(
+        "symlinks are not supported on this platform: cannot place {}",
+        target.display()
+    );
 }
 
 #[cfg(test)]
@@ -529,5 +577,177 @@ mod tests {
         );
         assert!(!fx.vault.join("vocab/w.tmt").exists());
         assert!(!fx.vault.join("catasto.lock").exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sync_symlink_follow_and_keep_and_switching() {
+        let repo = TestRepo::new();
+        repo.commit("target.txt", "real content");
+        repo.commit_symlink("link.txt", "target.txt");
+
+        let tmp = tempfile::tempdir().unwrap();
+        let vault = tmp.path().join("vault");
+        let cache = tmp.path().join("cache");
+        std::fs::create_dir_all(&vault).unwrap();
+
+        // 1. follow places the target's content as a regular file
+        std::fs::write(
+            vault.join("catasto.ctmt"),
+            format!(
+                "\"out.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\" }} }}",
+                repo.url()
+            ),
+        )
+        .unwrap();
+        sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+        let out = vault.join("out.txt");
+        let meta = std::fs::symlink_metadata(&out).unwrap();
+        assert!(meta.is_file());
+        assert!(!meta.is_symlink());
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "real content");
+        assert!(check(&vault).unwrap().is_ok());
+
+        // 2. switch from follow to keep: sync replaces destination with symlink
+        std::fs::write(
+            vault.join("catasto.ctmt"),
+            format!("\"out.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\", symlink: keep }} }}", repo.url()),
+        ).unwrap();
+        sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+        let meta = std::fs::symlink_metadata(&out).unwrap();
+        assert!(meta.is_symlink());
+        assert_eq!(
+            std::fs::read_link(&out).unwrap().to_str().unwrap(),
+            "target.txt"
+        );
+        assert!(check(&vault).unwrap().is_ok());
+
+        // 3. switch from keep to follow: sync replaces symlink with regular file
+        std::fs::write(
+            vault.join("catasto.ctmt"),
+            format!(
+                "\"out.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\" }} }}",
+                repo.url()
+            ),
+        )
+        .unwrap();
+        sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+        let meta = std::fs::symlink_metadata(&out).unwrap();
+        assert!(meta.is_file());
+        assert!(!meta.is_symlink());
+        assert_eq!(std::fs::read_to_string(&out).unwrap(), "real content");
+        assert!(check(&vault).unwrap().is_ok());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sync_follow_never_writes_through_destination_symlink() {
+        let repo = TestRepo::new();
+        repo.commit("src.txt", "new content from git");
+
+        let tmp = tempfile::tempdir().unwrap();
+        let vault = tmp.path().join("vault");
+        let cache = tmp.path().join("cache");
+        std::fs::create_dir_all(&vault).unwrap();
+
+        // A secret file
+        let victim = tmp.path().join("victim.txt");
+        std::fs::write(&victim, "victim original content").unwrap();
+
+        // Destination is currently a symlink pointing to victim
+        let dest = vault.join("dest.txt");
+        std::os::unix::fs::symlink(&victim, &dest).unwrap();
+
+        std::fs::write(
+            vault.join("catasto.ctmt"),
+            format!(
+                "\"dest.txt\": {{ source: {{ git: {:?}, rev: main, path: \"src.txt\" }} }}",
+                repo.url()
+            ),
+        )
+        .unwrap();
+
+        // Sync in follow mode
+        sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+        // The destination should now be a regular file with new content
+        let meta = std::fs::symlink_metadata(&dest).unwrap();
+        assert!(meta.is_file());
+        assert!(!meta.is_symlink());
+        assert_eq!(
+            std::fs::read_to_string(&dest).unwrap(),
+            "new content from git"
+        );
+
+        // The victim file pointed to by the symlink MUST NOT be modified!
+        assert_eq!(
+            std::fs::read_to_string(&victim).unwrap(),
+            "victim original content"
+        );
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sync_keeps_the_mode_of_an_existing_destination() {
+        use std::os::unix::fs::PermissionsExt;
+
+        let repo = TestRepo::new();
+        repo.commit("run.sh", "v1");
+
+        let tmp = tempfile::tempdir().unwrap();
+        let vault = tmp.path().join("vault");
+        let cache = tmp.path().join("cache");
+        std::fs::create_dir_all(&vault).unwrap();
+        std::fs::write(
+            vault.join("catasto.ctmt"),
+            format!(
+                "\"run.sh\": {{ source: {{ git: {:?}, rev: main, path: \"run.sh\" }} }}",
+                repo.url()
+            ),
+        )
+        .unwrap();
+        sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+        let dest = vault.join("run.sh");
+        std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o750)).unwrap();
+        std::fs::write(&dest, "edited").unwrap();
+        sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+        assert_eq!(std::fs::read_to_string(&dest).unwrap(), "v1");
+        let mode = std::fs::metadata(&dest).unwrap().permissions().mode();
+        assert_eq!(mode & 0o777, 0o750);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sync_bad_link_source_leaves_workspace_untouched() {
+        let repo = TestRepo::new();
+        repo.commit_symlink("loop_a", "loop_b");
+        repo.commit_symlink("loop_b", "loop_a");
+
+        let tmp = tempfile::tempdir().unwrap();
+        let vault = tmp.path().join("vault");
+        let cache = tmp.path().join("cache");
+        std::fs::create_dir_all(&vault).unwrap();
+
+        std::fs::write(
+            vault.join("catasto.ctmt"),
+            format!(
+                "\"out.txt\": {{ source: {{ git: {:?}, rev: main, path: \"loop_a\" }} }}",
+                repo.url()
+            ),
+        )
+        .unwrap();
+
+        let err = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap_err();
+        assert!(
+            format!("{err:#}").contains("symlink loop detected"),
+            "{err:#}"
+        );
+        assert!(!vault.join("out.txt").exists());
+        assert!(!vault.join("catasto.lock").exists());
     }
 }
