@@ -3,7 +3,7 @@
 use std::path::Path;
 use std::process::ExitCode;
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use catasto_core::{Lock, SourceText, UpstreamText};
 
 use crate::cli::{AddArgs, UpstreamCommand};
@@ -16,25 +16,31 @@ pub fn init(root: &Path) -> Result<ExitCode> {
 }
 
 pub fn add(root: &Path, args: &AddArgs) -> Result<ExitCode> {
+    let dest = args.dest.strip_prefix("./").unwrap_or(&args.dest);
+    let from = match &args.from {
+        Some(from) => from.clone(),
+        None => {
+            if args.local {
+                bail!("--local needs the path of the file to take it from");
+            }
+            dest.to_owned()
+        }
+    };
     let source = if let Some(name) = &args.upstream {
         SourceText::Upstream {
             name: name.clone(),
-            path: args.from.clone(),
+            path: from,
         }
     } else if let Some(git) = &args.git {
         SourceText::Git {
             git: git.clone(),
             rev: args.rev.clone(),
-            path: args.from.clone(),
+            path: from,
         }
     } else {
-        SourceText::Local {
-            path: args.from.clone(),
-        }
+        SourceText::Local { path: from }
     };
     catasto_core::add(root, &args.dest, &source, None)?;
-
-    let dest = args.dest.strip_prefix("./").unwrap_or(&args.dest);
     let lock = Lock::load(root)?;
     match lock
         .get(Path::new(dest))

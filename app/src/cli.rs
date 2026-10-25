@@ -37,6 +37,7 @@ pub enum Command {
     /// put back, so a failed `add` leaves nothing behind.
     #[command(after_help = "\
 Examples:
+  catasto add .envrc --upstream commonfiles
   catasto add docs/terms.tmt --upstream shared terms.tmt
   catasto add schema/writ.tmt --git https://example.com/v.git --rev v1 writ/writ.tmt
   catasto add notes/a.tmt --local ../shared/a.tmt")]
@@ -99,8 +100,9 @@ pub struct AddArgs {
     /// Where the file goes, relative to the workspace root.
     pub dest: String,
     /// Where the file is in the place it comes from: a path inside the
-    /// upstream, inside the repository, or on disk with --local.
-    pub from: String,
+    /// upstream, inside the repository, or on disk with --local. Defaults to
+    /// DEST (except with --local, which requires the path).
+    pub from: Option<String>,
     /// Take it from a place named in `::upstreams`.
     #[arg(long, value_name = "NAME")]
     pub upstream: Option<String>,

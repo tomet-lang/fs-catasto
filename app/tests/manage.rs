@@ -203,6 +203,58 @@ fn add_needs_to_know_where_from() {
 }
 
 #[test]
+fn add_defaults_path_to_dest_for_upstream_and_git_and_nested_dest() {
+    let w = World::new();
+    w.ready();
+
+    // --upstream without PATH defaults to dest
+    w.ok(&["add", "a.tmt", "--upstream", "shared"]);
+    assert_eq!(w.read("a.tmt"), "a one");
+    let manifest = w.read("catasto.ctmt");
+    assert!(manifest.contains("\"a.tmt\":"), "{manifest}");
+    assert!(manifest.contains("path: \"a.tmt\""), "{manifest}");
+    assert!(manifest.contains("upstream: shared"), "{manifest}");
+    let listed = w.ok(&["list"]);
+    assert!(listed.contains("shared:a.tmt"), "{listed}");
+
+    // nested dest (including leading ./) defaults to same nested path
+    w.ok(&["add", "./sub/b.tmt", "--upstream", "shared"]);
+    assert_eq!(w.read("sub/b.tmt"), "b one");
+    let manifest = w.read("catasto.ctmt");
+    assert!(manifest.contains("\"sub/b.tmt\":"), "{manifest}");
+    assert!(manifest.contains("path: \"sub/b.tmt\""), "{manifest}");
+    let listed = w.ok(&["list"]);
+    assert!(listed.contains("shared:sub/b.tmt"), "{listed}");
+
+    // --git without PATH defaults to dest
+    let w_git = World::new();
+    w_git.ok(&["init"]);
+    w_git.ok(&["add", "a.tmt", "--git", w_git.url(), "--rev", "main"]);
+    assert_eq!(w_git.read("a.tmt"), "a one");
+    let manifest_git = w_git.read("catasto.ctmt");
+    assert!(manifest_git.contains("path: \"a.tmt\""), "{manifest_git}");
+}
+
+#[test]
+fn add_with_local_requires_path_and_leaves_manifest_and_lock_untouched() {
+    let w = World::new();
+    w.ready();
+    w.ok(&["add", "a.tmt", "--upstream", "shared", "a.tmt"]);
+
+    let manifest_before = w.read("catasto.ctmt");
+    let lock_before = w.read("catasto.lock");
+
+    let error = w.fails(&["add", "local.tmt", "--local"]);
+    assert!(
+        error.contains("--local needs the path of the file to take it from"),
+        "{error}"
+    );
+    assert_eq!(w.read("catasto.ctmt"), manifest_before);
+    assert_eq!(w.read("catasto.lock"), lock_before);
+    assert!(!w.exists("local.tmt"));
+}
+
+#[test]
 fn list_says_json_and_how_a_file_stands() {
     let w = World::new();
     w.ready();

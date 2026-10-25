@@ -26,8 +26,8 @@ Just as a cadastre (*catasto*) records the boundaries, parcels, and ownership of
 ```bash
 catasto init                                    # create catasto.ctmt
 catasto upstream add NAME GIT [--rev R] [--root DIR]   # name a place files come from
-catasto add DEST --upstream NAME PATH           # take a file: declare it, fetch it, lock it
-catasto add DEST --git URL [--rev R] PATH       #   ... from a repository written out
+catasto add DEST --upstream NAME [PATH]         # take a file: declare it, fetch it, lock it
+catasto add DEST --git URL [--rev R] [PATH]     #   ... from a repository written out
 catasto add DEST --local PATH                   #   ... from a file on disk
 catasto list [--json]                           # every declared file, its source and its state
 catasto remove DEST [--delete]                  # stop managing a file
