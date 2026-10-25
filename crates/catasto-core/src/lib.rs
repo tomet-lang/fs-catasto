@@ -10,11 +10,13 @@
 //! repositories pinned to a commit.
 
 mod check;
-mod edit;
 mod lockfile;
 mod manage;
-mod manifest;
 mod sync;
+
+pub use catasto_manifest::edit;
+pub use catasto_manifest::lock;
+pub use catasto_manifest::manifest;
 
 pub use check::{CheckReport, Violation, ViolationKind, check};
 pub use edit::{SourceText, UpstreamText};

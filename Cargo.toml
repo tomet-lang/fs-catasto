@@ -5,6 +5,7 @@ members = [
   "crates/catasto-core",
   "crates/catasto-digest",
   "crates/catasto-git",
+  "crates/catasto-manifest",
 ]
 
 default-members = ["app"]
@@ -19,6 +20,7 @@ license = "MIT OR Apache-2.0"
 catasto-core = { path = "crates/catasto-core" }
 catasto-digest = { path = "crates/catasto-digest" }
 catasto-git = { path = "crates/catasto-git" }
+catasto-manifest = { path = "crates/catasto-manifest" }
 catasto-cli = { path = "app" }
 
 jobserver-gate = { git = "https://github.com/tomet-lang/jobserver-gate.git" }
@@ -38,14 +40,12 @@ tomet-workspace = { git = "https://github.com/tomet-lang/tomet.git" }
 #= Crates.io
 anyhow = "1"
 clap = { version = "4.6", features = ["derive"] }
-ignore = "0.4"
 mimalloc = { version = "0.1", default-features = false }
 rayon = "1"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11"
 tempfile = "3"
-walkdir = "2"
 
 [profile.release]
 opt-level = 3

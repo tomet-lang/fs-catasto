@@ -13,6 +13,7 @@ testing = ["dep:tempfile"]
 
 [dependencies]
 catasto-digest = { workspace = true }
+catasto-manifest = { workspace = true }
 
 #= Crates.io
 anyhow = { workspace = true }

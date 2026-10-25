@@ -1,6 +1,6 @@
 ::kind(api)
 
-::meta{crate: catasto-git, dependencies: list(catasto-digest), dependents: list(catasto-core)}
+::meta{crate: catasto-git, dependencies: list(catasto-digest, catasto-manifest), dependents: list(catasto-core)}
 
 =[catasto-git]
 

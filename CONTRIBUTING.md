@@ -29,6 +29,7 @@ Use the affected component as the scope:
 
 - **CLI**: `cli` (`app`)
 - **Core**: `core` (`crates/catasto-core`)
+- **Manifest**: `manifest` (`crates/catasto-manifest`)
 - **Git**: `git` (`crates/catasto-git`)
 - **Digest**: `digest` (`crates/catasto-digest`)
 - **Infra / Meta**: `nix`, `deps`, `docs`

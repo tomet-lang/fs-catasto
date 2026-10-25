@@ -48,9 +48,11 @@ use anyhow::{Result, bail};
 mod tests;
 mod types;
 mod upstream;
+pub mod url;
 
 pub use types::{Managed, Manifest, Source, Symlink};
 pub use upstream::{UpstreamInfo, upstreams_of};
+pub use url::{UrlKind, classify};
 
 /// File name of the manifest, relative to the workspace root.
 pub const MANIFEST_FILE: &str = "catasto.ctmt";
@@ -60,7 +62,7 @@ pub const MANIFEST_FILE: &str = "catasto.ctmt";
 /// The names catasto reads are exact. On a case-sensitive filesystem `Catasto.ctmt` would otherwise be read as
 /// "no manifest" without a word, while on a case-insensitive one it would work, so one tree would behave
 /// differently from one machine to the next.
-pub(crate) fn reject_misnamed(root: &Path, expected: &str) -> Result<()> {
+pub fn reject_misnamed(root: &Path, expected: &str) -> Result<()> {
     let Ok(entries) = std::fs::read_dir(root) else {
         return Ok(());
     };
@@ -74,7 +76,7 @@ pub(crate) fn reject_misnamed(root: &Path, expected: &str) -> Result<()> {
     Ok(())
 }
 
-pub(crate) fn is_inside_workspace(path: &Path) -> bool {
+pub fn is_inside_workspace(path: &Path) -> bool {
     !path.as_os_str().is_empty()
         && path
             .components()

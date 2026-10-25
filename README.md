@@ -117,7 +117,8 @@ When `path` points to a symlink in the repository, catasto follows it by default
 ## Workspace Layout
 
 - `app` (`catasto-cli`) -- Main CLI binary (`catasto`). Layer 3.
-- `crates/catasto-core` (`catasto-core`) -- Core library for filesystem schema parsing, directory rule evaluation, and lockfile verification. Layer 2.
+- `crates/catasto-core` (`catasto-core`) -- Core library for filesystem schema sync, check, manage, and lockfile verification. Layer 2.
+- `crates/catasto-manifest` (`catasto-manifest`) -- Manifest syntax, schema models, and AST/CST editing. Layer 1.
 - `crates/catasto-git` (`catasto-git`) -- Reads files out of git repositories through the system `git`, in a cache of bare clones. Layer 1.
 - `crates/catasto-digest` (`catasto-digest`) -- SHA-256 content hashing. Layer 0.
 

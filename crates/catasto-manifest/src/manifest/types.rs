@@ -86,15 +86,6 @@ impl Serialize for Symlink {
     }
 }
 
-impl From<Symlink> for catasto_git::SymlinkMode {
-    fn from(s: Symlink) -> Self {
-        match s {
-            Symlink::Follow => catasto_git::SymlinkMode::Follow,
-            Symlink::Keep => catasto_git::SymlinkMode::Keep,
-        }
-    }
-}
-
 /// Origin of a managed file.
 ///
 /// Written as a string for a local file, or a map for a git repository, so
@@ -233,7 +224,7 @@ pub(super) const NUMBER_REV: &str =
 
 /// Checks the part of a git source that an upstream also names.
 pub(super) fn check_git(git: &str, rev: &str) -> Result<(), String> {
-    catasto_git::classify(git)?;
+    crate::manifest::url::classify(git)?;
     if rev.is_empty() || rev.starts_with('-') {
         return Err(format!("invalid rev: {rev:?}"));
     }

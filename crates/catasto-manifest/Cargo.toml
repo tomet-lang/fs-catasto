@@ -1,0 +1,17 @@
+[package]
+name = "catasto-manifest"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Manifest syntax, schema models, and AST/CST editing for catasto."
+publish = false
+
+[dependencies]
+cotomet = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+anyhow = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

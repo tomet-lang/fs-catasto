@@ -10,16 +10,15 @@ publish = false
 [dependencies]
 catasto-digest = { workspace = true }
 catasto-git = { workspace = true }
+catasto-manifest = { workspace = true }
 jobserver-gate = { workspace = true }
 cotomet = { workspace = true }
 
 #= Crates.io
 anyhow = { workspace = true }
-ignore = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-walkdir = { workspace = true }
 
 [dev-dependencies]
 catasto-git = { workspace = true, features = ["testing"] }

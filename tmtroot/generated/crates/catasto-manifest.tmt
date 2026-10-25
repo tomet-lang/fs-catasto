@@ -1,0 +1,10 @@
+::kind(api)
+
+::meta{crate: catasto-manifest, dependencies: list(), dependents: list(catasto-core, catasto-git)}
+
+=[catasto-manifest]
+
+`catasto-manifest` -- manifest syntax, schema models, and AST/CST editing for catasto.
+
+Defines the structure and AST/CST manipulation of `catasto.ctmt` declarations,
+upstream maps, sources, symlink options, and content lockfiles.

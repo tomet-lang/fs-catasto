@@ -29,6 +29,15 @@ pub enum SymlinkMode {
     Keep,
 }
 
+impl From<catasto_manifest::manifest::Symlink> for SymlinkMode {
+    fn from(s: catasto_manifest::manifest::Symlink) -> Self {
+        match s {
+            catasto_manifest::manifest::Symlink::Follow => Self::Follow,
+            catasto_manifest::manifest::Symlink::Keep => Self::Keep,
+        }
+    }
+}
+
 /// Content read from a git repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Content {
