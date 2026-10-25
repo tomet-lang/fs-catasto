@@ -27,14 +27,24 @@ pub(crate) fn parse_ls_tree_output(stdout: &[u8]) -> Result<Vec<TreeEntry>> {
         if item.is_empty() {
             continue;
         }
-        let item_str = std::str::from_utf8(item).context("git ls-tree output is not valid UTF-8")?;
+        let item_str =
+            std::str::from_utf8(item).context("git ls-tree output is not valid UTF-8")?;
         let (meta, path) = item_str
             .split_once('\t')
             .context("invalid git ls-tree output: missing tab")?;
         let mut meta_parts = meta.split_whitespace();
-        let mode = meta_parts.next().context("missing mode in ls-tree")?.to_owned();
-        let kind = meta_parts.next().context("missing kind in ls-tree")?.to_owned();
-        let oid = meta_parts.next().context("missing oid in ls-tree")?.to_owned();
+        let mode = meta_parts
+            .next()
+            .context("missing mode in ls-tree")?
+            .to_owned();
+        let kind = meta_parts
+            .next()
+            .context("missing kind in ls-tree")?
+            .to_owned();
+        let oid = meta_parts
+            .next()
+            .context("missing oid in ls-tree")?
+            .to_owned();
         entries.push(TreeEntry {
             mode,
             kind,
@@ -50,8 +60,16 @@ pub(crate) fn parse_ls_tree_output(stdout: &[u8]) -> Result<Vec<TreeEntry>> {
 /// `commit` is always a full commit id (see `GitCache::read`), which names an
 /// immutable tree, so a cached entry can never go stale. The lock is not held
 /// while git runs.
-pub(crate) fn ls_tree_one(repo: &Path, commit: &str, path_in_repo: &str) -> Result<Option<TreeEntry>> {
-    let key = (repo.to_path_buf(), commit.to_owned(), path_in_repo.to_owned());
+pub(crate) fn ls_tree_one(
+    repo: &Path,
+    commit: &str,
+    path_in_repo: &str,
+) -> Result<Option<TreeEntry>> {
+    let key = (
+        repo.to_path_buf(),
+        commit.to_owned(),
+        path_in_repo.to_owned(),
+    );
     if let Some(cached) = LS_TREE_CACHE.lock().ok().and_then(|c| c.get(&key).cloned()) {
         return Ok(cached);
     }

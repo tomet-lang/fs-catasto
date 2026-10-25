@@ -48,7 +48,12 @@ impl TestRepo {
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(target, &link).unwrap();
         self.git(&["add", "--all"]);
-        self.git(&["commit", "--quiet", "-m", &format!("link {path} -> {target}")]);
+        self.git(&[
+            "commit",
+            "--quiet",
+            "-m",
+            &format!("link {path} -> {target}"),
+        ]);
         self.git(&["rev-parse", "HEAD"])
     }
 
