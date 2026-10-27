@@ -23,12 +23,17 @@ use scanner::{cut_lines, is_name_char, line_start, scan, scan_entries, splice};
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceText {
     /// `{ upstream: name, path: "..." }`
-    Upstream { name: String, path: String },
+    Upstream {
+        name: String,
+        path: String,
+        keep_symlink: bool,
+    },
     /// `{ git: "...", rev: ..., path: "..." }`
     Git {
         git: String,
         rev: String,
         path: String,
+        keep_symlink: bool,
     },
     /// `"relative/path"`
     Local { path: String },
@@ -194,15 +199,32 @@ pub fn upstream_is_used(text: &str, upstream: &str) -> Result<Vec<String>> {
 
 fn entry_text(dest: &str, source: &SourceText) -> String {
     let source = match source {
-        SourceText::Upstream { name, path } => {
-            format!("{{ upstream: {}, path: {} }}", scalar(name), quoted(path))
+        SourceText::Upstream {
+            name,
+            path,
+            keep_symlink,
+        } => {
+            let symlink = if *keep_symlink { ", symlink: keep" } else { "" };
+            format!(
+                "{{ upstream: {}, path: {}{symlink} }}",
+                scalar(name),
+                quoted(path)
+            )
         }
-        SourceText::Git { git, rev, path } => format!(
-            "{{ git: {}, rev: {}, path: {} }}",
-            quoted(git),
-            scalar(rev),
-            quoted(path)
-        ),
+        SourceText::Git {
+            git,
+            rev,
+            path,
+            keep_symlink,
+        } => {
+            let symlink = if *keep_symlink { ", symlink: keep" } else { "" };
+            format!(
+                "{{ git: {}, rev: {}, path: {}{symlink} }}",
+                quoted(git),
+                scalar(rev),
+                quoted(path)
+            )
+        }
         SourceText::Local { path } => quoted(path),
     };
     format!("{}: {{\n  source: {source}\n}}\n", quoted(dest))

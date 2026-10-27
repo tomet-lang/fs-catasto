@@ -115,6 +115,9 @@ pub struct AddArgs {
     /// The tag, branch or commit to read, with --git.
     #[arg(long, default_value = "main", requires = "git")]
     pub rev: String,
+    /// Place an upstream symlink as a symlink rather than following it.
+    #[arg(long)]
+    pub keep_symlink: bool,
 }
 
 #[derive(Subcommand)]

@@ -55,6 +55,18 @@ impl World {
         self.git(&["commit", "--quiet", "-m", content]);
     }
 
+    #[cfg(unix)]
+    fn commit_symlink(&self, path: &str, target: &str) {
+        let link = self.remote.join(path);
+        if let Some(parent) = link.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        let _ = std::fs::remove_file(&link);
+        std::os::unix::fs::symlink(target, &link).unwrap();
+        self.git(&["add", "--all"]);
+        self.git(&["commit", "--quiet", "-m", &format!("link {path} -> {target}")]);
+    }
+
     /// `catasto <args>` in the vault.
     fn run(&self, args: &[&str]) -> Output {
         Command::new(env!("CARGO_BIN_EXE_catasto"))
@@ -388,4 +400,42 @@ fn help_lists_the_commands() {
     ] {
         assert!(help.contains(command), "{command}: {help}");
     }
+}
+
+#[test]
+fn add_with_local_and_keep_symlink_is_rejected() {
+    let w = World::new();
+    w.ready();
+    std::fs::write(w.vault.join("local.txt"), "content").unwrap();
+    let error = w.fails(&["add", "link.txt", "local.txt", "--local", "--keep-symlink"]);
+    assert!(
+        error.contains("--local has no --keep-symlink option")
+            || error.contains("a local source has no such option"),
+        "{error}"
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn add_with_keep_symlink_e2e() {
+    let w = World::new();
+    w.ready();
+    w.commit_symlink("link.tmt", "a.tmt");
+
+    let out = w.ok(&["add", "link.tmt", "--upstream", "shared", "--keep-symlink"]);
+    assert!(out.contains("added link.tmt"));
+
+    let link_path = w.vault.join("link.tmt");
+    let meta = std::fs::symlink_metadata(&link_path).unwrap();
+    assert!(meta.is_symlink());
+    assert_eq!(
+        std::fs::read_link(&link_path).unwrap().to_str().unwrap(),
+        "a.tmt"
+    );
+
+    let manifest = w.read("catasto.ctmt");
+    assert!(manifest.contains("symlink: keep"));
+
+    let check = w.ok(&["check"]);
+    assert!(check.is_empty() || check.contains("ok"));
 }

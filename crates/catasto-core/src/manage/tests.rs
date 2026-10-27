@@ -36,6 +36,7 @@ impl Fixture {
         SourceText::Upstream {
             name: "t".into(),
             path: path.into(),
+            keep_symlink: false,
         }
     }
 
@@ -156,6 +157,7 @@ fn a_file_from_a_repository_written_out_and_a_local_file_are_added_too() {
             git: fx.repo.url(),
             rev: "main".into(),
             path: "a.tmt".into(),
+            keep_symlink: false,
         },
         Some(&fx.cache),
     )
@@ -202,6 +204,7 @@ fn an_upstream_that_is_not_named_is_refused_with_the_names_there_are() {
         &SourceText::Upstream {
             name: "nope".into(),
             path: "a.tmt".into(),
+            keep_symlink: false,
         },
         Some(&fx.cache),
     )
@@ -371,4 +374,65 @@ fn syncing_a_file_that_is_not_declared_is_refused() {
     )
     .unwrap_err();
     assert!(err.to_string().contains("not declared"), "{err}");
+}
+
+#[test]
+#[cfg(unix)]
+fn add_with_keep_symlink_writes_fetches_and_locks_a_link() {
+    let fx = Fixture::new();
+    fx.ready();
+    fx.repo.commit_symlink("link.tmt", "target.tmt");
+    fx.repo.commit("target.tmt", "target content");
+
+    add(
+        &fx.root,
+        "link.tmt",
+        &SourceText::Upstream {
+            name: "t".into(),
+            path: "link.tmt".into(),
+            keep_symlink: true,
+        },
+        Some(&fx.cache),
+    )
+    .unwrap();
+
+    let placed = fx.root.join("link.tmt");
+    let meta = std::fs::symlink_metadata(&placed).unwrap();
+    assert!(meta.is_symlink());
+    assert_eq!(
+        std::fs::read_link(&placed).unwrap().to_str().unwrap(),
+        "target.tmt"
+    );
+
+    let lock = Lock::load(&fx.root).unwrap();
+    let locked = lock.get(Path::new("link.tmt")).expect("locked");
+    assert!(locked.commit.is_some());
+    assert!(check(&fx.root).unwrap().is_ok());
+}
+
+#[test]
+#[cfg(unix)]
+fn add_with_keep_symlink_on_regular_file_fails_and_leaves_everything_as_it_was() {
+    let fx = Fixture::new();
+    fx.ready();
+    let manifest_before = fx.manifest();
+    let lock_before = std::fs::read_to_string(fx.root.join(LOCK_FILE)).ok();
+
+    let err = add(
+        &fx.root,
+        "not_a_link.tmt",
+        &SourceText::Upstream {
+            name: "t".into(),
+            path: "a.tmt".into(),
+            keep_symlink: true,
+        },
+        Some(&fx.cache),
+    )
+    .unwrap_err();
+
+    assert!(format!("{err:#}").contains("not a symlink"));
+    assert_eq!(fx.manifest(), manifest_before);
+    let lock_after = std::fs::read_to_string(fx.root.join(LOCK_FILE)).ok();
+    assert_eq!(lock_after, lock_before);
+    assert!(!fx.root.join("not_a_link.tmt").exists());
 }

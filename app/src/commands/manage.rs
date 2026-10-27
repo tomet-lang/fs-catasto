@@ -16,6 +16,9 @@ pub fn init(root: &Path) -> Result<ExitCode> {
 }
 
 pub fn add(root: &Path, args: &AddArgs) -> Result<ExitCode> {
+    if args.local && args.keep_symlink {
+        bail!("--local has no --keep-symlink option; a local source has no such option");
+    }
     let dest = args.dest.strip_prefix("./").unwrap_or(&args.dest);
     let from = match &args.from {
         Some(from) => from.clone(),
@@ -30,12 +33,14 @@ pub fn add(root: &Path, args: &AddArgs) -> Result<ExitCode> {
         SourceText::Upstream {
             name: name.clone(),
             path: from,
+            keep_symlink: args.keep_symlink,
         }
     } else if let Some(git) = &args.git {
         SourceText::Git {
             git: git.clone(),
             rev: args.rev.clone(),
             path: from,
+            keep_symlink: args.keep_symlink,
         }
     } else {
         SourceText::Local { path: from }

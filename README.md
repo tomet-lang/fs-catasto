@@ -15,8 +15,8 @@ Just as a cadastre (*catasto*) records the boundaries, parcels, and ownership of
 ```bash
 catasto init                                    # create catasto.ctmt
 catasto upstream add NAME GIT [--rev R] [--root DIR]   # name a place files come from
-catasto add DEST --upstream NAME [PATH]         # take a file: declare it, fetch it, lock it
-catasto add DEST --git URL [--rev R] [PATH]     #   ... from a repository written out
+catasto add DEST --upstream NAME [PATH] [--keep-symlink] # take a file: declare it, fetch it, lock it
+catasto add DEST --git URL [--rev R] [PATH] [--keep-symlink] #   ... from a repository written out
 catasto add DEST --local PATH                   #   ... from a file on disk
 catasto list [--json]                           # every declared file, its source and its state
 catasto remove DEST [--delete]                  # stop managing a file
@@ -40,7 +40,7 @@ catasto check
 
 That writes `catasto.ctmt` and `catasto.lock`, and the file itself. Commit the three. A fresh clone has the file already; `catasto check` says whether it is as locked, and `catasto sync` brings it back if not.
 
-`add` declares the file and reads it from the place, at the commit its `rev` points at now; the other files and what the lock says about them stay as they are. If the file cannot be read, the manifest is put back as it was. `remove` forgets the declaration and the lock entry, and leaves the file on disk unless `--delete`.
+`add` declares the file and reads it from the place, at the commit its `rev` points at now; the other files and what the lock says about them stay as they are. If the file cannot be read, the manifest is put back as it was. With `--keep-symlink` on an upstream or git source, an upstream symlink is placed as a symlink rather than following it to the target file. `remove` forgets the declaration and the lock entry, and leaves the file on disk unless `--delete`.
 
 The commands edit `catasto.ctmt` without rewriting it: comments, order and layout stay, a new entry goes after the last, and the result is read again before it is saved, so an edit that would leave a manifest that does not load is refused. You can also write the file by hand, as shown under Files.
 

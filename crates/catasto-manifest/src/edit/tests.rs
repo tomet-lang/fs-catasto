@@ -20,6 +20,7 @@ fn up(name: &str, path: &str) -> SourceText {
     SourceText::Upstream {
         name: name.into(),
         path: path.into(),
+        keep_symlink: false,
     }
 }
 
@@ -215,4 +216,55 @@ fn a_name_with_punctuation_is_refused() {
     )
     .unwrap_err();
     assert!(err.to_string().contains("upstream name"), "{err}");
+}
+
+#[test]
+fn entry_text_with_and_without_keep_symlink() {
+    let upstream_follow = SourceText::Upstream {
+        name: "commonfiles".into(),
+        path: "CLAUDE.md".into(),
+        keep_symlink: false,
+    };
+    let upstream_keep = SourceText::Upstream {
+        name: "commonfiles".into(),
+        path: "CLAUDE.md".into(),
+        keep_symlink: true,
+    };
+    assert_eq!(
+        entry_text("CLAUDE.md", &upstream_follow),
+        "\"CLAUDE.md\": {\n  source: { upstream: commonfiles, path: \"CLAUDE.md\" }\n}\n"
+    );
+    assert_eq!(
+        entry_text("CLAUDE.md", &upstream_keep),
+        "\"CLAUDE.md\": {\n  source: { upstream: commonfiles, path: \"CLAUDE.md\", symlink: keep }\n}\n"
+    );
+
+    let git_follow = SourceText::Git {
+        git: "https://example.com/repo.git".into(),
+        rev: "main".into(),
+        path: "bin/tool".into(),
+        keep_symlink: false,
+    };
+    let git_keep = SourceText::Git {
+        git: "https://example.com/repo.git".into(),
+        rev: "main".into(),
+        path: "bin/tool".into(),
+        keep_symlink: true,
+    };
+    assert_eq!(
+        entry_text("bin/tool", &git_follow),
+        "\"bin/tool\": {\n  source: { git: \"https://example.com/repo.git\", rev: main, path: \"bin/tool\" }\n}\n"
+    );
+    assert_eq!(
+        entry_text("bin/tool", &git_keep),
+        "\"bin/tool\": {\n  source: { git: \"https://example.com/repo.git\", rev: main, path: \"bin/tool\", symlink: keep }\n}\n"
+    );
+
+    // Verify added entry with symlink: keep parses cleanly
+    let text = add_entry(VOCAB, "link.tmt", &SourceText::Upstream {
+        name: "vocabularies".into(),
+        path: "rust/rust.tmt".into(),
+        keep_symlink: true,
+    }).unwrap();
+    assert!(Manifest::parse(&text).is_ok());
 }
