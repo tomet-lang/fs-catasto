@@ -14,7 +14,7 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    #= Rust
+    # --- Rust ---
     fenix = {
       url = "github:nix-community/fenix";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -23,9 +23,36 @@
       url = "github:ipetkov/crane";
     };
 
-    #= Tool
-    # sisho brings tomet, twrit and tomet-shelf for the dev shell.
-    sisho.url = "github:tomet-lang/sisho";
+    # --- Tools ---
+    sisho = {
+      url = "github:tomet-lang/sisho";
+      inputs.tomet.follows = "";
+      inputs.twrit.follows = "";
+      inputs.tomet-shelf.follows = "";
+      inputs.sisho-desk.follows = "";
+      inputs.catasto.follows = "";
+    };
+    tomet = {
+      url = "github:tomet-lang/tomet";
+      inputs.twrit.follows = "";
+      inputs.tomet-shelf.follows = "";
+      inputs.catasto.follows = "";
+      inputs.sisho.follows = "";
+    };
+    twrit = {
+      url = "github:tomet-lang/twrit";
+      inputs.tomet.follows = "";
+      inputs.tomet-shelf.follows = "";
+      inputs.catasto.follows = "";
+      inputs.sisho.follows = "";
+    };
+    tomet-shelf = {
+      url = "github:tomet-lang/tomet-shelf";
+      inputs.tomet.follows = "";
+      inputs.twrit.follows = "";
+      inputs.catasto.follows = "";
+      inputs.sisho.follows = "";
+    };
   };
 
   outputs = inputs: import ./nix inputs;

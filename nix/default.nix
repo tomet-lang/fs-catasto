@@ -17,8 +17,10 @@ flake-parts.lib.mkFlake { inherit inputs; } {
     let
       system = pkgs.stdenv.hostPlatform.system;
       craneLib = inputs.crane.mkLib pkgs;
-      sisho = inputs.sisho.packages.${system};
-      sishoLib = inputs.sisho.legacyPackages.${system};
+      tometPkgs = inputs.tomet.packages.${system};
+      twritPkgs = inputs.twrit.packages.${system};
+      shelfPkgs = inputs.tomet-shelf.packages.${system};
+      sishoPkgs = inputs.sisho.packages.${system};
     in
     {
       packages = rec {
@@ -37,15 +39,20 @@ flake-parts.lib.mkFlake { inherit inputs; } {
       devShells.default = pkgs.callPackage ./dev.nix {
         inherit inputs;
         fenix = inputs.fenix.packages.${system};
-        tools = sishoLib.combine [
-          sisho.toolchain
-          sisho.tomet-lsp
-          sisho.tomet-shelf
-        ];
+        tools = pkgs.symlinkJoin {
+          name = "tomet-toolchain";
+          paths = [
+            sishoPkgs.sisho
+            tometPkgs.tomet
+            tometPkgs.tomet-lsp
+            twritPkgs.twrit
+            shelfPkgs.tomet-shelf
+          ];
+        };
       };
 
       treefmt = import ./formatter.nix {
-        inherit (sisho) tomet;
+        inherit (tometPkgs) tomet;
       };
     };
 }
