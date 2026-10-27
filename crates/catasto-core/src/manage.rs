@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 
 use crate::check::{ViolationKind, check};
+pub use crate::edit::AddOutcome;
 use crate::edit::{self, SourceText, UpstreamText};
 use crate::lockfile::{LOCK_FILE, Lock};
 use crate::manifest::{
@@ -54,10 +55,17 @@ pub fn init(root: &Path) -> Result<PathBuf> {
     Ok(file)
 }
 
-/// Declares `dest` with `source`, fetches it and locks it. The other files and
-/// what the lock says about them are left alone. If the fetch fails, so does
-/// the declaration: the manifest is put back.
-pub fn add(root: &Path, dest: &str, source: &SourceText, cache_dir: Option<&Path>) -> Result<()> {
+/// Declares `dest` with `source`, fetches it and locks it. If `force`, replaces
+/// the source of an existing declaration. The other files and what the lock says
+/// about them are left alone. If the fetch fails, so does the declaration: the
+/// manifest is put back.
+pub fn add(
+    root: &Path,
+    dest: &str,
+    source: &SourceText,
+    force: bool,
+    cache_dir: Option<&Path>,
+) -> Result<AddOutcome> {
     let dest = clean_dest(dest);
     if let SourceText::Upstream { name, .. } = source {
         let known = upstream_list(root)?;
@@ -74,13 +82,18 @@ pub fn add(root: &Path, dest: &str, source: &SourceText, cache_dir: Option<&Path
             bail!("unknown upstream `{name}` ({have}); name one with `catasto upstream add`");
         }
     }
-    let before = edit_manifest(root, |text| edit::add_entry(text, &dest, source))?;
+    let mut outcome = AddOutcome::Added;
+    let before = edit_manifest(root, |text| {
+        let (new_text, out) = edit::add_or_replace_entry(text, &dest, source, force)?;
+        outcome = out;
+        Ok(new_text)
+    })?;
     let result = sync_only(root, SyncMode::Locked, cache_dir, &[PathBuf::from(&dest)]);
     if let Err(error) = result {
         write_atomic(&root.join(MANIFEST_FILE), &before)?;
         return Err(error.context(format!("could not add {dest}")));
     }
-    Ok(())
+    Ok(outcome)
 }
 
 /// Undeclares `dest` and forgets what the lock says about it. The file stays on

@@ -268,3 +268,70 @@ fn entry_text_with_and_without_keep_symlink() {
     }).unwrap();
     assert!(Manifest::parse(&text).is_ok());
 }
+
+#[test]
+fn add_or_replace_entry_keeps_position_comment_and_extra_fields() {
+    let manifest = "\
+// A comment before the entries
+\"first.tmt\": {
+  source: \"old/first.tmt\"
+}
+
+// A comment on the target entry
+\"target.tmt\": {
+  source: \"old/target.tmt\",
+  extra: \"preserve-me\"
+}
+
+// A comment on the third entry
+\"third.tmt\": {
+  source: \"old/third.tmt\"
+}
+";
+
+    let new_source = SourceText::Upstream {
+        name: "vocabularies".into(),
+        path: "new/target.tmt".into(),
+        keep_symlink: false,
+    };
+
+    // 1. without force: fails with AlreadyDeclared
+    let err = add_or_replace_entry(manifest, "target.tmt", &new_source, false).unwrap_err();
+    let already = err.downcast_ref::<AlreadyDeclared>().expect("downcast to AlreadyDeclared");
+    assert_eq!(already.dest, "target.tmt");
+    assert_eq!(
+        err.to_string(),
+        "target.tmt is already declared (use --force to replace its source)"
+    );
+
+    // 2. with force: replaces source and keeps position, comment and extra field
+    let (replaced_text, outcome) =
+        add_or_replace_entry(manifest, "target.tmt", &new_source, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(
+        replaced_text,
+        "\
+// A comment before the entries
+\"first.tmt\": {
+  source: \"old/first.tmt\"
+}
+
+// A comment on the target entry
+\"target.tmt\": {
+  source: { upstream: vocabularies, path: \"new/target.tmt\" },
+  extra: \"preserve-me\"
+}
+
+// A comment on the third entry
+\"third.tmt\": {
+  source: \"old/third.tmt\"
+}
+"
+    );
+
+    // 3. replacing with an equal source returns the same text (Unchanged)
+    let (unchanged_text, outcome) =
+        add_or_replace_entry(&replaced_text, "target.tmt", &new_source, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Unchanged);
+    assert_eq!(unchanged_text, replaced_text);
+}

@@ -439,3 +439,31 @@ fn add_with_keep_symlink_e2e() {
     let check = w.ok(&["check"]);
     assert!(check.is_empty() || check.contains("ok"));
 }
+
+#[test]
+fn add_force_cli_exit_codes_and_messages() {
+    let w = World::new();
+    w.ready();
+
+    // 1. First add: exit code 0, prints "added ..."
+    let out = w.ok(&["add", "a.tmt", "--upstream", "shared", "a.tmt"]);
+    assert!(out.starts_with("added a.tmt"), "{out}");
+
+    // 2. Second add without --force: exit code 3, error on stderr
+    let output = w.run(&["add", "a.tmt", "--upstream", "shared", "a.tmt"]);
+    assert_eq!(output.status.code(), Some(3));
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        err.contains("a.tmt is already declared (use --force to replace its source)"),
+        "{err}"
+    );
+
+    // 3. Add with --force and exact same source: exit code 0, prints "a.tmt: declared as given"
+    let out = w.ok(&["add", "a.tmt", "--upstream", "shared", "a.tmt", "--force"]);
+    assert!(out.contains("a.tmt: declared as given"), "{out}");
+
+    // 4. Add with --force and different source: exit code 0, prints "replaced a.tmt"
+    let out = w.ok(&["add", "a.tmt", "--upstream", "shared", "sub/b.tmt", "--force"]);
+    assert!(out.starts_with("replaced a.tmt"), "{out}");
+    assert_eq!(w.read("a.tmt"), "b one");
+}

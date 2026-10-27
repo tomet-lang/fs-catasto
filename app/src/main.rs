@@ -16,7 +16,11 @@ fn main() -> ExitCode {
         Ok(code) => code,
         Err(e) => {
             eprintln!("catasto: {e:#}");
-            ExitCode::FAILURE
+            if e.downcast_ref::<catasto_core::AlreadyDeclared>().is_some() {
+                ExitCode::from(3)
+            } else {
+                ExitCode::FAILURE
+            }
         }
     }
 }

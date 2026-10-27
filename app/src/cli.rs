@@ -35,6 +35,9 @@ pub enum Command {
     ///
     /// The other files stay where they are. If the fetch fails the manifest is
     /// put back, so a failed `add` leaves nothing behind.
+    ///
+    /// Refuses with exit code 3 if DEST is already declared; use --force to
+    /// replace its source.
     #[command(after_help = "\
 Examples:
   catasto add .envrc --upstream commonfiles
@@ -118,6 +121,9 @@ pub struct AddArgs {
     /// Place an upstream symlink as a symlink rather than following it.
     #[arg(long)]
     pub keep_symlink: bool,
+    /// Declare DEST with the given source whether or not it is declared.
+    #[arg(long)]
+    pub force: bool,
 }
 
 #[derive(Subcommand)]

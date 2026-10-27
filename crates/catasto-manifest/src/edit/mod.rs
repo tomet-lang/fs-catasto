@@ -47,12 +47,73 @@ pub struct UpstreamText {
     pub root: Option<String>,
 }
 
-/// Declares `dest` with `source`, after the last entry.
-pub fn add_entry(text: &str, dest: &str, source: &SourceText) -> Result<String> {
-    let layout = scan(text)?;
-    if layout.entries.iter().any(|entry| entry.key == dest) {
-        bail!("{dest} is already declared");
+/// The outcome of declaring an entry in the manifest.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum AddOutcome {
+    /// A new entry was added.
+    Added,
+    /// An existing entry's source was replaced.
+    Replaced,
+    /// The entry already had the given source; the manifest was unchanged.
+    Unchanged,
+}
+
+/// An entry is already declared in the manifest.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AlreadyDeclared {
+    pub dest: String,
+}
+
+impl std::fmt::Display for AlreadyDeclared {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "{} is already declared (use --force to replace its source)",
+            self.dest
+        )
     }
+}
+
+impl std::error::Error for AlreadyDeclared {}
+
+/// Declares `dest` with `source`, after the last entry, or replaces its source if `force`.
+pub fn add_or_replace_entry(
+    text: &str,
+    dest: &str,
+    source: &SourceText,
+    force: bool,
+) -> Result<(String, AddOutcome)> {
+    let layout = scan(text)?;
+    if let Some(existing) = layout.entries.iter().find(|entry| entry.key == dest) {
+        if !force {
+            return Err(anyhow::Error::new(AlreadyDeclared {
+                dest: dest.to_owned(),
+            }));
+        }
+        let val_span = existing.value.clone();
+        let value_str = &text[val_span.clone()];
+        let open_brace = value_str
+            .find('{')
+            .ok_or_else(|| anyhow!("malformed entry for {dest}: missing `{{`"))?;
+        let close_brace = value_str
+            .rfind('}')
+            .ok_or_else(|| anyhow!("malformed entry for {dest}: missing `}}`"))?;
+        let inner_start = val_span.start + open_brace + 1;
+        let inner_end = val_span.start + close_brace;
+        let fields = scan_entries(text, inner_start..inner_end)?;
+        let source_field = fields
+            .iter()
+            .find(|f| f.key == "source")
+            .ok_or_else(|| anyhow!("entry {dest} has no `source` field to replace"))?;
+
+        let new_source = source_value_text(source);
+        if text[source_field.value.clone()] == new_source {
+            return Ok((text.to_owned(), AddOutcome::Unchanged));
+        }
+        let new_text = splice(text, source_field.value.clone(), &new_source);
+        return Ok((new_text, AddOutcome::Replaced));
+    }
+
     let mut out = text.trim_end().to_owned();
     if !out.empty_or_ends_with_newline() {
         out.push('\n');
@@ -63,7 +124,12 @@ pub fn add_entry(text: &str, dest: &str, source: &SourceText) -> Result<String> 
         out.push('\n');
     }
     out.push_str(&entry_text(dest, source));
-    Ok(out)
+    Ok((out, AddOutcome::Added))
+}
+
+/// Declares `dest` with `source`, after the last entry.
+pub fn add_entry(text: &str, dest: &str, source: &SourceText) -> Result<String> {
+    add_or_replace_entry(text, dest, source, false).map(|(text, _)| text)
 }
 
 trait EmptyOrNewline {
@@ -197,8 +263,8 @@ pub fn upstream_is_used(text: &str, upstream: &str) -> Result<Vec<String>> {
     Ok(users)
 }
 
-fn entry_text(dest: &str, source: &SourceText) -> String {
-    let source = match source {
+fn source_value_text(source: &SourceText) -> String {
+    match source {
         SourceText::Upstream {
             name,
             path,
@@ -226,7 +292,11 @@ fn entry_text(dest: &str, source: &SourceText) -> String {
             )
         }
         SourceText::Local { path } => quoted(path),
-    };
+    }
+}
+
+fn entry_text(dest: &str, source: &SourceText) -> String {
+    let source = source_value_text(source);
     format!("{}: {{\n  source: {source}\n}}\n", quoted(dest))
 }
 

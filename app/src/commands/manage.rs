@@ -45,14 +45,19 @@ pub fn add(root: &Path, args: &AddArgs) -> Result<ExitCode> {
     } else {
         SourceText::Local { path: from }
     };
-    catasto_core::add(root, &args.dest, &source, None)?;
+    let outcome = catasto_core::add(root, &args.dest, &source, args.force, None)?;
     let lock = Lock::load(root)?;
-    match lock
+    let suffix = match lock
         .get(Path::new(dest))
         .and_then(|locked| locked.commit.as_deref())
     {
-        Some(commit) => println!("added {dest}, locked at {}", short(commit)),
-        None => println!("added {dest}"),
+        Some(commit) => format!(", locked at {}", short(commit)),
+        None => String::new(),
+    };
+    match outcome {
+        catasto_core::AddOutcome::Added => println!("added {dest}{suffix}"),
+        catasto_core::AddOutcome::Replaced => println!("replaced {dest}{suffix}"),
+        catasto_core::AddOutcome::Unchanged => println!("{dest}: declared as given"),
     }
     Ok(ExitCode::SUCCESS)
 }

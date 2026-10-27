@@ -1,4 +1,5 @@
 use super::*;
+use crate::AlreadyDeclared;
 use catasto_git::testing::TestRepo;
 
 struct Fixture {
@@ -40,8 +41,12 @@ impl Fixture {
         }
     }
 
-    fn add(&self, dest: &str, path: &str) -> Result<()> {
-        add(&self.root, dest, &self.via(path), Some(&self.cache))
+    fn add(&self, dest: &str, path: &str) -> Result<AddOutcome> {
+        add(&self.root, dest, &self.via(path), false, Some(&self.cache))
+    }
+
+    fn add_force(&self, dest: &str, path: &str) -> Result<AddOutcome> {
+        add(&self.root, dest, &self.via(path), true, Some(&self.cache))
     }
 
     fn read(&self, path: &str) -> String {
@@ -159,6 +164,7 @@ fn a_file_from_a_repository_written_out_and_a_local_file_are_added_too() {
             path: "a.tmt".into(),
             keep_symlink: false,
         },
+        false,
         Some(&fx.cache),
     )
     .unwrap();
@@ -170,6 +176,7 @@ fn a_file_from_a_repository_written_out_and_a_local_file_are_added_too() {
         &SourceText::Local {
             path: "../shared/l.tmt".into(),
         },
+        false,
         Some(&fx.cache),
     )
     .unwrap();
@@ -206,6 +213,7 @@ fn an_upstream_that_is_not_named_is_refused_with_the_names_there_are() {
             path: "a.tmt".into(),
             keep_symlink: false,
         },
+        false,
         Some(&fx.cache),
     )
     .unwrap_err();
@@ -225,7 +233,12 @@ fn adding_a_declared_path_again_is_refused() {
     fx.add("a.tmt", "a.tmt").unwrap();
     let before = fx.manifest();
     let err = fx.add("a.tmt", "a.tmt").unwrap_err();
-    assert!(err.to_string().contains("already declared"), "{err}");
+    let already = err.downcast_ref::<AlreadyDeclared>().expect("AlreadyDeclared");
+    assert_eq!(already.dest, "a.tmt");
+    assert!(
+        err.to_string().contains("a.tmt is already declared (use --force to replace its source)"),
+        "{err}"
+    );
     assert_eq!(fx.manifest(), before);
 }
 
@@ -392,6 +405,7 @@ fn add_with_keep_symlink_writes_fetches_and_locks_a_link() {
             path: "link.tmt".into(),
             keep_symlink: true,
         },
+        false,
         Some(&fx.cache),
     )
     .unwrap();
@@ -426,6 +440,7 @@ fn add_with_keep_symlink_on_regular_file_fails_and_leaves_everything_as_it_was()
             path: "a.tmt".into(),
             keep_symlink: true,
         },
+        false,
         Some(&fx.cache),
     )
     .unwrap_err();
@@ -435,4 +450,43 @@ fn add_with_keep_symlink_on_regular_file_fails_and_leaves_everything_as_it_was()
     let lock_after = std::fs::read_to_string(fx.root.join(LOCK_FILE)).ok();
     assert_eq!(lock_after, lock_before);
     assert!(!fx.root.join("not_a_link.tmt").exists());
+}
+
+#[test]
+fn add_force_outcomes_and_guarantees() {
+    let fx = Fixture::new();
+    fx.ready();
+
+    // 1. Added
+    let outcome = fx.add("docs/file.tmt", "a.tmt").unwrap();
+    assert_eq!(outcome, AddOutcome::Added);
+    assert_eq!(fx.read("docs/file.tmt"), "a one");
+
+    // 2. Unchanged when replaced with the exact same source
+    let manifest_before = fx.manifest();
+    let outcome = fx.add_force("docs/file.tmt", "a.tmt").unwrap();
+    assert_eq!(outcome, AddOutcome::Unchanged);
+    assert_eq!(fx.manifest(), manifest_before);
+
+    // 3. Replaced when given a different source
+    let outcome = fx.add_force("docs/file.tmt", "sub/b.tmt").unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(fx.read("docs/file.tmt"), "b one");
+    assert!(check(&fx.root).unwrap().is_ok());
+
+    // 4. Failing fetch on a --force replace leaves manifest, lock and file as they were
+    let manifest_before = fx.manifest();
+    let lock_before = std::fs::read_to_string(fx.root.join(LOCK_FILE)).unwrap();
+    let file_before = fx.read("docs/file.tmt");
+
+    let err = fx.add_force("docs/file.tmt", "no/such/file.tmt").unwrap_err();
+    assert!(format!("{err:#}").contains("could not add"));
+
+    assert_eq!(fx.manifest(), manifest_before);
+    assert_eq!(
+        std::fs::read_to_string(fx.root.join(LOCK_FILE)).unwrap(),
+        lock_before
+    );
+    assert_eq!(fx.read("docs/file.tmt"), file_before);
+    assert!(check(&fx.root).unwrap().is_ok());
 }
