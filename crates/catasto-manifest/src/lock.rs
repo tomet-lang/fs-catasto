@@ -22,6 +22,14 @@ pub struct Lock {
     pub locked: Vec<Locked>,
 }
 
+/// Special mode for a locked file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum LockMode {
+    /// File is executable (`100755` in git).
+    Executable,
+}
+
 /// One locked file.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locked {
@@ -33,6 +41,8 @@ pub struct Locked {
     pub sha256: String,
     /// Full commit id the file was read at. Present exactly for git sources.
     pub commit: Option<String>,
+    /// Special mode of the file, absent for normal files.
+    pub mode: Option<LockMode>,
 }
 
 /// The JSON document.
@@ -51,6 +61,8 @@ struct LockedBody {
     source: Source,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     commit: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    mode: Option<LockMode>,
 }
 
 impl Lock {
@@ -97,6 +109,7 @@ impl Lock {
                     source: body.source,
                     sha256: body.sha256,
                     commit: body.commit,
+                    mode: body.mode,
                 })
                 .collect(),
         ))
@@ -116,6 +129,7 @@ impl Lock {
                     sha256: locked.sha256.clone(),
                     source: locked.source.clone(),
                     commit: locked.commit.clone(),
+                    mode: locked.mode,
                 },
             );
         }

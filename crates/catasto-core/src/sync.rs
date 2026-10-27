@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::lockfile::{Lock, write_lock_selected_with_hashes};
+use crate::lockfile::{Lock, LockMode, write_lock_selected_with_hashes};
 use crate::manifest::{Managed, Manifest, Source};
 use catasto_git::{Content, Fetched, GitCache, resolve_url};
 
@@ -46,6 +46,8 @@ pub struct PlannedFile {
     pub commit: Option<String>,
     /// The canonical source from the manifest.
     pub source: Source,
+    /// Whether the file is executable (`100755` in git).
+    pub executable: bool,
 }
 
 /// A plan of changes `sync` would write.
@@ -83,14 +85,18 @@ pub fn plan_sync(
         if !selected(&managed.path) {
             continue;
         }
-        let (content, commit) = match &managed.source {
+        let (content, commit, executable) = match &managed.source {
             Source::Git { .. } => {
                 let file = fetched_git[index]
                     .take()
                     .expect("every git source was fetched")?;
-                (file.content, Some(file.commit))
+                (file.content, Some(file.commit), file.executable)
             }
-            local => (Content::File(read_local(root, &managed.path, local)?), None),
+            local => (
+                Content::File(read_local(root, &managed.path, local)?),
+                None,
+                false,
+            ),
         };
         files.push(PlannedFile {
             path: managed.path.clone(),
@@ -98,6 +104,7 @@ pub fn plan_sync(
             content,
             commit,
             source: managed.source.clone(),
+            executable,
         });
     }
 
@@ -120,6 +127,7 @@ pub fn sync_only(
 ) -> Result<Lock> {
     let plan = plan_sync(root, mode, cache_dir, only)?;
     let mut commits = HashMap::new();
+    let mut modes = HashMap::new();
     let mut hashes = HashMap::new();
     let mut fetched = Vec::with_capacity(plan.files.len());
 
@@ -127,17 +135,37 @@ pub fn sync_only(
         if let Some(commit) = &file.commit {
             commits.insert(file.path.clone(), commit.clone());
         }
+        if file.executable {
+            modes.insert(file.path.clone(), LockMode::Executable);
+        }
         let hash = match &file.content {
             Content::File(bytes) => catasto_digest::sha256_hex(bytes),
             Content::Link(link_target) => catasto_digest::sha256_hex(link_target.as_bytes()),
         };
         hashes.insert(file.path.clone(), hash);
-        fetched.push((file.destination.clone(), file.content.clone()));
+        let was_executable = plan
+            .lock
+            .get(&file.path)
+            .is_some_and(|l| l.mode == Some(LockMode::Executable));
+        fetched.push(SyncItem {
+            destination: file.destination.clone(),
+            content: file.content.clone(),
+            executable: file.executable,
+            was_executable,
+        });
     }
 
     write_all(fetched)?;
     let selected = |path: &Path| only.is_empty() || only.iter().any(|p| p == path);
-    write_lock_selected_with_hashes(root, plan.manifest, &commits, &plan.lock, &selected, &hashes)
+    write_lock_selected_with_hashes(
+        root,
+        plan.manifest,
+        &commits,
+        &modes,
+        &plan.lock,
+        &selected,
+        &hashes,
+    )
 }
 
 /// What `sync --dry-run` would do.
@@ -354,21 +382,59 @@ fn read_local(root: &Path, managed: &Path, source: &Source) -> Result<Vec<u8>> {
     std::fs::read(&file).with_context(|| format!("cannot read {}", file.display()))
 }
 
-fn write_all(files: Vec<(PathBuf, Content)>) -> Result<()> {
-    for (target, content) in files {
-        if let Some(parent) = target.parent() {
+struct SyncItem {
+    destination: PathBuf,
+    content: Content,
+    executable: bool,
+    was_executable: bool,
+}
+
+fn write_all(files: Vec<SyncItem>) -> Result<()> {
+    for file in files {
+        if let Some(parent) = file.destination.parent() {
             std::fs::create_dir_all(parent)
                 .with_context(|| format!("cannot create {}", parent.display()))?;
         }
-        match content {
+        match file.content {
             Content::File(bytes) => {
-                write_file_replacing_symlink(&target, &bytes)?;
+                write_file_replacing_symlink(&file.destination, &bytes)?;
+                apply_executable_mode(&file.destination, file.executable, file.was_executable)?;
             }
             Content::Link(link_target) => {
-                write_symlink_atomic(&target, &link_target)?;
+                write_symlink_atomic(&file.destination, &link_target)?;
             }
         }
     }
+    Ok(())
+}
+
+#[cfg(unix)]
+fn apply_executable_mode(target: &Path, is_executable: bool, was_executable: bool) -> Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    if is_executable {
+        let meta = std::fs::symlink_metadata(target)
+            .with_context(|| format!("cannot inspect {}", target.display()))?;
+        let mode = meta.permissions().mode();
+        let new_mode = mode | 0o111;
+        if new_mode != mode {
+            std::fs::set_permissions(target, std::fs::Permissions::from_mode(new_mode))
+                .with_context(|| format!("cannot set executable permissions on {}", target.display()))?;
+        }
+    } else if was_executable {
+        let meta = std::fs::symlink_metadata(target)
+            .with_context(|| format!("cannot inspect {}", target.display()))?;
+        let mode = meta.permissions().mode();
+        let new_mode = mode & !0o111;
+        if new_mode != mode {
+            std::fs::set_permissions(target, std::fs::Permissions::from_mode(new_mode))
+                .with_context(|| format!("cannot clear executable permissions on {}", target.display()))?;
+        }
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn apply_executable_mode(_target: &Path, _is_executable: bool, _was_executable: bool) -> Result<()> {
     Ok(())
 }
 

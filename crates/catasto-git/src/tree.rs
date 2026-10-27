@@ -202,7 +202,7 @@ pub(crate) fn read_path(
     path: &Path,
     url: &str,
     symlink: SymlinkMode,
-) -> Result<Content> {
+) -> Result<(Content, bool)> {
     let initial_repo_path = repo_path(path)?;
     check_parent_components_not_symlinks(repo, commit, path, &initial_repo_path)?;
 
@@ -220,12 +220,13 @@ pub(crate) fn read_path(
             let chain = vec![initial_repo_path.clone()];
             let text = cat_symlink_text(repo, &initial_entry.oid, path, &chain)?;
             let _ = resolve_symlink_target(&initial_repo_path, &text, path, &chain)?;
-            Ok(Content::Link(text))
+            Ok((Content::Link(text), false))
         }
         SymlinkMode::Follow => {
             if initial_entry.mode == "100644" || initial_entry.mode == "100755" {
                 let bytes = cat_blob_bytes(repo, &initial_entry.oid)?;
-                return Ok(Content::File(bytes));
+                let executable = initial_entry.mode == "100755";
+                return Ok((Content::File(bytes), executable));
             }
             if initial_entry.mode != "120000" {
                 let kind = if initial_entry.mode == "040000" || initial_entry.kind == "tree" {
@@ -286,7 +287,8 @@ pub(crate) fn read_path(
 
                 if next_entry.mode == "100644" || next_entry.mode == "100755" {
                     let bytes = cat_blob_bytes(repo, &next_entry.oid)?;
-                    return Ok(Content::File(bytes));
+                    let executable = next_entry.mode == "100755";
+                    return Ok((Content::File(bytes), executable));
                 } else if next_entry.mode == "120000" {
                     current_path = next_path;
                     current_oid = next_entry.oid;

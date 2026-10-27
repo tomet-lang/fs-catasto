@@ -72,6 +72,8 @@ pub struct Fetched {
     pub commit: String,
     /// Content of the file or link at that commit.
     pub content: Content,
+    /// Whether the file is executable (`100755` in git). Kept symlinks are always `false`.
+    pub executable: bool,
 }
 
 /// Bare clones of the repositories catasto reads from.
@@ -145,8 +147,12 @@ impl GitCache {
             }
         };
 
-        let content = tree::read_path(&repo, &commit, path, url, symlink)?;
-        Ok(Fetched { commit, content })
+        let (content, executable) = tree::read_path(&repo, &commit, path, url, symlink)?;
+        Ok(Fetched {
+            commit,
+            content,
+            executable,
+        })
     }
 
     fn repo_dir(&self, url: &str) -> PathBuf {

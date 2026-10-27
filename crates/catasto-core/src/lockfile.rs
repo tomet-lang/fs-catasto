@@ -26,7 +26,7 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 
 use catasto_digest::{sha256_file, sha256_link};
-pub use catasto_manifest::lock::{LOCK_FILE, Lock, Locked};
+pub use catasto_manifest::lock::{LOCK_FILE, Lock, LockMode, Locked};
 use catasto_manifest::manifest::{Manifest, Source, Symlink};
 
 /// Hashes every managed file and writes `catasto.lock`.
@@ -34,7 +34,7 @@ use catasto_manifest::manifest::{Manifest, Source, Symlink};
 /// Every declared file must exist; the lock records what is on disk, so a file
 /// that differs from its source shows up as `stale` on the next check.
 ///
-/// A git source keeps the commit the existing lock recorded for it. `lock`
+/// A git source keeps the commit and mode the existing lock recorded for it. `lock`
 /// never resolves a revision; `catasto sync` does.
 pub fn lock(root: &Path) -> Result<Lock> {
     let manifest = Manifest::load(root)?;
@@ -49,17 +49,27 @@ pub fn lock(root: &Path) -> Result<Lock> {
             (locked.source == managed.source).then(|| (managed.path.clone(), commit))
         })
         .collect();
-    write_lock(root, manifest, &commits)
+    let modes = manifest
+        .managed
+        .iter()
+        .filter_map(|managed| {
+            let locked = existing.get(&managed.path)?;
+            let mode = locked.mode?;
+            (locked.source == managed.source).then(|| (managed.path.clone(), mode))
+        })
+        .collect();
+    write_lock(root, manifest, &commits, &modes)
 }
 
 /// Writes `catasto.lock` for `manifest`; `commits` maps git-sourced paths to
-/// the commit they were read at.
+/// the commit they were read at, and `modes` maps paths with special modes.
 pub(crate) fn write_lock(
     root: &Path,
     manifest: Manifest,
     commits: &HashMap<PathBuf, String>,
+    modes: &HashMap<PathBuf, LockMode>,
 ) -> Result<Lock> {
-    write_lock_selected(root, manifest, commits, &Lock::default(), &|_| true)
+    write_lock_selected(root, manifest, commits, modes, &Lock::default(), &|_| true)
 }
 
 /// Like [`write_lock`], for a run that touched only the files `selected` says
@@ -70,10 +80,19 @@ pub(crate) fn write_lock_selected(
     root: &Path,
     manifest: Manifest,
     commits: &HashMap<PathBuf, String>,
+    modes: &HashMap<PathBuf, LockMode>,
     previous: &Lock,
     selected: &(dyn Fn(&Path) -> bool + Sync),
 ) -> Result<Lock> {
-    write_lock_selected_with_hashes(root, manifest, commits, previous, selected, &HashMap::new())
+    write_lock_selected_with_hashes(
+        root,
+        manifest,
+        commits,
+        modes,
+        previous,
+        selected,
+        &HashMap::new(),
+    )
 }
 
 /// Like [`write_lock_selected`], reusing precomputed hashes from `known_hashes`
@@ -82,6 +101,7 @@ pub(crate) fn write_lock_selected_with_hashes(
     root: &Path,
     manifest: Manifest,
     commits: &HashMap<PathBuf, String>,
+    modes: &HashMap<PathBuf, LockMode>,
     previous: &Lock,
     selected: &(dyn Fn(&Path) -> bool + Sync),
     known_hashes: &HashMap<PathBuf, String>,
@@ -153,11 +173,13 @@ pub(crate) fn write_lock_selected_with_hashes(
                     })?)
                 }
             };
+            let mode = modes.get(&managed.path).copied();
             Ok(Some(Locked {
                 sha256,
                 path: managed.path,
                 source: managed.source,
                 commit,
+                mode,
             }))
         })
         .collect();

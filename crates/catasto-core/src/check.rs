@@ -169,7 +169,21 @@ fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<Violat
             }
         }
         (false, Some(meta)) => {
-            if meta.is_symlink() || !meta.is_file() || sha256_file(&file)? != locked.sha256 {
+            #[cfg(unix)]
+            let mode_matches = {
+                use std::os::unix::fs::PermissionsExt;
+                let is_exec = meta.permissions().mode() & 0o111 != 0;
+                let locked_exec = locked.mode == Some(crate::lockfile::LockMode::Executable);
+                is_exec == locked_exec
+            };
+            #[cfg(not(unix))]
+            let mode_matches = true;
+
+            if meta.is_symlink()
+                || !meta.is_file()
+                || !mode_matches
+                || sha256_file(&file)? != locked.sha256
+            {
                 kinds.push(ViolationKind::Modified);
             }
         }

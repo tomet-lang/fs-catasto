@@ -303,3 +303,89 @@ fn check_symlink_keep_and_default_table() {
         ViolationKind::Unlocked
     );
 }
+
+#[test]
+#[cfg(unix)]
+fn check_detects_executable_bit_drift_in_both_directions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let manifest = "\
+\"normal.txt\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"normal.txt\" } }
+\"tool.sh\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"tool.sh\" } }
+";
+    let hash_normal = catasto_digest::sha256_hex(b"normal content");
+    let hash_tool = catasto_digest::sha256_hex(b"tool content");
+    let lock_text = format!(
+        "{{\n  \"version\": 1,\n  \"files\": {{\n    \
+         \"normal.txt\": {{\n      \"sha256\": \"{hash_normal}\",\n      \
+         \"source\": {{\n        \"git\": \"https://example.com/v.git\",\n        \"rev\": \"v1\",\n        \"path\": \"normal.txt\"\n      }},\n      \
+         \"commit\": \"0123456789abcdef0123456789abcdef01234567\"\n    }},\n    \
+         \"tool.sh\": {{\n      \"sha256\": \"{hash_tool}\",\n      \
+         \"source\": {{\n        \"git\": \"https://example.com/v.git\",\n        \"rev\": \"v1\",\n        \"path\": \"tool.sh\"\n      }},\n      \
+         \"commit\": \"0123456789abcdef0123456789abcdef01234567\",\n      \
+         \"mode\": \"executable\"\n    }}\n  }}\n}}\n"
+    );
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("catasto.ctmt"), manifest).unwrap();
+    std::fs::write(root.join("catasto.lock"), &lock_text).unwrap();
+
+    let normal_path = root.join("normal.txt");
+    let tool_path = root.join("tool.sh");
+    std::fs::write(&normal_path, "normal content").unwrap();
+    std::fs::write(&tool_path, "tool content").unwrap();
+    std::fs::set_permissions(&normal_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    std::fs::set_permissions(&tool_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    // 1. Initial state matches lock -> clean
+    let rep = check(root).unwrap();
+    assert!(rep.is_ok(), "{:?}", rep.violations);
+
+    // 2. normal.txt gets chmod +x (differs from lock which is not executable) -> Modified
+    std::fs::set_permissions(&normal_path, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let rep = check(root).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].path, Path::new("normal.txt"));
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+
+    // Revert normal.txt
+    std::fs::set_permissions(&normal_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    // 3. tool.sh gets chmod -x (differs from lock which is executable) -> Modified
+    std::fs::set_permissions(&tool_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let rep = check(root).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].path, Path::new("tool.sh"));
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+}
+
+#[test]
+#[cfg(unix)]
+fn old_lock_without_mode_is_clean_when_destination_is_normal_file() {
+    use std::os::unix::fs::PermissionsExt;
+
+    // An old lock for tool.sh has no mode field
+    let manifest = "\"tool.sh\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"tool.sh\" } }";
+    let hash = catasto_digest::sha256_hex(b"#!/bin/sh\n");
+    let lock_text = format!(
+        "{{\n  \"version\": 1,\n  \"files\": {{\n    \
+         \"tool.sh\": {{\n      \"sha256\": \"{hash}\",\n      \
+         \"source\": {{\n        \"git\": \"https://example.com/v.git\",\n        \"rev\": \"v1\",\n        \"path\": \"tool.sh\"\n      }},\n      \
+         \"commit\": \"0123456789abcdef0123456789abcdef01234567\"\n    }}\n  }}\n}}\n"
+    );
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    std::fs::write(root.join("catasto.ctmt"), manifest).unwrap();
+    std::fs::write(root.join("catasto.lock"), &lock_text).unwrap();
+
+    let tool_path = root.join("tool.sh");
+    std::fs::write(&tool_path, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&tool_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+    // Destination is normal file on disk, lock has no mode -> check succeeds (no network consulted)
+    let rep = check(root).unwrap();
+    assert!(rep.is_ok(), "{:?}", rep.violations);
+}
+

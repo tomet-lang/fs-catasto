@@ -242,3 +242,34 @@ fn lock_fails_when_destination_kind_does_not_match_symlink_declaration() {
         "{err2}"
     );
 }
+
+#[test]
+fn mode_executable_round_trips_and_absent_for_normal_file() {
+    let text_with_mode = "{\n  \"version\": 1,\n  \"files\": {\n    \"run.sh\": {\n      \"sha256\": \"abc\",\n      \"source\": {\n        \"git\": \"https://example.com/a.git\",\n        \"rev\": \"main\",\n        \"path\": \"run.sh\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\",\n      \"mode\": \"executable\"\n    }\n  }\n}\n";
+    let parsed = Lock::parse(text_with_mode).unwrap();
+    assert_eq!(parsed.locked[0].mode, Some(LockMode::Executable));
+    assert_eq!(parsed.render().unwrap(), text_with_mode);
+
+    let text_without_mode = "{\n  \"version\": 1,\n  \"files\": {\n    \"run.sh\": {\n      \"sha256\": \"abc\",\n      \"source\": {\n        \"git\": \"https://example.com/a.git\",\n        \"rev\": \"main\",\n        \"path\": \"run.sh\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\"\n    }\n  }\n}\n";
+    let parsed_normal = Lock::parse(text_without_mode).unwrap();
+    assert_eq!(parsed_normal.locked[0].mode, None);
+    assert_eq!(parsed_normal.render().unwrap(), text_without_mode);
+}
+
+#[test]
+fn lock_preserves_existing_mode() {
+    let manifest = "\"run.sh\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"run.sh\" } }";
+    let dir = workspace(manifest, &[("run.sh", "#!/bin/sh")]);
+    let initial_lock = "{\n  \"version\": 1,\n  \"files\": {\n    \"run.sh\": {\n      \"sha256\": \"x\",\n      \"source\": {\n        \"git\": \"https://example.com/v.git\",\n        \"rev\": \"v1\",\n        \"path\": \"run.sh\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\",\n      \"mode\": \"executable\"\n    }\n  }\n}\n";
+    std::fs::write(dir.path().join(LOCK_FILE), initial_lock).unwrap();
+
+    let updated = lock(dir.path()).unwrap();
+    assert_eq!(updated.locked[0].mode, Some(LockMode::Executable));
+    assert_eq!(
+        updated.locked[0].commit.as_deref(),
+        Some("0123456789abcdef0123456789abcdef01234567")
+    );
+    let rendered = std::fs::read_to_string(dir.path().join(LOCK_FILE)).unwrap();
+    assert!(rendered.contains("\"mode\": \"executable\""), "{rendered}");
+}
+

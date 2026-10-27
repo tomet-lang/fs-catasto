@@ -55,6 +55,23 @@ impl World {
         self.git(&["commit", "--quiet", "-m", content]);
     }
 
+    fn commit_executable(&self, path: &str, content: &str) {
+        let file = self.remote.join(path);
+        if let Some(parent) = file.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(&file, content).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        self.git(&["add", path]);
+        self.git(&["update-index", "--chmod=+x", path]);
+        self.git(&["commit", "--quiet", "-m", content]);
+    }
+
+
     #[cfg(unix)]
     fn commit_symlink(&self, path: &str, target: &str) {
         let link = self.remote.join(path);
@@ -639,4 +656,42 @@ fn sync_dry_run_cli_contract() {
     assert!(err_dry_run.contains("revision \"no-such\" not found"), "{err_dry_run}");
     assert_eq!(err_dry_run, err_sync);
 }
+
+#[test]
+#[cfg(unix)]
+fn executable_bit_cli_contract() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let w = World::new();
+    w.ready(); // adds upstream "shared"
+    w.commit_executable("bin/tool.sh", "#!/bin/sh\necho ok\n");
+
+    // 1. catasto add fetches the file and creates it executable
+    let add_out = w.ok(&["add", "tool.sh", "--upstream", "shared", "bin/tool.sh"]);
+    assert!(add_out.contains("added tool.sh"), "{add_out}");
+    let tool_path = w.vault.join("tool.sh");
+    let mode = std::fs::metadata(&tool_path).unwrap().permissions().mode();
+    assert_ne!(mode & 0o111, 0);
+
+    // Lockfile records "mode": "executable"
+    let lock_text = w.read("catasto.lock");
+    assert!(lock_text.contains("\"mode\": \"executable\""), "{lock_text}");
+
+    // 2. catasto check is clean
+    assert!(w.run(&["check"]).status.success());
+
+    // 3. chmod -x tool.sh -> check detects drift and exits 1
+    std::fs::set_permissions(&tool_path, std::fs::Permissions::from_mode(0o644)).unwrap();
+    let check_out = w.run(&["check"]);
+    assert_eq!(check_out.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&check_out.stderr);
+    assert!(stderr.contains("tool.sh: modified"), "{stderr}");
+
+    // 4. catasto sync restores executable bit
+    w.ok(&["sync"]);
+    let mode = std::fs::metadata(&tool_path).unwrap().permissions().mode();
+    assert_ne!(mode & 0o111, 0);
+    assert!(w.run(&["check"]).status.success());
+}
+
 

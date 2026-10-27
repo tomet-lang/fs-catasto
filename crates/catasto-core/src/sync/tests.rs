@@ -584,3 +584,86 @@ fn dry_run_with_moved_commit_reports_changes_and_leaves_workspace_untouched() {
     let report_after = sync_dry_run(&vault, SyncMode::Update, Some(&cache), &[]).unwrap();
     assert_eq!(report_after.output, "nothing would change\n");
 }
+
+#[test]
+#[cfg(unix)]
+fn sync_executable_file_creates_mode_and_update_tracks_flipping() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = TestRepo::new();
+    repo.commit("normal.txt", "normal file");
+    repo.commit_executable("tool.sh", "#!/bin/sh\necho hi\n");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "\"normal.txt\": {{ source: {{ git: {:?}, rev: main, path: \"normal.txt\" }} }}\n\
+             \"tool.sh\": {{ source: {{ git: {:?}, rev: main, path: \"tool.sh\" }} }}\n",
+            repo.url(),
+            repo.url()
+        ),
+    )
+    .unwrap();
+
+    // 1. Initial sync creates normal file non-executable and tool.sh executable
+    let lock1 = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+    let normal_mode = std::fs::metadata(vault.join("normal.txt"))
+        .unwrap()
+        .permissions()
+        .mode();
+    let tool_mode = std::fs::metadata(vault.join("tool.sh"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(normal_mode & 0o111, 0);
+    assert_ne!(tool_mode & 0o111, 0);
+
+    // Verify lockfile records mode: executable for tool.sh, absent for normal.txt
+    assert_eq!(lock1.get(Path::new("normal.txt")).unwrap().mode, None);
+    assert_eq!(
+        lock1.get(Path::new("tool.sh")).unwrap().mode,
+        Some(LockMode::Executable)
+    );
+    let lock_text = std::fs::read_to_string(vault.join("catasto.lock")).unwrap();
+    assert!(lock_text.contains("\"mode\": \"executable\""), "{lock_text}");
+
+    // 2. Upstream flips: tool.sh becomes non-executable (chmod -x), normal.txt becomes executable (chmod +x)
+    repo.commit_non_executable("tool.sh", "#!/bin/sh\nnot executable now\n");
+    repo.commit_executable("normal.txt", "normal now executable");
+
+    // Locked sync preserves previous state
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+    let tool_mode_locked = std::fs::metadata(vault.join("tool.sh"))
+        .unwrap()
+        .permissions()
+        .mode();
+    let normal_mode_locked = std::fs::metadata(vault.join("normal.txt"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_ne!(tool_mode_locked & 0o111, 0);
+    assert_eq!(normal_mode_locked & 0o111, 0);
+
+    // Update sync picks up the flipped modes
+    let lock2 = sync_with(&vault, SyncMode::Update, Some(&cache)).unwrap();
+    let tool_mode_updated = std::fs::metadata(vault.join("tool.sh"))
+        .unwrap()
+        .permissions()
+        .mode();
+    let normal_mode_updated = std::fs::metadata(vault.join("normal.txt"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_eq!(tool_mode_updated & 0o111, 0);
+    assert_ne!(normal_mode_updated & 0o111, 0);
+    assert_eq!(lock2.get(Path::new("tool.sh")).unwrap().mode, None);
+    assert_eq!(
+        lock2.get(Path::new("normal.txt")).unwrap().mode,
+        Some(LockMode::Executable)
+    );
+}
+

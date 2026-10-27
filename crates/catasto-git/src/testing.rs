@@ -38,6 +38,40 @@ impl TestRepo {
         self.git(&["rev-parse", "HEAD"])
     }
 
+    /// Writes `path`, sets it executable in git, commits it, and returns the commit id.
+    pub fn commit_executable(&self, path: &str, content: &str) -> String {
+        let file = self.dir.path().join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, content).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        self.git(&["add", path]);
+        self.git(&["update-index", "--chmod=+x", path]);
+        self.git(&["commit", "--quiet", "-m", content]);
+        self.git(&["rev-parse", "HEAD"])
+    }
+
+    /// Writes `path`, sets it non-executable in git, commits it, and returns the commit id.
+    pub fn commit_non_executable(&self, path: &str, content: &str) -> String {
+        let file = self.dir.path().join(path);
+        std::fs::create_dir_all(file.parent().unwrap()).unwrap();
+        std::fs::write(&file, content).unwrap();
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        self.git(&["add", path]);
+        self.git(&["update-index", "--chmod=-x", path]);
+        self.git(&["commit", "--quiet", "-m", content]);
+        self.git(&["rev-parse", "HEAD"])
+    }
+
+
+
     /// Creates a symlink at `path` pointing to `target`, commits it, and returns the commit id.
     #[cfg(unix)]
     pub fn commit_symlink(&self, path: &str, target: &str) -> String {

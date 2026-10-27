@@ -573,3 +573,74 @@ fn pinned_commit_still_resolves_link_at_pinned_commit() {
     assert_eq!(fetched.commit, first);
     assert_eq!(fetched.content, Content::File(b"version 1".to_vec()));
 }
+
+#[test]
+fn reports_mode_for_executable_and_normal_files() {
+    let repo = TestRepo::new();
+    repo.commit("normal.txt", "normal content");
+    repo.commit_executable("script.sh", "echo hi");
+
+    let (_dir, cache) = cache();
+
+    let fetched_normal = cache
+        .fetch(
+            &repo.url(),
+            "main",
+            Path::new("normal.txt"),
+            None,
+            SymlinkMode::Follow,
+        )
+        .unwrap();
+    assert!(!fetched_normal.executable);
+    assert_eq!(
+        fetched_normal.content,
+        Content::File(b"normal content".to_vec())
+    );
+
+    let fetched_exec = cache
+        .fetch(
+            &repo.url(),
+            "main",
+            Path::new("script.sh"),
+            None,
+            SymlinkMode::Follow,
+        )
+        .unwrap();
+    assert!(fetched_exec.executable);
+    assert_eq!(fetched_exec.content, Content::File(b"echo hi".to_vec()));
+}
+
+#[test]
+#[cfg(unix)]
+fn reports_mode_for_followed_link_to_executable() {
+    let repo = TestRepo::new();
+    repo.commit_executable("target.sh", "#!/bin/sh\n");
+    repo.commit_symlink("link.sh", "target.sh");
+
+    let (_dir, cache) = cache();
+
+    let fetched_follow = cache
+        .fetch(
+            &repo.url(),
+            "main",
+            Path::new("link.sh"),
+            None,
+            SymlinkMode::Follow,
+        )
+        .unwrap();
+    assert!(fetched_follow.executable);
+    assert_eq!(fetched_follow.content, Content::File(b"#!/bin/sh\n".to_vec()));
+
+    let fetched_keep = cache
+        .fetch(
+            &repo.url(),
+            "main",
+            Path::new("link.sh"),
+            None,
+            SymlinkMode::Keep,
+        )
+        .unwrap();
+    assert!(!fetched_keep.executable);
+    assert_eq!(fetched_keep.content, Content::Link("target.sh".to_owned()));
+}
+
