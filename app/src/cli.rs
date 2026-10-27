@@ -91,6 +91,21 @@ Examples:
         #[arg(long, value_name = "FILE")]
         only: Vec<PathBuf>,
     },
+    /// Generate automated .tmt specifications and reference documentation.
+    Spec {
+        /// Documentation target to generate (`cli` | `manifest`).
+        #[arg(value_name = "TARGET")]
+        target: Option<crate::commands::spec::SpecTarget>,
+        /// Generate all declared specification targets. Requires `--out <DIR>`.
+        #[arg(long, conflicts_with = "target", requires = "out")]
+        all: bool,
+        /// Write to this file or directory instead of stdout.
+        #[arg(short, long)]
+        out: Option<PathBuf>,
+        /// Fail if output files are missing or out of date, without writing.
+        #[arg(long, requires = "out")]
+        check: bool,
+    },
 }
 
 #[derive(Args)]

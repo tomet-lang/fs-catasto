@@ -36,6 +36,7 @@ tomet-printer = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-semantics = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-tree = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-workspace = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-spec = { git = "https://github.com/tomet-lang/tomet.git" }
 
 #= Crates.io
 anyhow = "1"

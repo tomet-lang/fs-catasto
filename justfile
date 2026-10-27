@@ -69,8 +69,12 @@ clean:
 
 # Generate and update all derived documentation across the workspace.
 docs:
+    cargo build -p catasto-cli
+    ./target/debug/catasto spec --all --out tmtroot/generated
     sisho fix .
 
 # Check that all documents parse, format cleanly, and match export targets.
 docs-check:
+    cargo build -p catasto-cli
+    ./target/debug/catasto spec --all --check --out tmtroot/generated
     sisho check .

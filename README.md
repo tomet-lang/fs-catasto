@@ -25,6 +25,7 @@ catasto upstream list
 catasto check [path]                            # report drift between catasto.ctmt, catasto.lock, and the files
 catasto sync [--update] [--only FILE]... [path] # fetch managed files from their sources, then lock
 catasto lock [path]                             # record the sha256 of every managed file in catasto.lock
+catasto spec [cli|manifest] [--all] [--check] [--out DIR] # extract .tmt specifications
 ```
 
 Every command works on the current directory; `-C DIR` (`--workspace DIR`) says another. `check`, `lock` and `sync` also take the directory as a trailing path, as `tomet check` and `twrit check` do.

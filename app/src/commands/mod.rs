@@ -1,6 +1,7 @@
 pub mod check;
 pub mod lock;
 pub mod manage;
+pub mod spec;
 pub mod sync;
 
 use std::path::PathBuf;

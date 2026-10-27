@@ -48,7 +48,7 @@ impl Upstreams {
             if upstreams.is_some() {
                 bail!("`::upstreams` is declared twice; put every upstream in the one");
             }
-            if !declaration.args.is_empty() {
+            if declaration.args.is_some() {
                 bail!(
                     "`::upstreams` takes a map, not arguments: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
                 );

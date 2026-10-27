@@ -42,5 +42,14 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::Sync { path, update, only } => {
             commands::sync::sync(&commands::root(root, path)?, update, &only)
         }
+        Command::Spec {
+            target,
+            all,
+            out,
+            check,
+        } => {
+            commands::spec::spec_cmd(target, all, out.as_deref(), check)?;
+            Ok(ExitCode::SUCCESS)
+        }
     }
 }
