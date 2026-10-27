@@ -48,7 +48,7 @@ The commands edit `catasto.ctmt` without rewriting it: comments, order and layou
 
 `catasto list` shows `name:path` for a file taken from a named place, and `git URL@REV:path` or `local PATH` for the others, with `ok` or the way it has drifted, and the commit it was locked at. `--json` is the same for tools.
 
-`catasto sync --only FILE` reads one file again. With `--update` it moves that file to where its `rev` points now and nothing else, which is how to take one new vocabulary without taking all of them.
+`catasto sync --only FILE` reads one file again. With `--update` it moves that file to where its `rev` points now and nothing else, which is how to take one new vocabulary without taking all of them. `catasto sync --dry-run` previews what `sync` would write: it displays moved git sources and a unified diff for each changed file without altering files or the lock, ending with a summary line (`would change N of M file(s)` or `nothing would change`).
 
 `check` exits with 1 when it finds drift, and never touches the network. It names the command that puts each file right. `catasto diff [path]` shows the unified diff of what `catasto sync` would write against what is on disk, reading git sources at their locked commit (and fetching them if needed). It exits 0 when nothing differs and 1 when something does. Files that are neither declared nor locked are unmanaged and never reported.
 
@@ -103,7 +103,7 @@ Git sources are read through the system `git`, restricted to the `https` and `fi
 
 `catasto sync` reads different URLs at the same time and the files of one URL one after another, since a URL has one clone to update. How many run at once is the jobserver's to say: the one a parent such as `make`, `cargo` or `sisho` passes down in `MAKEFLAGS`, else one per available CPU. The result does not depend on which URL answers first: files are written in the order of `catasto.ctmt`, and when several sources fail the error reported is the first of them in that order. The Nix package puts a `git` after the one on `PATH`, so `sync` works where none is installed.
 
-The lock records the commit that `rev` resolved to. Like `cargo build`, `catasto sync` reproduces that commit, restoring a modified file to it, and only touches the network when the commit is not cached yet. A source whose declaration changed is resolved again. `catasto sync --update` resolves every `rev` again, like `cargo update`.
+The lock records the commit that `rev` resolved to. Like `cargo build`, `catasto sync` reproduces that commit, restoring a modified file to it, and only touches the network when the commit is not cached yet. A source whose declaration changed is resolved again. `catasto sync --update` resolves every `rev` again, like `cargo update`. Pass `--dry-run` to preview moved commits and file diffs before updating.
 
 `catasto lock` never resolves a revision, so it cannot pin a git source that has no recorded commit. Run `catasto sync` for that.
 

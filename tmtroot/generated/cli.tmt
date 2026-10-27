@@ -201,6 +201,7 @@ Options:
 
 - `--update`: Resolve every git rev again and lock the commits they point at now.
 - `--only <FILE>`: Only this file (as the manifest writes its path); repeat for more. The others, and what the lock says about them, stay as they are.
+- `--dry-run`: Compute what sync would write and print the diff and summary without writing any files or rewriting the lock. May fetch new git commits into the cache.
 - `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
 
 ==[ catasto diff ]

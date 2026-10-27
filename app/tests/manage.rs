@@ -576,3 +576,67 @@ fn diff_command_cli_contract() {
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert_eq!(stdout, "Binary files differ: bin.dat\n");
 }
+
+#[test]
+fn sync_dry_run_cli_contract() {
+    let w = World::new();
+    w.ready(); // adds upstream "shared"
+    w.ok(&["add", "a.tmt", "--upstream", "shared", "a.tmt"]);
+    w.ok(&["add", "b.tmt", "--upstream", "shared", "sub/b.tmt"]);
+
+    // Capture initial state byte-for-byte
+    let a_before = std::fs::read(w.vault.join("a.tmt")).unwrap();
+    let b_before = std::fs::read(w.vault.join("b.tmt")).unwrap();
+    let manifest_before = std::fs::read(w.vault.join("catasto.ctmt")).unwrap();
+    let lock_before = std::fs::read(w.vault.join("catasto.lock")).unwrap();
+
+    // Advance remote branch with a change to a.tmt
+    w.commit("a.tmt", "a two\n");
+
+    // 1. sync --update --dry-run
+    // Prints moved commit line, diff hunk for a.tmt, would change 1 of 2 file(s), exits 0
+    let out = w.run(&["sync", "--update", "--dry-run"]);
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("shared main: "), "{stdout}");
+    assert!(stdout.contains("--- a/a.tmt"), "{stdout}");
+    assert!(stdout.contains("+++ b/a.tmt\tgit "), "{stdout}");
+    assert!(stdout.contains("-a one"), "{stdout}");
+    assert!(stdout.contains("+a two"), "{stdout}");
+    assert!(!stdout.contains("b.tmt"), "{stdout}");
+    assert!(stdout.ends_with("would change 1 of 2 file(s)\n"), "{stdout}");
+
+    // Manifest, lock and files are left byte for byte as before
+    assert_eq!(std::fs::read(w.vault.join("a.tmt")).unwrap(), a_before);
+    assert_eq!(std::fs::read(w.vault.join("b.tmt")).unwrap(), b_before);
+    assert_eq!(std::fs::read(w.vault.join("catasto.ctmt")).unwrap(), manifest_before);
+    assert_eq!(std::fs::read(w.vault.join("catasto.lock")).unwrap(), lock_before);
+
+    // 2. --only limits it
+    let out = w.run(&["sync", "--update", "--dry-run", "--only", "b.tmt"]);
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("shared main: "), "{stdout}");
+    assert!(!stdout.contains("--- a/"), "{stdout}");
+    assert!(stdout.ends_with("nothing would change\n"), "{stdout}");
+
+    // 3. sync --update makes exactly the changes shown
+    let sync_out = w.run(&["sync", "--update"]);
+    assert_eq!(sync_out.status.code(), Some(0));
+    assert_eq!(w.read("a.tmt"), "a two\n");
+    assert_eq!(w.read("b.tmt"), "b one");
+
+    // 4. No moved commit prints "nothing would change"
+    let out = w.run(&["sync", "--update", "--dry-run"]);
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert_eq!(stdout, "nothing would change\n");
+
+    // 5. Unknown rev fails with exit 1 and the same message sync --update gives
+    w.ok(&["upstream", "add", "shared", w.url(), "--rev", "no-such", "--force"]);
+    let err_sync = w.fails(&["sync", "--update"]);
+    let err_dry_run = w.fails(&["sync", "--update", "--dry-run"]);
+    assert!(err_dry_run.contains("revision \"no-such\" not found"), "{err_dry_run}");
+    assert_eq!(err_dry_run, err_sync);
+}
+

@@ -140,6 +140,107 @@ pub fn sync_only(
     write_lock_selected_with_hashes(root, plan.manifest, &commits, &plan.lock, &selected, &hashes)
 }
 
+/// What `sync --dry-run` would do.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DryRunReport {
+    /// Rendered output to print to stdout.
+    pub output: String,
+    /// Number of files that would be changed.
+    pub changed_files: usize,
+    /// Total number of files selected / checked.
+    pub total_files: usize,
+    /// Moved git sources (`(label, rev, from, to)`).
+    pub moved_sources: Vec<MovedSource>,
+}
+
+/// A git source that moves to another commit.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct MovedSource {
+    pub label: String,
+    pub rev: String,
+    pub from: String,
+    pub to: String,
+}
+
+/// Previews the changes that `sync` with `mode` would apply, without modifying
+/// any workspace files, the lock, or the manifest.
+pub fn sync_dry_run(
+    root: &Path,
+    mode: SyncMode,
+    cache_dir: Option<&Path>,
+    only: &[PathBuf],
+) -> Result<DryRunReport> {
+    let plan = plan_sync(root, mode, cache_dir, only)?;
+
+    let manifest_file = root.join(crate::MANIFEST_FILE);
+    let upstreams = match std::fs::read_to_string(&manifest_file) {
+        Ok(text) => catasto_manifest::manifest::upstreams_of(&text)?,
+        Err(_) => Vec::new(),
+    };
+
+    let mut moved_sources = Vec::new();
+    let mut seen_groups = std::collections::HashSet::new();
+
+    for file in &plan.files {
+        let Source::Git { git, rev, .. } = &file.source else {
+            continue;
+        };
+        let old_commit = plan.lock.get(&file.path).and_then(|l| l.commit.as_deref());
+        let new_commit = file.commit.as_deref();
+
+        if let (Some(old), Some(new)) = (old_commit, new_commit) {
+            if old != new {
+                let label = upstreams
+                    .iter()
+                    .find(|u| &u.git == git && &u.rev == rev)
+                    .map(|u| u.name.clone())
+                    .unwrap_or_else(|| git.clone());
+
+                if seen_groups.insert((label.clone(), rev.clone())) {
+                    moved_sources.push(MovedSource {
+                        label,
+                        rev: rev.clone(),
+                        from: old[..old.len().min(7)].to_owned(),
+                        to: new[..new.len().min(7)].to_owned(),
+                    });
+                }
+            }
+        }
+    }
+
+    let mut output = String::new();
+    for moved in &moved_sources {
+        output.push_str(&format!(
+            "{} {}: {} -> {}\n",
+            moved.label, moved.rev, moved.from, moved.to
+        ));
+    }
+
+    let total_files = plan.files.len();
+    let mut changed_files = 0;
+    for file in &plan.files {
+        if let Some(hunk) = crate::diff::diff_file(file)? {
+            output.push_str(&hunk);
+            changed_files += 1;
+        }
+    }
+
+    if changed_files == 0 {
+        output.push_str("nothing would change\n");
+    } else {
+        output.push_str(&format!(
+            "would change {changed_files} of {total_files} file(s)\n"
+        ));
+    }
+
+    Ok(DryRunReport {
+        output,
+        changed_files,
+        total_files,
+        moved_sources,
+    })
+}
+
 /// Reads every git source, one result per entry of the manifest (`None` for
 /// the entries that are not git sources).
 ///

@@ -90,6 +90,11 @@ Examples:
         /// The others, and what the lock says about them, stay as they are.
         #[arg(long, value_name = "FILE")]
         only: Vec<PathBuf>,
+        /// Compute what sync would write and print the diff and summary without
+        /// writing any files or rewriting the lock. May fetch new git commits
+        /// into the cache.
+        #[arg(long)]
+        dry_run: bool,
     },
     /// Show differences between the workspace files and what sync would write.
     ///

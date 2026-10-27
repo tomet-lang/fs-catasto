@@ -496,3 +496,91 @@ fn sync_bad_link_source_leaves_workspace_untouched() {
     assert!(!vault.join("out.txt").exists());
     assert!(!vault.join("catasto.lock").exists());
 }
+
+#[test]
+fn dry_run_with_moved_commit_reports_changes_and_leaves_workspace_untouched() {
+    let repo = TestRepo::new();
+    repo.commit("a.tmt", "a one\n");
+    let c1 = repo.commit("b.tmt", "b one\n");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    let manifest_text = format!(
+        "::upstreams{{\n  common: {{ git: {:?}, rev: main }}\n}}\n\n\"a.tmt\": {{ source: {{ upstream: common, path: \"a.tmt\" }} }}\n\"b.tmt\": {{ source: {{ upstream: common, path: \"b.tmt\" }} }}\n",
+        repo.url()
+    );
+    std::fs::write(vault.join("catasto.ctmt"), &manifest_text).unwrap();
+
+    // Initial sync
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+    // Move branch on repo by committing a.tmt
+    let c2 = repo.commit("a.tmt", "a two\n");
+
+    let manifest_before = std::fs::read_to_string(vault.join("catasto.ctmt")).unwrap();
+    let lock_before = std::fs::read_to_string(vault.join("catasto.lock")).unwrap();
+    let a_before = std::fs::read_to_string(vault.join("a.tmt")).unwrap();
+    let b_before = std::fs::read_to_string(vault.join("b.tmt")).unwrap();
+
+    // 1. Dry run in Update mode
+    let report = sync_dry_run(&vault, SyncMode::Update, Some(&cache), &[]).unwrap();
+    assert_eq!(report.total_files, 2);
+    assert_eq!(report.changed_files, 1);
+    assert_eq!(report.moved_sources.len(), 1);
+    assert_eq!(report.moved_sources[0].label, "common");
+    assert_eq!(report.moved_sources[0].rev, "main");
+    assert_eq!(report.moved_sources[0].from, &c1[..7]);
+    assert_eq!(report.moved_sources[0].to, &c2[..7]);
+
+    let output = &report.output;
+    assert!(
+        output.starts_with(&format!("common main: {} -> {}\n", &c1[..7], &c2[..7])),
+        "{output}"
+    );
+    assert!(output.contains("--- a/a.tmt"), "{output}");
+    assert!(output.contains("+++ b/a.tmt\tgit "), "{output}");
+    assert!(output.contains("-a one"), "{output}");
+    assert!(output.contains("+a two"), "{output}");
+    assert!(!output.contains("b.tmt"), "{output}");
+    assert!(output.ends_with("would change 1 of 2 file(s)\n"), "{output}");
+
+    // Assert workspace files and lock are byte-for-byte untouched!
+    assert_eq!(
+        std::fs::read_to_string(vault.join("catasto.ctmt")).unwrap(),
+        manifest_before
+    );
+    assert_eq!(
+        std::fs::read_to_string(vault.join("catasto.lock")).unwrap(),
+        lock_before
+    );
+    assert_eq!(
+        std::fs::read_to_string(vault.join("a.tmt")).unwrap(),
+        a_before
+    );
+    assert_eq!(
+        std::fs::read_to_string(vault.join("b.tmt")).unwrap(),
+        b_before
+    );
+
+    // 2. Dry run with --only b.tmt (its upstream moved, but file content didn't change)
+    let report_b =
+        sync_dry_run(&vault, SyncMode::Update, Some(&cache), &[PathBuf::from("b.tmt")]).unwrap();
+    assert_eq!(report_b.total_files, 1);
+    assert_eq!(report_b.changed_files, 0);
+    assert_eq!(
+        report_b.output,
+        format!("common main: {} -> {}\nnothing would change\n", &c1[..7], &c2[..7])
+    );
+
+    // 3. Real sync --update makes exactly the changes shown
+    sync_with(&vault, SyncMode::Update, Some(&cache)).unwrap();
+    assert_eq!(std::fs::read_to_string(vault.join("a.tmt")).unwrap(), "a two\n");
+    assert_eq!(std::fs::read_to_string(vault.join("b.tmt")).unwrap(), "b one\n");
+
+    // 4. Following dry-run now reports nothing would change
+    let report_after = sync_dry_run(&vault, SyncMode::Update, Some(&cache), &[]).unwrap();
+    assert_eq!(report_after.output, "nothing would change\n");
+}

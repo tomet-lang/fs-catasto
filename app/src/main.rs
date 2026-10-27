@@ -39,9 +39,12 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::List { json } => commands::manage::list(&commands::root(root, None)?, json),
         Command::Check { path } => commands::check::check(&commands::root(root, path)?),
         Command::Lock { path } => commands::lock::lock(&commands::root(root, path)?),
-        Command::Sync { path, update, only } => {
-            commands::sync::sync(&commands::root(root, path)?, update, &only)
-        }
+        Command::Sync {
+            path,
+            update,
+            only,
+            dry_run,
+        } => commands::sync::sync(&commands::root(root, path)?, update, &only, dry_run),
         Command::Diff { path, only } => {
             commands::diff::diff(&commands::root(root, path)?, &only)
         }

@@ -25,4 +25,7 @@ pub use edit::{AddOutcome, AlreadyDeclared, DeclaredKind, SourceText, UpstreamTe
 pub use lockfile::{LOCK_FILE, Lock, Locked, lock};
 pub use manage::{Row, add, init, list, remove, upstream_add, upstream_list, upstream_remove};
 pub use manifest::{MANIFEST_FILE, Managed, Manifest, Source, UpstreamInfo, upstreams_of};
-pub use sync::{PlannedFile, SyncMode, SyncPlan, plan_sync, sync, sync_only, sync_with};
+pub use sync::{
+    DryRunReport, MovedSource, PlannedFile, SyncMode, SyncPlan, plan_sync, sync, sync_dry_run,
+    sync_only, sync_with,
+};
