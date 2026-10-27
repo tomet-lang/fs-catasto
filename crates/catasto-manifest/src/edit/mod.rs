@@ -58,19 +58,50 @@ pub enum AddOutcome {
     Unchanged,
 }
 
-/// An entry is already declared in the manifest.
+/// The kind of item that was already declared.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeclaredKind {
+    Entry,
+    Upstream,
+}
+
+/// An entry or upstream is already declared in the manifest.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlreadyDeclared {
     pub dest: String,
+    pub kind: DeclaredKind,
+}
+
+impl AlreadyDeclared {
+    pub fn entry(dest: impl Into<String>) -> Self {
+        Self {
+            dest: dest.into(),
+            kind: DeclaredKind::Entry,
+        }
+    }
+
+    pub fn upstream(name: impl Into<String>) -> Self {
+        Self {
+            dest: name.into(),
+            kind: DeclaredKind::Upstream,
+        }
+    }
 }
 
 impl std::fmt::Display for AlreadyDeclared {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(
-            f,
-            "{} is already declared (use --force to replace its source)",
-            self.dest
-        )
+        match self.kind {
+            DeclaredKind::Entry => write!(
+                f,
+                "{} is already declared (use --force to replace its source)",
+                self.dest
+            ),
+            DeclaredKind::Upstream => write!(
+                f,
+                "upstream `{}` is already declared (use --force to replace it)",
+                self.dest
+            ),
+        }
     }
 }
 
@@ -86,9 +117,7 @@ pub fn add_or_replace_entry(
     let layout = scan(text)?;
     if let Some(existing) = layout.entries.iter().find(|entry| entry.key == dest) {
         if !force {
-            return Err(anyhow::Error::new(AlreadyDeclared {
-                dest: dest.to_owned(),
-            }));
+            return Err(anyhow::Error::new(AlreadyDeclared::entry(dest)));
         }
         let val_span = existing.value.clone();
         let value_str = &text[val_span.clone()];
@@ -155,6 +184,16 @@ pub fn remove_entry(text: &str, dest: &str) -> Result<String> {
 
 /// Names a place in `::upstreams`, creating the declaration when there is none.
 pub fn add_upstream(text: &str, name: &str, upstream: &UpstreamText) -> Result<String> {
+    add_or_replace_upstream(text, name, upstream, false).map(|(text, _)| text)
+}
+
+/// Names a place in `::upstreams`, or replaces its definition if `force`.
+pub fn add_or_replace_upstream(
+    text: &str,
+    name: &str,
+    upstream: &UpstreamText,
+    force: bool,
+) -> Result<(String, AddOutcome)> {
     if name.is_empty() || !name.chars().all(is_name_char) {
         bail!("an upstream name is letters, digits, `_` and `-`: {name:?}");
     }
@@ -176,20 +215,51 @@ pub fn add_upstream(text: &str, name: &str, upstream: &UpstreamText) -> Result<S
         } else {
             block.push('\n');
         }
-        return Ok(splice(text, at..at, &block));
+        return Ok((splice(text, at..at, &block), AddOutcome::Added));
     };
     let Some(data) = decl.data.clone() else {
         bail!("`::upstreams` has no map to add to");
     };
     let inner = scan_entries(text, data.start + 1..data.end - 1)?;
-    if inner.iter().any(|entry| entry.key == name) {
-        bail!("upstream `{name}` is already declared");
+
+    let close_line = line_start(text, data.end - 1);
+    let is_multiline = text[close_line..data.end - 1].trim().is_empty() && close_line > data.start;
+
+    if let Some(existing) = inner.iter().find(|entry| entry.key == name) {
+        if !force {
+            return Err(anyhow::Error::new(AlreadyDeclared::upstream(name)));
+        }
+        if text[existing.value.clone()].trim() == upstream_text(upstream) {
+            return Ok((text.to_owned(), AddOutcome::Unchanged));
+        }
+        if is_multiline {
+            let start = line_start(text, existing.value.start);
+            let end = text[existing.value.end..]
+                .find('\n')
+                .map_or(existing.value.end, |at| existing.value.end + at + 1);
+            return Ok((splice(text, start..end, &line), AddOutcome::Replaced));
+        }
+
+        // A one-line block rewritten in full
+        let mut block = String::from("::upstreams{\n");
+        for entry in &inner {
+            if entry.key == name {
+                block.push_str(&line);
+            } else {
+                block.push_str(&format!(
+                    "  {}: {}\n",
+                    key_text(&entry.key),
+                    text[entry.value.clone()].trim()
+                ));
+            }
+        }
+        block.push('}');
+        return Ok((splice(text, decl.span.clone(), &block), AddOutcome::Replaced));
     }
 
     // A closing brace on a line of its own: add a line above it and leave the rest.
-    let close_line = line_start(text, data.end - 1);
-    if text[close_line..data.end - 1].trim().is_empty() && close_line > data.start {
-        return Ok(splice(text, close_line..close_line, &line));
+    if is_multiline {
+        return Ok((splice(text, close_line..close_line, &line), AddOutcome::Added));
     }
 
     // A block written on one line: write it out in full.
@@ -203,7 +273,7 @@ pub fn add_upstream(text: &str, name: &str, upstream: &UpstreamText) -> Result<S
     }
     block.push_str(&line);
     block.push('}');
-    Ok(splice(text, decl.span.clone(), &block))
+    Ok((splice(text, decl.span.clone(), &block), AddOutcome::Added))
 }
 
 /// Drops a place from `::upstreams`; the declaration goes with its last place.

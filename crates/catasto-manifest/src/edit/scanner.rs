@@ -290,7 +290,7 @@ impl<'a> Cursor<'a> {
         let mut last = self.at;
         while let Some(c) = self.peek() {
             match c {
-                '\n' => break,
+                '\n' | ',' => break,
                 '"' => {
                     self.string()?;
                     last = self.at;

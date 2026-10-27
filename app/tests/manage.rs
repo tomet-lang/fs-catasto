@@ -467,3 +467,48 @@ fn add_force_cli_exit_codes_and_messages() {
     assert!(out.starts_with("replaced a.tmt"), "{out}");
     assert_eq!(w.read("a.tmt"), "b one");
 }
+
+#[test]
+fn upstream_add_force_cli_exit_codes_and_messages() {
+    let w = World::new();
+    w.ready(); // adds upstream "shared"
+    w.ok(&["add", "a.tmt", "--upstream", "shared", "a.tmt"]);
+
+    // 1. Without --force on existing upstream: exit code 3, error on stderr
+    let output = w.run(&["upstream", "add", "shared", w.url()]);
+    assert_eq!(output.status.code(), Some(3));
+    let err = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        err.contains("upstream `shared` is already declared (use --force to replace it)"),
+        "{err}"
+    );
+
+    // 2. With --force and exact same definition: exit code 0, prints "upstream shared: declared as given"
+    let out = w.ok(&["upstream", "add", "shared", w.url(), "--force"]);
+    assert!(out.contains("upstream shared: declared as given"), "{out}");
+
+    // 3. With --force and different definition (rev v2) when 1 file uses it:
+    // prints "replaced upstream shared" and "1 file(s) use it; run `catasto sync` to take them from the new place"
+    w.commit("a.tmt", "a two on v2");
+    w.git(&["tag", "v2"]);
+    let out = w.ok(&[
+        "upstream", "add", "shared", w.url(), "--rev", "v2", "--force",
+    ]);
+    assert!(out.contains("replaced upstream shared"), "{out}");
+    assert!(
+        out.contains("1 file(s) use it; run `catasto sync` to take them from the new place"),
+        "{out}"
+    );
+
+    // 4. With --force and different definition when NO file uses it:
+    // Add unused upstream "unused"
+    w.ok(&["upstream", "add", "unused", w.url()]);
+    let out = w.ok(&[
+        "upstream", "add", "unused", w.url(), "--rev", "v2", "--force",
+    ]);
+    assert!(out.contains("replaced upstream unused"), "{out}");
+    assert!(
+        !out.contains("file(s) use it; run `catasto sync` to take them from the new place"),
+        "{out}"
+    );
+}

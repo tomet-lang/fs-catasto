@@ -19,7 +19,7 @@ pub use catasto_manifest::lock;
 pub use catasto_manifest::manifest;
 
 pub use check::{CheckReport, Violation, ViolationKind, check};
-pub use edit::{AddOutcome, AlreadyDeclared, SourceText, UpstreamText};
+pub use edit::{AddOutcome, AlreadyDeclared, DeclaredKind, SourceText, UpstreamText};
 pub use lockfile::{LOCK_FILE, Lock, Locked, lock};
 pub use manage::{Row, add, init, list, remove, upstream_add, upstream_list, upstream_remove};
 pub use manifest::{MANIFEST_FILE, Managed, Manifest, Source, UpstreamInfo, upstreams_of};

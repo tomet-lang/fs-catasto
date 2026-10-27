@@ -1,5 +1,5 @@
 use super::*;
-use crate::AlreadyDeclared;
+use crate::{AlreadyDeclared, DeclaredKind, sync_with};
 use catasto_git::testing::TestRepo;
 
 struct Fixture {
@@ -59,7 +59,7 @@ impl Fixture {
 
     fn ready(&self) {
         init(&self.root).unwrap();
-        upstream_add(&self.root, "t", &self.upstream()).unwrap();
+        upstream_add(&self.root, "t", &self.upstream(), false).unwrap();
     }
 }
 
@@ -308,6 +308,7 @@ fn the_upstreams_are_listed_in_order() {
             rev: "v1".into(),
             root: Some("dir".into()),
         },
+        false,
     )
     .unwrap();
     let names: Vec<_> = upstream_list(&fx.root)
@@ -489,4 +490,74 @@ fn add_force_outcomes_and_guarantees() {
     );
     assert_eq!(fx.read("docs/file.tmt"), file_before);
     assert!(check(&fx.root).unwrap().is_ok());
+}
+
+#[test]
+fn upstream_add_force_outcomes_and_guarantees() {
+    let fx = Fixture::new();
+    fx.ready();
+    // 1. Add a file using upstream "t"
+    fx.add("docs/file.tmt", "a.tmt").unwrap();
+    let lock_before = std::fs::read_to_string(fx.root.join(LOCK_FILE)).unwrap();
+    let file_before = fx.read("docs/file.tmt");
+
+    // 2. Without force, adding existing upstream "t" fails with AlreadyDeclared
+    let err = upstream_add(&fx.root, "t", &fx.upstream(), false).unwrap_err();
+    let already = err
+        .downcast_ref::<AlreadyDeclared>()
+        .expect("downcast to AlreadyDeclared");
+    assert_eq!(already.dest, "t");
+    assert_eq!(already.kind, DeclaredKind::Upstream);
+    assert_eq!(
+        err.to_string(),
+        "upstream `t` is already declared (use --force to replace it)"
+    );
+
+    // 3. With force and same definition: Unchanged, no files reported
+    let (outcome, used) = upstream_add(&fx.root, "t", &fx.upstream(), true).unwrap();
+    assert_eq!(outcome, AddOutcome::Unchanged);
+    assert!(used.is_empty());
+
+    // 4. Create tag v2 with new content for a.tmt
+    fx.repo.commit("a.tmt", "a two on v2");
+    fx.repo.tag("v2");
+
+    let new_upstream = UpstreamText {
+        git: fx.repo.url(),
+        rev: "v2".into(),
+        root: None,
+    };
+
+    // 5. Replace with force: Replaced, reports affected files
+    let (outcome, used) = upstream_add(&fx.root, "t", &new_upstream, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(used, ["docs/file.tmt"]);
+
+    // Lock and files on disk are untouched!
+    assert_eq!(
+        std::fs::read_to_string(fx.root.join(LOCK_FILE)).unwrap(),
+        lock_before
+    );
+    assert_eq!(fx.read("docs/file.tmt"), file_before);
+
+    // Check reports drift (unlocked / source changed)
+    let rep = check(&fx.root).unwrap();
+    assert!(!rep.is_ok());
+
+    // 6. After sync, check is clean, file is updated, and lock holds the new rev
+    sync_with(&fx.root, SyncMode::Locked, Some(&fx.cache)).unwrap();
+    assert_eq!(fx.read("docs/file.tmt"), "a two on v2");
+    assert!(check(&fx.root).unwrap().is_ok());
+
+    let lock_after = Lock::load(&fx.root).unwrap();
+    let locked = lock_after.get(Path::new("docs/file.tmt")).expect("locked");
+    assert_eq!(
+        locked.source,
+        Source::Git {
+            git: fx.repo.url(),
+            rev: "v2".into(),
+            path: PathBuf::from("a.tmt"),
+            symlink: Symlink::Follow,
+        }
+    );
 }

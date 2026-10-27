@@ -79,8 +79,9 @@ pub fn upstream(root: &Path, command: &UpstreamCommand) -> Result<ExitCode> {
             git,
             rev,
             root: dir,
+            force,
         } => {
-            catasto_core::upstream_add(
+            let (outcome, used) = catasto_core::upstream_add(
                 root,
                 name,
                 &UpstreamText {
@@ -88,8 +89,23 @@ pub fn upstream(root: &Path, command: &UpstreamCommand) -> Result<ExitCode> {
                     rev: rev.clone(),
                     root: dir.clone(),
                 },
+                *force,
             )?;
-            println!("added upstream {name}");
+            match outcome {
+                catasto_core::AddOutcome::Added => println!("added upstream {name}"),
+                catasto_core::AddOutcome::Replaced => {
+                    println!("replaced upstream {name}");
+                    if !used.is_empty() {
+                        let count = used.len();
+                        println!(
+                            "{count} file(s) use it; run `catasto sync` to take them from the new place"
+                        );
+                    }
+                }
+                catasto_core::AddOutcome::Unchanged => {
+                    println!("upstream {name}: declared as given");
+                }
+            }
         }
         UpstreamCommand::Remove { name } => {
             catasto_core::upstream_remove(root, name)?;

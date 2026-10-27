@@ -335,3 +335,143 @@ fn add_or_replace_entry_keeps_position_comment_and_extra_fields() {
     assert_eq!(outcome, AddOutcome::Unchanged);
     assert_eq!(unchanged_text, replaced_text);
 }
+
+#[test]
+fn add_or_replace_upstream_multiline_block() {
+    let manifest = "\
+::upstreams{
+  // comment above first
+  first: { git: \"https://example.com/first.git\", rev: v1 }
+  // comment above middle
+  middle: { git: \"https://example.com/middle.git\", rev: v1 }
+  // comment above last
+  last: { git: \"https://example.com/last.git\", rev: v1 }
+}
+
+\"a.tmt\": { source: { upstream: middle, path: \"a.tmt\" } }
+";
+
+    let new_middle = UpstreamText {
+        git: "https://example.com/new-middle.git".into(),
+        rev: "v2".into(),
+        root: Some("subdir".into()),
+    };
+
+    // 1. without force: fails with AlreadyDeclared
+    let err = add_or_replace_upstream(manifest, "middle", &new_middle, false).unwrap_err();
+    let already = err
+        .downcast_ref::<AlreadyDeclared>()
+        .expect("downcast to AlreadyDeclared");
+    assert_eq!(already.dest, "middle");
+    assert_eq!(already.kind, DeclaredKind::Upstream);
+    assert_eq!(
+        err.to_string(),
+        "upstream `middle` is already declared (use --force to replace it)"
+    );
+
+    // 2. with force on middle: replaces definition, keeps comment and position
+    let (replaced_middle, outcome) =
+        add_or_replace_upstream(manifest, "middle", &new_middle, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(
+        replaced_middle,
+        "\
+::upstreams{
+  // comment above first
+  first: { git: \"https://example.com/first.git\", rev: v1 }
+  // comment above middle
+  middle: { git: \"https://example.com/new-middle.git\", rev: v2, root: subdir }
+  // comment above last
+  last: { git: \"https://example.com/last.git\", rev: v1 }
+}
+
+\"a.tmt\": { source: { upstream: middle, path: \"a.tmt\" } }
+"
+    );
+    assert!(Manifest::parse(&replaced_middle).is_ok());
+
+    // 3. identical definition returns same text (Unchanged)
+    let (unchanged, outcome) =
+        add_or_replace_upstream(&replaced_middle, "middle", &new_middle, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Unchanged);
+    assert_eq!(unchanged, replaced_middle);
+
+    // 4. replace first
+    let new_first = UpstreamText {
+        git: "https://example.com/new-first.git".into(),
+        rev: "main".into(),
+        root: None,
+    };
+    let (replaced_first, outcome) =
+        add_or_replace_upstream(&replaced_middle, "first", &new_first, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(
+        replaced_first,
+        "\
+::upstreams{
+  // comment above first
+  first: { git: \"https://example.com/new-first.git\", rev: main }
+  // comment above middle
+  middle: { git: \"https://example.com/new-middle.git\", rev: v2, root: subdir }
+  // comment above last
+  last: { git: \"https://example.com/last.git\", rev: v1 }
+}
+
+\"a.tmt\": { source: { upstream: middle, path: \"a.tmt\" } }
+"
+    );
+    assert!(Manifest::parse(&replaced_first).is_ok());
+
+    // 5. replace last
+    let new_last = UpstreamText {
+        git: "https://example.com/new-last.git".into(),
+        rev: "v3".into(),
+        root: None,
+    };
+    let (replaced_last, outcome) =
+        add_or_replace_upstream(&replaced_first, "last", &new_last, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(
+        replaced_last,
+        "\
+::upstreams{
+  // comment above first
+  first: { git: \"https://example.com/new-first.git\", rev: main }
+  // comment above middle
+  middle: { git: \"https://example.com/new-middle.git\", rev: v2, root: subdir }
+  // comment above last
+  last: { git: \"https://example.com/new-last.git\", rev: v3 }
+}
+
+\"a.tmt\": { source: { upstream: middle, path: \"a.tmt\" } }
+"
+    );
+    assert!(Manifest::parse(&replaced_last).is_ok());
+}
+
+#[test]
+fn add_or_replace_upstream_oneline_block() {
+    let manifest = "::upstreams{ a: { git: \"https://x/a.git\", rev: main }, b: { git: \"https://x/b.git\", rev: main } }\n";
+    let new_b = UpstreamText {
+        git: "https://x/b2.git".into(),
+        rev: "v2".into(),
+        root: None,
+    };
+
+    let (replaced, outcome) = add_or_replace_upstream(manifest, "b", &new_b, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(
+        replaced,
+        "\
+::upstreams{
+  a: { git: \"https://x/a.git\", rev: main }
+  b: { git: \"https://x/b2.git\", rev: v2 }
+}
+"
+    );
+    assert!(Manifest::parse(&replaced).is_ok());
+
+    let (unchanged, outcome) = add_or_replace_upstream(&replaced, "b", &new_b, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Unchanged);
+    assert_eq!(unchanged, replaced);
+}

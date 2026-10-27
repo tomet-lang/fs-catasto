@@ -155,6 +155,9 @@ pub enum UpstreamCommand {
         /// The directory of the repository that the entries' paths start from.
         #[arg(long)]
         root: Option<String>,
+        /// Declare NAME with the given definition whether or not it is declared.
+        #[arg(long)]
+        force: bool,
     },
     /// Drop a name; refused while a file still uses it.
     Remove {

@@ -122,10 +122,24 @@ pub fn remove(root: &Path, dest: &str, delete_file: bool) -> Result<()> {
     Ok(())
 }
 
-/// Names a place in `::upstreams`.
-pub fn upstream_add(root: &Path, name: &str, upstream: &UpstreamText) -> Result<()> {
-    edit_manifest(root, |text| edit::add_upstream(text, name, upstream))?;
-    Ok(())
+/// Names a place in `::upstreams`, or replaces its definition if `force`.
+pub fn upstream_add(
+    root: &Path,
+    name: &str,
+    upstream: &UpstreamText,
+    force: bool,
+) -> Result<(AddOutcome, Vec<String>)> {
+    let mut outcome = AddOutcome::Added;
+    let mut used = Vec::new();
+    edit_manifest(root, |text| {
+        let (new_text, out) = edit::add_or_replace_upstream(text, name, upstream, force)?;
+        if out == AddOutcome::Replaced {
+            used = edit::upstream_is_used(&new_text, name)?;
+        }
+        outcome = out;
+        Ok(new_text)
+    })?;
+    Ok((outcome, used))
 }
 
 /// Drops a place from `::upstreams`; refused while an entry still uses it.
