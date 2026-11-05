@@ -11,6 +11,7 @@
 
 mod check;
 mod diff;
+pub mod discovery;
 mod lockfile;
 mod manage;
 mod sync;
@@ -21,6 +22,7 @@ pub use catasto_manifest::manifest;
 
 pub use check::{CheckReport, Violation, ViolationKind, check};
 pub use diff::diff;
+pub use discovery::discover_workspaces;
 pub use edit::{AddOutcome, AlreadyDeclared, DeclaredKind, SourceText, UpstreamText};
 pub use lockfile::{LOCK_FILE, Lock, LockMode, Locked, lock};
 pub use manage::{Row, add, init, list, remove, upstream_add, upstream_list, upstream_remove};

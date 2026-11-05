@@ -139,11 +139,16 @@ Options:
 Show every declared file: where it comes from, and how it stands
 
 ```text
-catasto list [OPTIONS]
+catasto list [OPTIONS] [PATH]
 ```
+
+Arguments:
+
+- `[PATH]`: Workspace root. Defaults to the current directory.
 
 Options:
 
+- `--all`: Discover and list all workspaces under the root.
 - `--json`: Print JSON, for tools.
 - `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
 
@@ -163,6 +168,8 @@ Arguments:
 
 Options:
 
+- `--all`: Discover and check all workspaces under the root.
+- `--json`: Print JSON, for tools.
 - `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
 
 ==[catasto lock]
@@ -179,6 +186,7 @@ Arguments:
 
 Options:
 
+- `--all`: Discover and lock all workspaces under the root.
 - `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
 
 ==[catasto sync]
@@ -197,6 +205,7 @@ Arguments:
 
 Options:
 
+- `--all`: Discover and sync all workspaces under the root.
 - `--update`: Resolve every git rev again and lock the commits they point at now.
 - `--only <FILE>`: Only this file (as the manifest writes its path); repeat for more. The others, and what the lock says about them, stay as they are.
 - `--dry-run`: Compute what sync would write and print the diff and summary without writing any files or rewriting the lock. May fetch new git commits into the cache.
@@ -218,6 +227,7 @@ Arguments:
 
 Options:
 
+- `--all`: Discover and diff all workspaces under the root.
 - `--only <FILE>`: Only this file (as the manifest writes its path); repeat for more.
 - `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
 

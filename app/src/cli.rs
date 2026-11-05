@@ -60,6 +60,11 @@ Examples:
     Upstream(UpstreamCommand),
     /// Show every declared file: where it comes from, and how it stands.
     List {
+        /// Workspace root. Defaults to the current directory.
+        path: Option<PathBuf>,
+        /// Discover and list all workspaces under the root.
+        #[arg(long)]
+        all: bool,
         /// Print JSON, for tools.
         #[arg(long)]
         json: bool,
@@ -71,11 +76,20 @@ Examples:
     Check {
         /// Workspace root. Defaults to the current directory.
         path: Option<PathBuf>,
+        /// Discover and check all workspaces under the root.
+        #[arg(long)]
+        all: bool,
+        /// Print JSON, for tools.
+        #[arg(long)]
+        json: bool,
     },
     /// Record the sha256 of every managed file in catasto.lock.
     Lock {
         /// Workspace root. Defaults to the current directory.
         path: Option<PathBuf>,
+        /// Discover and lock all workspaces under the root.
+        #[arg(long)]
+        all: bool,
     },
     /// Re-fetch managed files from their sources and rewrite catasto.lock.
     ///
@@ -83,6 +97,9 @@ Examples:
     Sync {
         /// Workspace root. Defaults to the current directory.
         path: Option<PathBuf>,
+        /// Discover and sync all workspaces under the root.
+        #[arg(long)]
+        all: bool,
         /// Resolve every git rev again and lock the commits they point at now.
         #[arg(long)]
         update: bool,
@@ -103,6 +120,9 @@ Examples:
     Diff {
         /// Workspace root. Defaults to the current directory.
         path: Option<PathBuf>,
+        /// Discover and diff all workspaces under the root.
+        #[arg(long)]
+        all: bool,
         /// Only this file (as the manifest writes its path); repeat for more.
         #[arg(long, value_name = "FILE")]
         only: Vec<PathBuf>,

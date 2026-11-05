@@ -127,7 +127,15 @@ pub fn upstream(root: &Path, command: &UpstreamCommand) -> Result<ExitCode> {
     Ok(ExitCode::SUCCESS)
 }
 
-pub fn list(root: &Path, json: bool) -> Result<ExitCode> {
+pub fn list(root: &Path, all: bool, json: bool) -> Result<ExitCode> {
+    if all {
+        list_all(root, json)
+    } else {
+        list_single(root, json)
+    }
+}
+
+fn list_single(root: &Path, json: bool) -> Result<ExitCode> {
     let rows = catasto_core::list(root)?;
     if json {
         let rows: Vec<_> = rows
@@ -149,10 +157,107 @@ pub fn list(root: &Path, json: bool) -> Result<ExitCode> {
         return Ok(ExitCode::SUCCESS);
     }
 
+    print_rows(&rows);
+    Ok(ExitCode::SUCCESS)
+}
+
+fn list_all(root: &Path, json: bool) -> Result<ExitCode> {
+    let workspaces = catasto_core::discover_workspaces(root)?;
+    if workspaces.is_empty() {
+        if json {
+            let obj = serde_json::json!({
+                "workspaces": [],
+                "summary": {
+                    "total": 0,
+                }
+            });
+            println!("{}", serde_json::to_string_pretty(&obj)?);
+        } else {
+            println!("catasto: no workspaces discovered under {}", root.display());
+        }
+        return Ok(ExitCode::SUCCESS);
+    }
+
+    let total = workspaces.len();
+    let mut failed = 0;
+    let mut ws_json = Vec::new();
+
+    for (idx, ws) in workspaces.iter().enumerate() {
+        let num = idx + 1;
+        let ws_display = ws.display();
+        match catasto_core::list(ws) {
+            Ok(rows) => {
+                if json {
+                    let files: Vec<_> = rows
+                        .iter()
+                        .map(|row| {
+                            let mut map = serde_json::json!({
+                                "path": row.path,
+                                "from": row.from,
+                                "state": row.state.map_or("ok", |state| state.label()),
+                                "commit": row.commit,
+                            });
+                            if let Some(symlink) = row.symlink {
+                                map["symlink"] = serde_json::to_value(symlink).unwrap();
+                            }
+                            map
+                        })
+                        .collect();
+                    ws_json.push(serde_json::json!({
+                        "root": ws,
+                        "files": files,
+                    }));
+                } else {
+                    println!("[{num}/{total}] {ws_display}");
+                    if rows.is_empty() {
+                        println!("  (no managed files declared)");
+                    } else {
+                        print_rows_indented(&rows);
+                    }
+                    if num < total {
+                        println!();
+                    }
+                }
+            }
+            Err(e) => {
+                failed += 1;
+                if json {
+                    ws_json.push(serde_json::json!({
+                        "root": ws,
+                        "error": format!("{e:#}"),
+                    }));
+                } else {
+                    println!("[{num}/{total}] {ws_display} ... error: {e:#}");
+                    if num < total {
+                        println!();
+                    }
+                }
+            }
+        }
+    }
+
+    if json {
+        let obj = serde_json::json!({
+            "workspaces": ws_json,
+            "summary": {
+                "total": total,
+            }
+        });
+        println!("{}", serde_json::to_string_pretty(&obj)?);
+    }
+
+    if failed > 0 {
+        Ok(ExitCode::FAILURE)
+    } else {
+        Ok(ExitCode::SUCCESS)
+    }
+}
+
+fn print_rows(rows: &[catasto_core::Row]) {
     let width = |f: fn(&catasto_core::Row) -> usize| rows.iter().map(f).max().unwrap_or(0);
     let path_width = width(|row| row.path.display().to_string().chars().count());
     let from_width = width(|row| row.from.chars().count());
-    for row in &rows {
+    for row in rows {
         println!(
             "{:path_width$}  {:from_width$}  {:8}  {}",
             row.path.display(),
@@ -161,7 +266,21 @@ pub fn list(root: &Path, json: bool) -> Result<ExitCode> {
             row.commit.as_deref().map(short).unwrap_or_default(),
         );
     }
-    Ok(ExitCode::SUCCESS)
+}
+
+fn print_rows_indented(rows: &[catasto_core::Row]) {
+    let width = |f: fn(&catasto_core::Row) -> usize| rows.iter().map(f).max().unwrap_or(0);
+    let path_width = width(|row| row.path.display().to_string().chars().count());
+    let from_width = width(|row| row.from.chars().count());
+    for row in rows {
+        println!(
+            "  {:path_width$}  {:from_width$}  {:8}  {}",
+            row.path.display(),
+            row.from,
+            row.state.map_or("ok", |state| state.label()),
+            row.commit.as_deref().map(short).unwrap_or_default(),
+        );
+    }
 }
 
 fn short(commit: &str) -> &str {

@@ -36,17 +36,24 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::Upstream(command) => {
             commands::manage::upstream(&commands::root(root, None)?, &command)
         }
-        Command::List { json } => commands::manage::list(&commands::root(root, None)?, json),
-        Command::Check { path } => commands::check::check(&commands::root(root, path)?),
-        Command::Lock { path } => commands::lock::lock(&commands::root(root, path)?),
+        Command::List { path, all, json } => {
+            commands::manage::list(&commands::root(root, path)?, all, json)
+        }
+        Command::Check { path, all, json } => {
+            commands::check::check(&commands::root(root, path)?, all, json)
+        }
+        Command::Lock { path, all } => {
+            commands::lock::lock(&commands::root(root, path)?, all)
+        }
         Command::Sync {
             path,
+            all,
             update,
             only,
             dry_run,
-        } => commands::sync::sync(&commands::root(root, path)?, update, &only, dry_run),
-        Command::Diff { path, only } => {
-            commands::diff::diff(&commands::root(root, path)?, &only)
+        } => commands::sync::sync(&commands::root(root, path)?, all, update, &only, dry_run),
+        Command::Diff { path, all, only } => {
+            commands::diff::diff(&commands::root(root, path)?, all, &only)
         }
         Command::Spec {
             target,
