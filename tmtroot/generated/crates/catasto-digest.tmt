@@ -12,6 +12,10 @@
 
 Returns the lowercase hex SHA-256 of the file at `path`.
 
+===[fn sha256_link]
+
+Returns the lowercase hex SHA-256 of the symlink target text at `path`.
+
 ===[fn sha256_hex]
 
 Returns the lowercase hex SHA-256 of `bytes`.

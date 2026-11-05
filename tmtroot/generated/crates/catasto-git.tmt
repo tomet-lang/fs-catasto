@@ -27,7 +27,7 @@ A throwaway repository on branch `main`.
 
 ===[struct Fetched]
 
-A file read from a repository, with the commit it was read at.
+A file or link read from a repository, with the commit it was read at.
 
 ===[struct GitCache]
 
@@ -35,23 +35,13 @@ Bare clones of the repositories catasto reads from.
 
 ==[Enums]
 
-===[enum UrlKind]
+===[enum SymlinkMode]
 
-Where a repository lives, as far as catasto accepts it.
+How symlinks in git repositories are handled.
 
-There is deliberately no ssh: `git@host:path`, `ssh://`, `git://` and plain
-`http://` are rejected, so catasto never needs keys, agents or host config.
+===[enum Content]
 
-==[Functions]
-
-===[fn classify]
-
-Classifies a `git` value from `catasto.ctmt`.
-
-===[fn resolve_url]
-
-The URL to hand to `git`: remote URLs as written, local paths made
-absolute against the workspace `root`.
+Content read from a git repository.
 
 ==[Constants]
 

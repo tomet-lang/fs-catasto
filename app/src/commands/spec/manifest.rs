@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn manifest_spec_is_valid_tmt() {
         let text = rendered();
-        tomet_parser::parse_document(&text).expect("generated manifest spec parses as valid tmt");
+        tomet_ast_parser::parse_file(&text).expect("generated manifest spec parses as valid tmt");
         assert!(text.contains("==[ upstreams ]") || text.contains("==[upstreams]"));
         assert!(text.contains("==[ entry ]") || text.contains("==[entry]"));
         assert!(text.contains("`source`"));

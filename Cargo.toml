@@ -27,15 +27,9 @@ jobserver-gate = { git = "https://github.com/tomet-lang/jobserver-gate.git" }
 
 #= Tomet
 cotomet = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-ast = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-ast-parser = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-config = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-load = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-load-config = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-parser = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-printer = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-semantics = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-tree = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-workspace = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-spec = { git = "https://github.com/tomet-lang/tomet.git" }
 
 #= Crates.io

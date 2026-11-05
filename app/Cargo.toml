@@ -28,4 +28,4 @@ mimalloc = { workspace = true }
 [dev-dependencies]
 tempfile = { workspace = true }
 serde_json = { workspace = true }
-tomet-parser = { workspace = true }
+tomet-ast-parser = { workspace = true }

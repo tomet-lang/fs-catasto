@@ -41,7 +41,7 @@ mod tests {
     #[test]
     fn cli_spec_is_valid_tmt() {
         let text = rendered();
-        tomet_parser::parse_document(&text).expect("generated cli spec parses as valid tmt");
+        tomet_ast_parser::parse_file(&text).expect("generated cli spec parses as valid tmt");
     }
 
     #[test]

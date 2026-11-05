@@ -36,10 +36,10 @@ pub(super) struct Upstreams {
 impl Upstreams {
     /// Reads the declarations before the first entry. `::upstreams` is the
     /// only one catasto knows, and it may appear once.
-    pub(super) fn from_header(header: &[cotomet::syntax::Declaration]) -> Result<Self> {
+    pub(super) fn from_header(header: &[cotomet::Declaration]) -> Result<Self> {
         let mut upstreams = None;
         for declaration in header {
-            if declaration.name != "upstreams" {
+            if !declaration.name.is_bare_named("upstreams") {
                 bail!(
                     "unknown declaration `::{}`; the only one catasto reads is `::upstreams`",
                     declaration.name
@@ -48,19 +48,29 @@ impl Upstreams {
             if upstreams.is_some() {
                 bail!("`::upstreams` is declared twice; put every upstream in the one");
             }
-            if declaration.args.is_some() {
+            if declaration.data.args.is_some() || declaration.content.is_some() {
                 bail!(
                     "`::upstreams` takes a map, not arguments: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
                 );
             }
-            let Some(cotomet::Value::Map(entries)) = &declaration.data else {
+            let Some(group) = &declaration.data.value else {
                 bail!(
                     "`::upstreams` needs a map of names: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
                 );
             };
+            let cotomet::Value::Map(entries) = group.as_data() else {
+                bail!(
+                    "`::upstreams` needs a map of names: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
+                );
+            };
+            if entries.len() != group.0.len() {
+                bail!(
+                    "`::upstreams` needs a map of names: `::upstreams{{ name: {{ git: \"…\", rev: main }} }}`"
+                );
+            }
             let mut named = Vec::with_capacity(entries.len());
             for (name, value) in entries {
-                let upstream: Upstream = cotomet::from_value(value.clone())
+                let upstream: Upstream = cotomet::from_value(value)
                     .map_err(|e| anyhow!("upstream `{name}`: {e}"))?;
                 check_git(&upstream.git, &upstream.rev)
                     .map_err(|e| anyhow!("upstream `{name}`: {e}"))?;
@@ -72,7 +82,7 @@ impl Upstreams {
                         root.display()
                     );
                 }
-                named.push((name.clone(), upstream));
+                named.push((name, upstream));
             }
             upstreams = Some(Self { named });
         }
@@ -177,7 +187,7 @@ pub struct UpstreamInfo {
 
 /// The places `::upstreams` names in `text`, in the order they were written.
 pub fn upstreams_of(text: &str) -> Result<Vec<UpstreamInfo>> {
-    let file = cotomet::syntax::parse_file(text).map_err(|e| anyhow!("{e}"))?;
+    let file = cotomet::parse_file(text).map_err(|e| anyhow!("{e}"))?;
     let upstreams = Upstreams::from_header(&file.header)?;
     Ok(upstreams
         .named

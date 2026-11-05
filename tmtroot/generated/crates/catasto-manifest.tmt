@@ -1,10 +1,216 @@
 ::kind(api)
 
-::meta{crate: catasto-manifest, dependencies: list(), dependents: list(catasto-core, catasto-git)}
+::meta{crate: catasto-manifest, dependencies: list(), dependents: list(catasto-cli, catasto-core, catasto-git)}
 
 =[catasto-manifest]
 
-`catasto-manifest` -- manifest syntax, schema models, and AST/CST editing for catasto.
+Manifest syntax, schema models, and AST/CST editing for catasto.
 
-Defines the structure and AST/CST manipulation of `catasto.ctmt` declarations,
-upstream maps, sources, symlink options, and content lockfiles.
+==[Module edit]
+
+Edits to the text of `catasto.ctmt` that leave the rest of the file as the
+user wrote it.
+
+The manifest is written by hand, with comments and its own layout, so a
+command that changes it cannot parse it and print it back. These functions
+read the text only far enough to know where things are -- the `::name`
+declarations at the top and the `"path": value` entries below them -- and
+then insert or cut a span. Everything else stays byte for byte.
+
+None of them judges the result. A caller parses the new text with
+[`crate::Manifest::parse`] before it writes anything, so an edit that makes
+the file invalid is refused and the file is untouched.
+
+===[Structs]
+
+====[struct UpstreamText]
+
+What `::upstreams` says about one place.
+
+====[struct AlreadyDeclared]
+
+An entry or upstream is already declared in the manifest.
+
+===[Enums]
+
+====[enum SourceText]
+
+Where a managed file comes from, as the text of one entry writes it.
+
+====[enum AddOutcome]
+
+The outcome of declaring an entry in the manifest.
+
+====[enum DeclaredKind]
+
+The kind of item that was already declared.
+
+===[Functions]
+
+====[fn add_or_replace_entry]
+
+Declares `dest` with `source`, after the last entry, or replaces its source if `force`.
+
+====[fn add_entry]
+
+Declares `dest` with `source`, after the last entry.
+
+====[fn remove_entry]
+
+Undeclares `dest`: its entry and the comment lines directly above it.
+
+====[fn add_upstream]
+
+Names a place in `::upstreams`, creating the declaration when there is none.
+
+====[fn add_or_replace_upstream]
+
+Names a place in `::upstreams`, or replaces its definition if `force`.
+
+====[fn remove_upstream]
+
+Drops a place from `::upstreams`; the declaration goes with its last place.
+
+====[fn upstream_is_used]
+
+Whether some entry of `text` names `upstream` as its source.
+
+==[Module lock]
+
+The generated `catasto.lock` data model and serialization.
+
+===[Structs]
+
+====[struct Lock]
+
+What each managed file looked like when it was locked.
+
+====[struct Locked]
+
+One locked file.
+
+===[Enums]
+
+====[enum LockMode]
+
+Special mode for a locked file.
+
+===[Constants]
+
+====[const LOCK_FILE]
+
+File name of the lockfile, relative to the workspace root.
+
+====[const LOCK_VERSION]
+
+The format version this catasto reads and writes.
+
+==[Module manifest]
+
+The hand-written `catasto.ctmt` declaration.
+
+A manifest is a cotomet map from a path inside the workspace to what
+catasto knows about that path. Today an entry says where the file comes
+from:
+
+```text
+"tmtroot/schema/vocabularies/writ.vocabulary.tmt": { source: "../vocabularies/writ.vocabulary.tmt" }
+
+"tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
+  source: { git: "https://example.com/vocabularies.git", rev: v1, path: "rust.vocabulary.tmt" }
+}
+```
+
+The key comes first because every declaration catasto will take is about a
+path, and the lockfile is keyed by path too. An entry is always a map; a
+`source` is a string for a local file, or a map for a git repository.
+Quote a `rev` that reads as a number (`rev: "1.2"`), or cotomet reads it as
+one.
+
+A place that several entries come from is named once, in an `::upstreams`
+declaration at the top of the file, and each entry refers to it:
+
+```text
+::upstreams{
+  vocabularies: { git: "https://example.com/vocabularies.git", rev: v1 }
+}
+
+"tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
+  source: { upstream: vocabularies, path: "rust.vocabulary.tmt" }
+}
+```
+
+An upstream may name a `root`, the directory of the repository that its
+entries' `path`s start from: with `root: vocabularies` in the declaration,
+`path: "rust/rust.vocabulary.tmt"` is the file `vocabularies/rust/rust.vocabulary.tmt`.
+
+An upstream is not a macro: it is resolved while the file is read, into
+the `git`, `rev` and `path` map written out in full (the `root` joined in
+front of the `path`), so everything after the parse, and the lockfile, see
+the same [`Source`] either way.
+
+===[Module url]
+
+Git URL classification and validation.
+
+====[Enums]
+
+=====[enum UrlKind]
+
+Where a repository lives, as far as catasto accepts it.
+
+There is deliberately no ssh: `git@host:path`, `ssh://`, `git://` and plain
+`http://` are rejected, so catasto never needs keys, agents or host config.
+
+====[Functions]
+
+=====[fn classify]
+
+Classifies a `git` value from `catasto.ctmt`.
+
+===[Functions]
+
+====[fn reject_misnamed]
+
+Fails when `expected` is missing from `root` but a file whose name differs from it only in case is there.
+
+The names catasto reads are exact. On a case-sensitive filesystem `Catasto.ctmt` would otherwise be read as
+"no manifest" without a word, while on a case-insensitive one it would work, so one tree would behave
+differently from one machine to the next.
+
+====[fn is_inside_workspace]
+
+===[Constants]
+
+====[const MANIFEST_FILE]
+
+File name of the manifest, relative to the workspace root.
+
+==[Module spec]
+
+Manifest schema specifications for `catasto.ctmt`.
+
+Provides [`ConfigGroupSpec`] representations of `::upstreams` and manifest path entries
+using `#[derive(Config)]` from `tomet-spec`.
+
+===[Structs]
+
+====[struct UpstreamSpec]
+
+Upstream repository definitions declared in `::upstreams`.
+
+An upstream declares a named Git repository at a pinned revision, optionally
+with a `root` directory inside the repository from which entry paths start.
+
+====[struct ManifestEntrySpec]
+
+Manifest file entry declaring a managed workspace file.
+
+Each top-level map entry in `catasto.ctmt` binds a workspace-relative file path
+to its canonical content origin (`source`).
+
+===[Functions]
+
+====[fn all_manifest_specs]
+
+Returns all configuration and declaration specification groups for `catasto.ctmt`.

@@ -338,7 +338,7 @@ impl Manifest {
     /// as if they had been written in full. A file with nothing but comments
     /// is the empty manifest.
     pub fn parse(text: &str) -> Result<Self> {
-        let file = cotomet::syntax::parse_file(text).map_err(|e| anyhow!("{e}"))?;
+        let file = cotomet::parse_file(text).map_err(|e| anyhow!("{e}"))?;
         let upstreams = Upstreams::from_header(&file.header)?;
         let body = upstreams.resolve(file.body)?;
         let manifest: Self = cotomet::from_value(body).map_err(|e| anyhow!("{e}"))?;

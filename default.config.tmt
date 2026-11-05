@@ -5,6 +5,11 @@
     copyright: "(C) 2026 Tomet Projects"
     generated_by: "<!-- Generated from ${1}. Edit that, then `tomet export .`. -->"
   }
+  workspace: {
+    ignore: list(
+      "tmtroot/generated",
+    )
+  }
   vocabularies: list(
     "tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt",
     "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt",
