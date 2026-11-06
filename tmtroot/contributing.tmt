@@ -1,11 +1,9 @@
-::config(
-  export: {
-    type: commonmark,
-    path: "CONTRIBUTING.md"
-  }
+::export(
+  type: commonmark,
+  path: "CONTRIBUTING.md"
 )
+::id(doc-contributing)
 ::meta{
-  id: doc-contributing,
   lang: en
 }
 
