@@ -176,6 +176,49 @@ fn drift_detection_across_workspaces() {
 }
 
 #[test]
+fn all_covers_a_root_manifest_and_a_workspace_inside_another() {
+    let env = MultiRepoEnv::new();
+
+    // The root is a workspace of its own, and `repo_a` holds one more.
+    fs::write(
+        env.root.join("catasto.ctmt"),
+        "\"root.txt\": { source: \"shared/common.txt\" }\n",
+    )
+    .unwrap();
+    let inner = env.repo_a.join("inner");
+    fs::create_dir_all(&inner).unwrap();
+    fs::write(
+        inner.join("catasto.ctmt"),
+        "\"inner.txt\": { source: \"../../shared/common.txt\" }\n",
+    )
+    .unwrap();
+
+    let root = env.root.to_str().unwrap();
+    let out = env.run(&["sync", "--all", root]);
+    assert_eq!(out.status.code(), Some(0));
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    assert!(stdout.contains("[1/4]"));
+    assert!(stdout.contains("[4/4]"));
+    assert!(stdout.contains("Summary: 4 succeeded, 0 failed (4 total)"));
+
+    // Each workspace wrote its own file and its own lock, and nothing leaked into its parent.
+    assert!(env.root.join("root.txt").is_file());
+    assert!(env.root.join("catasto.lock").is_file());
+    assert!(env.repo_a.join("common.txt").is_file());
+    assert!(inner.join("inner.txt").is_file());
+    assert!(inner.join("catasto.lock").is_file());
+    assert!(!env.repo_a.join("inner.txt").exists());
+    let lock_a = fs::read_to_string(env.repo_a.join("catasto.lock")).unwrap();
+    assert!(!lock_a.contains("inner.txt"));
+
+    let out = env.run(&["check", "--all", "--json", root]);
+    assert_eq!(out.status.code(), Some(0));
+    let json: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(json["summary"]["total"], 4);
+    assert_eq!(json["summary"]["passed"], 4);
+}
+
+#[test]
 fn single_workspace_check_json() {
     let env = MultiRepoEnv::new();
 

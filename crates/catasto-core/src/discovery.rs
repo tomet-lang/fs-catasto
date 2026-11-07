@@ -37,16 +37,17 @@ pub fn normalize_path(path: PathBuf) -> PathBuf {
     }
 }
 
-/// Discovers catasto workspaces under `root`.
+/// Discovers every catasto workspace under `root`, `root` itself included.
 ///
-/// If `root` contains a `catasto.ctmt` file, `root` is returned and its subdirectories
-/// are not searched (pruning).
+/// A workspace is a directory that holds a `catasto.ctmt`. `root` counts when it holds one, and the search goes on
+/// below it and below every workspace it finds: a manifest never hides another one. `--all` means "every
+/// `catasto.ctmt` under the root", and a workspace that sits inside another is still its own (its manifest and lock
+/// are read from its own directory).
 ///
-/// Otherwise, subdirectories are scanned recursively, skipping VCS directories and build
-/// artifacts (`.git`, `.jj`, `.agents`, `target`, `node_modules`, `result`, `dist`, `.cache`, `tmp`).
-/// When a directory contains `catasto.ctmt`, it is included and its subdirectories are pruned.
+/// The search skips VCS directories and build artifacts (`.git`, `.jj`, `.agents`, `target`, `node_modules`,
+/// `result`, `dist`, `.cache`, `tmp`) and does not follow symlinks.
 ///
-/// Discovered paths are sorted for deterministic ordering.
+/// The result is sorted, so `root` comes first and the rest follow in a fixed order.
 pub fn discover_workspaces(root: &Path) -> Result<Vec<PathBuf>> {
     if !root.exists() {
         bail!("path does not exist: {}", root.display());
@@ -56,7 +57,6 @@ pub fn discover_workspaces(root: &Path) -> Result<Vec<PathBuf>> {
 
     if root.join(MANIFEST_FILE).is_file() {
         workspaces.push(normalize_path(root.to_path_buf()));
-        return Ok(workspaces);
     }
 
     discover_workspaces_rec(root, &mut workspaces)?;
@@ -94,11 +94,9 @@ fn discover_workspaces_rec(dir: &Path, workspaces: &mut Vec<PathBuf>) -> Result<
 
         let path = entry.path();
         if path.join(MANIFEST_FILE).is_file() {
-            workspaces.push(normalize_path(path));
-            // Prune: do not scan subdirectories of an already discovered workspace.
-        } else {
-            discover_workspaces_rec(&path, workspaces)?;
+            workspaces.push(normalize_path(path.clone()));
         }
+        discover_workspaces_rec(&path, workspaces)?;
     }
 
     Ok(())
@@ -111,17 +109,33 @@ mod tests {
     use super::*;
 
     #[test]
-    fn root_is_workspace_prunes_subdirectories() {
+    fn root_with_a_manifest_is_listed_first_and_does_not_hide_the_workspaces_below() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
 
         fs::write(root.join(MANIFEST_FILE), "").unwrap();
-        let nested = root.join("nested");
-        fs::create_dir_all(&nested).unwrap();
-        fs::write(nested.join(MANIFEST_FILE), "").unwrap();
+        let ws_b = root.join("ws_b");
+        let ws_a = root.join("ws_a");
+        fs::create_dir_all(&ws_b).unwrap();
+        fs::create_dir_all(&ws_a).unwrap();
+        fs::write(ws_b.join(MANIFEST_FILE), "").unwrap();
+        fs::write(ws_a.join(MANIFEST_FILE), "").unwrap();
 
         let found = discover_workspaces(root).unwrap();
-        assert_eq!(found, vec![normalize_path(root.to_path_buf())]);
+        assert_eq!(found, vec![root.to_path_buf(), ws_a, ws_b]);
+    }
+
+    #[test]
+    fn root_without_a_manifest_is_not_listed() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let ws = root.join("ws");
+        fs::create_dir_all(&ws).unwrap();
+        fs::write(ws.join(MANIFEST_FILE), "").unwrap();
+
+        let found = discover_workspaces(root).unwrap();
+        assert_eq!(found, vec![ws]);
     }
 
     #[test]
@@ -166,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn prunes_subdirectories_inside_discovered_workspace() {
+    fn finds_a_workspace_inside_another_workspace() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
 
@@ -178,7 +192,39 @@ mod tests {
         fs::write(internal.join(MANIFEST_FILE), "").unwrap();
 
         let found = discover_workspaces(root).unwrap();
+        assert_eq!(found, vec![ws, internal]);
+    }
+
+    #[test]
+    fn ignored_directories_are_skipped_inside_a_workspace_too() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let ws = root.join("my_ws");
+        fs::create_dir_all(&ws).unwrap();
+        fs::write(ws.join(MANIFEST_FILE), "").unwrap();
+        for ignored in IGNORED_DIRS {
+            let fake = ws.join(ignored).join("fake_ws");
+            fs::create_dir_all(&fake).unwrap();
+            fs::write(fake.join(MANIFEST_FILE), "").unwrap();
+        }
+
+        let found = discover_workspaces(root).unwrap();
         assert_eq!(found, vec![ws]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn does_not_follow_symlinks() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join(MANIFEST_FILE), "").unwrap();
+        std::os::unix::fs::symlink(outside.path(), root.join("link")).unwrap();
+
+        let found = discover_workspaces(root).unwrap();
+        assert!(found.is_empty());
     }
 
     #[test]
