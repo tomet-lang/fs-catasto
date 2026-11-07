@@ -104,7 +104,7 @@ pub fn plan_sync(
             content,
             commit,
             source: managed.source.clone(),
-            executable,
+            executable: managed.is_executable(executable),
         });
     }
 

@@ -22,10 +22,12 @@ fn parses_managed_entries_in_the_order_written() {
             Managed {
                 path: "b/writ.vocabulary.tmt".into(),
                 source: path_source("../vocabularies/writ.vocabulary.tmt"),
+                executable: None,
             },
             Managed {
                 path: "a/rust.vocabulary.tmt".into(),
                 source: path_source("../vocabularies/rust.vocabulary.tmt"),
+                executable: None,
             },
         ]
     );
@@ -239,6 +241,44 @@ fn an_entry_needs_a_source() {
 fn rejects_unknown_fields() {
     let err = Manifest::parse("\"a\": { source: \"b\", owner: x }");
     assert!(err.is_err());
+}
+
+#[test]
+fn an_entry_may_declare_its_executable_mode() {
+    let manifest = Manifest::parse(
+        "\"a.sh\": { source: \"s/a.sh\", executable: true }\n\
+         \"b.txt\": { source: \"s/b.txt\", executable: false }\n\
+         \"c.txt\": { source: \"s/c.txt\" }\n",
+    )
+    .unwrap();
+
+    let declared: Vec<Option<bool>> = manifest.managed.iter().map(|m| m.executable).collect();
+    assert_eq!(declared, vec![Some(true), Some(false), None]);
+}
+
+#[test]
+fn a_declared_mode_wins_over_the_sources_and_an_absent_one_leaves_it_to_the_source() {
+    let manifest = Manifest::parse(
+        "\"a\": { source: s, executable: true }\n\
+         \"b\": { source: s, executable: false }\n\
+         \"c\": { source: s }\n",
+    )
+    .unwrap();
+    let [a, b, c] = &manifest.managed[..] else {
+        panic!("three entries")
+    };
+
+    assert!(a.is_executable(false));
+    assert!(!b.is_executable(true));
+    assert!(c.is_executable(true));
+    assert!(!c.is_executable(false));
+}
+
+#[test]
+fn the_executable_mode_must_be_a_boolean() {
+    let err = Manifest::parse("\"a\": { source: s, executable: yes }").unwrap_err();
+    assert!(err.to_string().contains("executable"), "{err}");
+    assert!(Manifest::parse("\"a\": { source: s, executable: \"true\" }").is_err());
 }
 
 #[test]

@@ -27,6 +27,17 @@ pub struct Managed {
     pub path: PathBuf,
     /// Where the canonical content comes from.
     pub source: Source,
+    /// The executable mode the entry declares, if it does: `Some(true)` places the file executable and `Some(false)`
+    /// not, whatever the source says. `None` leaves it to the source (a git file's `100755` or not; a local file
+    /// is never executable).
+    pub executable: Option<bool>,
+}
+
+impl Managed {
+    /// Whether the file is placed executable, given whether its `source` is.
+    pub fn is_executable(&self, source_is_executable: bool) -> bool {
+        self.executable.unwrap_or(source_is_executable)
+    }
 }
 
 /// What a manifest entry holds, keyed by its path.
@@ -34,6 +45,8 @@ pub struct Managed {
 #[serde(deny_unknown_fields, expecting = "a map with a `source`")]
 pub(super) struct Entry {
     pub(super) source: Source,
+    #[serde(default)]
+    pub(super) executable: Option<bool>,
 }
 
 impl<'de> Deserialize<'de> for Manifest {
@@ -57,6 +70,7 @@ impl<'de> Deserialize<'de> for Manifest {
                     managed.push(Managed {
                         path: path.into(),
                         source: entry.source,
+                        executable: entry.executable,
                     });
                 }
                 Ok(Manifest { managed })

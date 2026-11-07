@@ -34,8 +34,8 @@ use catasto_manifest::manifest::{Manifest, Source, Symlink};
 /// Every declared file must exist; the lock records what is on disk, so a file
 /// that differs from its source shows up as `stale` on the next check.
 ///
-/// A git source keeps the commit and mode the existing lock recorded for it. `lock`
-/// never resolves a revision; `catasto sync` does.
+/// A git source keeps the commit the existing lock recorded for it. So does its mode, unless the entry declares
+/// one (`executable`), which is recorded as it is. `lock` never resolves a revision; `catasto sync` does.
 pub fn lock(root: &Path) -> Result<Lock> {
     let manifest = Manifest::load(root)?;
     let existing = Lock::load(root)?;
@@ -49,13 +49,20 @@ pub fn lock(root: &Path) -> Result<Lock> {
             (locked.source == managed.source).then(|| (managed.path.clone(), commit))
         })
         .collect();
+    // A mode the entry declares is the mode; otherwise the one the existing lock holds for the same source.
     let modes = manifest
         .managed
         .iter()
         .filter_map(|managed| {
-            let locked = existing.get(&managed.path)?;
-            let mode = locked.mode?;
-            (locked.source == managed.source).then(|| (managed.path.clone(), mode))
+            let mode = match managed.executable {
+                Some(true) => LockMode::Executable,
+                Some(false) => return None,
+                None => {
+                    let locked = existing.get(&managed.path)?;
+                    (locked.source == managed.source).then_some(locked.mode?)?
+                }
+            };
+            Some((managed.path.clone(), mode))
         })
         .collect();
     write_lock(root, manifest, &commits, &modes)

@@ -24,3 +24,4 @@ Manifest file entry declaring a managed workspace file. Each top-level map entry
 - `source.path` (path): Location of the file inside the upstream Git repository.
 - `source.upstream` (string): Name of an upstream repository declared in `::upstreams`.
 - `source.symlink` ("follow" | "keep", default: `follow`): Symlink preservation mode in git sources (`follow` to resolve target content, or `keep` to preserve symlink itself).
+- `executable` (boolean): Whether the file is placed executable (`true`) or not (`false`), whatever the source says. Left out, the source decides: a git file's `100755` or not, and a local file is never executable.

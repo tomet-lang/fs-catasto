@@ -62,6 +62,11 @@ pub struct ManifestEntrySpec {
         type = "\"follow\" | \"keep\""
     )]
     pub source_symlink: Option<String>,
+
+    /// Whether the file is placed executable (`true`) or not (`false`), whatever the source says. Left out, the
+    /// source decides: a git file's `100755` or not, and a local file is never executable.
+    #[config(key = "executable", type = "boolean")]
+    pub executable: Option<bool>,
 }
 
 /// Returns all configuration and declaration specification groups for `catasto.ctmt`.
@@ -94,5 +99,6 @@ mod tests {
         assert!(rendered.contains("`git`"));
         assert!(rendered.contains("`source`"));
         assert!(rendered.contains("`source.symlink`"));
+        assert!(rendered.contains("`executable`"));
     }
 }

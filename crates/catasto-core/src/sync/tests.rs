@@ -739,3 +739,111 @@ fn sync_executable_file_creates_mode_and_update_tracks_flipping() {
     );
 }
 
+
+#[cfg(unix)]
+fn is_executable(path: &Path) -> bool {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::metadata(path).unwrap().permissions().mode() & 0o111 != 0
+}
+
+#[test]
+#[cfg(unix)]
+fn a_local_source_declared_executable_is_placed_executable_and_locked_as_such() {
+    let (_tmp, vault, _source) = workspace();
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        "\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\", executable: true }\n",
+    )
+    .unwrap();
+
+    let lock = sync(&vault).unwrap();
+
+    assert!(is_executable(&vault.join("vocab/writ.tmt")));
+    assert_eq!(
+        lock.get(Path::new("vocab/writ.tmt")).unwrap().mode,
+        Some(LockMode::Executable)
+    );
+    assert!(check(&vault).unwrap().is_ok());
+}
+
+#[test]
+#[cfg(unix)]
+fn a_git_source_that_is_executable_is_placed_without_the_bits_when_the_entry_declares_false() {
+    let repo = TestRepo::new();
+    repo.commit_executable("tool.sh", "#!/bin/sh\n");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "\"tool.sh\": {{ source: {{ git: {:?}, rev: main, path: \"tool.sh\" }}, executable: false }}\n",
+            repo.url()
+        ),
+    )
+    .unwrap();
+
+    let lock = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+    assert!(!is_executable(&vault.join("tool.sh")));
+    assert_eq!(lock.get(Path::new("tool.sh")).unwrap().mode, None);
+    assert!(check(&vault).unwrap().is_ok());
+}
+
+#[test]
+#[cfg(unix)]
+fn changing_the_declared_mode_is_unlocked_until_sync_puts_it_right() {
+    let (_tmp, vault, _source) = workspace();
+    sync(&vault).unwrap();
+    assert!(check(&vault).unwrap().is_ok());
+
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        "\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\", executable: true }\n",
+    )
+    .unwrap();
+    let report = check(&vault).unwrap();
+    assert_eq!(report.violations.len(), 1, "{:?}", report.violations);
+    assert_eq!(
+        report.violations[0].kind,
+        crate::check::ViolationKind::Unlocked
+    );
+
+    sync(&vault).unwrap();
+    assert!(is_executable(&vault.join("vocab/writ.tmt")));
+    assert!(check(&vault).unwrap().is_ok());
+
+    // And back: dropping the declaration leaves the mode to the source, which is a normal file.
+    std::fs::write(vault.join("catasto.ctmt"), MANIFEST).unwrap();
+    sync(&vault).unwrap();
+    assert!(!is_executable(&vault.join("vocab/writ.tmt")));
+    assert!(check(&vault).unwrap().is_ok());
+}
+
+#[test]
+#[cfg(unix)]
+fn lock_records_the_declared_mode_without_the_network() {
+    let (_tmp, vault, _source) = workspace();
+    sync(&vault).unwrap();
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        "\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\", executable: true }\n",
+    )
+    .unwrap();
+    // `lock` records what is on disk, so the file is made executable by hand first.
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let file = vault.join("vocab/writ.tmt");
+        std::fs::set_permissions(&file, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+
+    let lock = crate::lockfile::lock(&vault).unwrap();
+
+    assert_eq!(
+        lock.get(Path::new("vocab/writ.tmt")).unwrap().mode,
+        Some(LockMode::Executable)
+    );
+    assert!(check(&vault).unwrap().is_ok());
+}

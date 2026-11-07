@@ -138,6 +138,10 @@ fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<Violat
     let Some(locked) = lock.get(&managed.path).filter(|locked| {
         locked.source == managed.source
             && matches!(managed.source, Source::Git { .. }) == locked.commit.is_some()
+            // A declared executable mode that the lock does not hold is a declaration changed since the lock.
+            && managed.executable.is_none_or(|declared| {
+                declared == (locked.mode == Some(crate::lockfile::LockMode::Executable))
+            })
     }) else {
         return Ok(vec![ViolationKind::Unlocked]);
     };
