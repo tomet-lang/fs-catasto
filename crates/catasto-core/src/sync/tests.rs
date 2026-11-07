@@ -458,13 +458,85 @@ fn sync_keeps_the_mode_of_an_existing_destination() {
     sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
 
     let dest = vault.join("run.sh");
-    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o750)).unwrap();
+    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o640)).unwrap();
     std::fs::write(&dest, "edited").unwrap();
     sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
 
+    // Only the executable bits are the source's to decide; the rest of the mode stays.
     assert_eq!(std::fs::read_to_string(&dest).unwrap(), "v1");
     let mode = std::fs::metadata(&dest).unwrap().permissions().mode();
-    assert_eq!(mode & 0o777, 0o750);
+    assert_eq!(mode & 0o777, 0o640);
+}
+
+#[test]
+#[cfg(unix)]
+fn sync_clears_executable_bits_the_source_does_not_have_even_when_the_lock_never_recorded_them() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = TestRepo::new();
+    repo.commit("run.sh", "v1");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "\"run.sh\": {{ source: {{ git: {:?}, rev: main, path: \"run.sh\" }} }}",
+            repo.url()
+        ),
+    )
+    .unwrap();
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+    // A lock with no `mode` anywhere (as one written before the mode was recorded), and a copy that is
+    // executable on disk although its source is a normal file.
+    let dest = vault.join("run.sh");
+    let lock_text = std::fs::read_to_string(vault.join("catasto.lock")).unwrap();
+    assert!(!lock_text.contains("\"mode\""), "{lock_text}");
+    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o777)).unwrap();
+    assert!(!crate::check(&vault).unwrap().is_ok());
+
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+    let mode = std::fs::metadata(&dest).unwrap().permissions().mode();
+    assert_eq!(mode & 0o111, 0);
+    assert_eq!(mode & 0o666, 0o666, "the other bits are not touched");
+    assert!(crate::check(&vault).unwrap().is_ok());
+}
+
+#[test]
+#[cfg(unix)]
+fn sync_sets_the_executable_bits_the_source_has_on_a_copy_that_lacks_them() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let repo = TestRepo::new();
+    repo.commit_executable("tool.sh", "#!/bin/sh\n");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "\"tool.sh\": {{ source: {{ git: {:?}, rev: main, path: \"tool.sh\" }} }}",
+            repo.url()
+        ),
+    )
+    .unwrap();
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+    let dest = vault.join("tool.sh");
+    std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o644)).unwrap();
+    assert!(!crate::check(&vault).unwrap().is_ok());
+
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+    let mode = std::fs::metadata(&dest).unwrap().permissions().mode();
+    assert_eq!(mode & 0o111, 0o111);
+    assert!(crate::check(&vault).unwrap().is_ok());
 }
 
 #[test]

@@ -143,15 +143,10 @@ pub fn sync_only(
             Content::Link(link_target) => catasto_digest::sha256_hex(link_target.as_bytes()),
         };
         hashes.insert(file.path.clone(), hash);
-        let was_executable = plan
-            .lock
-            .get(&file.path)
-            .is_some_and(|l| l.mode == Some(LockMode::Executable));
         fetched.push(SyncItem {
             destination: file.destination.clone(),
             content: file.content.clone(),
             executable: file.executable,
-            was_executable,
         });
     }
 
@@ -386,7 +381,6 @@ struct SyncItem {
     destination: PathBuf,
     content: Content,
     executable: bool,
-    was_executable: bool,
 }
 
 fn write_all(files: Vec<SyncItem>) -> Result<()> {
@@ -398,7 +392,7 @@ fn write_all(files: Vec<SyncItem>) -> Result<()> {
         match file.content {
             Content::File(bytes) => {
                 write_file_replacing_symlink(&file.destination, &bytes)?;
-                apply_executable_mode(&file.destination, file.executable, file.was_executable)?;
+                apply_executable_mode(&file.destination, file.executable)?;
             }
             Content::Link(link_target) => {
                 write_symlink_atomic(&file.destination, &link_target)?;
@@ -408,33 +402,34 @@ fn write_all(files: Vec<SyncItem>) -> Result<()> {
     Ok(())
 }
 
+/// Makes the executable bits of `target` agree with `is_executable`, which is what `check` asks for: a file the
+/// lock records as executable has them, any other has none. Only the three executable bits move; the rest of the
+/// mode stays as it is. This does not depend on what an earlier lock said, so a lock written before the mode was
+/// recorded (no `mode` anywhere) is brought in line too.
 #[cfg(unix)]
-fn apply_executable_mode(target: &Path, is_executable: bool, was_executable: bool) -> Result<()> {
+fn apply_executable_mode(target: &Path, is_executable: bool) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    if is_executable {
-        let meta = std::fs::symlink_metadata(target)
-            .with_context(|| format!("cannot inspect {}", target.display()))?;
-        let mode = meta.permissions().mode();
-        let new_mode = mode | 0o111;
-        if new_mode != mode {
-            std::fs::set_permissions(target, std::fs::Permissions::from_mode(new_mode))
-                .with_context(|| format!("cannot set executable permissions on {}", target.display()))?;
-        }
-    } else if was_executable {
-        let meta = std::fs::symlink_metadata(target)
-            .with_context(|| format!("cannot inspect {}", target.display()))?;
-        let mode = meta.permissions().mode();
-        let new_mode = mode & !0o111;
-        if new_mode != mode {
-            std::fs::set_permissions(target, std::fs::Permissions::from_mode(new_mode))
-                .with_context(|| format!("cannot clear executable permissions on {}", target.display()))?;
-        }
+    let meta = std::fs::symlink_metadata(target)
+        .with_context(|| format!("cannot inspect {}", target.display()))?;
+    let mode = meta.permissions().mode();
+    let new_mode = if is_executable {
+        mode | 0o111
+    } else {
+        mode & !0o111
+    };
+    if new_mode != mode {
+        std::fs::set_permissions(target, std::fs::Permissions::from_mode(new_mode)).with_context(
+            || {
+                let verb = if is_executable { "set" } else { "clear" };
+                format!("cannot {verb} executable permissions on {}", target.display())
+            },
+        )?;
     }
     Ok(())
 }
 
 #[cfg(not(unix))]
-fn apply_executable_mode(_target: &Path, _is_executable: bool, _was_executable: bool) -> Result<()> {
+fn apply_executable_mode(_target: &Path, _is_executable: bool) -> Result<()> {
     Ok(())
 }
 
