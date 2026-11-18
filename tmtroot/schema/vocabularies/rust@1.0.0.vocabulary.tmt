@@ -1,20 +1,18 @@
 ::kind(vocabulary)
-::vocabulary(rust){
-  version: "1.0.0"
-}
+::vocabulary(rust, version: "1.0.0")
 
-::elements{
-  crate: {
+::element(
+  crate: (
     display: inline
     singleton: false
     about: | A reference to a Rust crate within the workspace or ecosystem.
-    args: {
-      name: {
+    args: (
+      name: (
         type: string
         positional: true
         required: true
         about: | The crate name (e.g. "my-crate-core", "my-crate-cli").
-      }
-    }
-  }
-}
+      )
+    )
+  )
+)

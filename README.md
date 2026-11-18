@@ -1,4 +1,4 @@
-<!-- Generated from tmtroot/readme.tmt. Edit that, then `tomet export .`. -->
+${macro.generated\_by(self.path)}
 
 # Catasto
 
@@ -56,49 +56,57 @@ The names are exact: `catasto.ctmt` and `catasto.lock`, and `init` takes no othe
 
 ## Files
 
-`catasto.ctmt` is written by hand, in cotomet, the data language of the Tomet ecosystem. It maps each managed path to what is known about it, and today that is where its content comes from.
+`catasto.ctmt` is written by hand, in cotomet, the data language of the Tomet ecosystem. It declares `::use(catasto, version: "1.0.0")` at the top and maps each managed path to a constructor call from the `catasto` vocabulary saying where its content comes from.
 
 ```text
-"docs/shared/terms.tmt": { source: "../shared/terms.tmt" }
+::use(catasto, version: "1.0.0")
+
+"docs/shared/terms.tmt": catasto.local("../shared/terms.tmt")
 ```
 
-The key is a path relative to the workspace and must stay inside it. Quote a path that is not a bare word, which is any path with a `/` or a space in it. An entry is always a map, and a path may be declared once.
+The key is a path relative to the workspace and must stay inside it. Quote a path that is not a bare word, which is any path with a `/` or a space in it. Each path may be declared once, and its value is a bare constructor call or a tuple `(call, executable: bool)`.
 
-A `source` is one of three kinds:
+A source is one of three constructors:
 
-- `"..."` -- a file on the local filesystem, relative to the workspace root. It may point outside the workspace.
-- `{ git: "...", rev: "...", path: "..." }` -- a file in a git repository. `git` is an `https://` URL or a local path (relative to the workspace root), `rev` is a tag, a branch, or a commit already reachable from one, and `path` is the file's location inside the repository. Quote a `rev` that reads as a number (`rev: "1.2"`). An optional `symlink: keep` preserves the symlink in the workspace rather than following it to write the target file content.
-- `{ upstream: name, path: "..." }` -- the same, with the repository and `rev` named once in `::upstreams` (below).
+- `catasto.local("...")` -- a file on the local filesystem, relative to the workspace root. It may point outside the workspace.
+- `catasto.git("...", rev: ..., path: "...")` -- a file in a git repository. The positional first argument is an `https://` URL or a local path (relative to the workspace root), `rev` (default `main`) is a tag, a branch, or a commit already reachable from one, and `path` is the file's location inside the repository. Quote a `rev` that reads as a number (`rev: "1.2"`). An optional `symlink: keep` preserves the symlink in the workspace rather than following it to write the target file content.
+- `catasto.upstream(name, path: "...")` -- the same, with the repository and `rev` named once in `::upstream(...)` (below).
 
 ```text
-"tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": {
-  source: { git: "https://github.com/tomet-lang/vocabularies.git", rev: main, path: "vocabularies/rust/rust@1.0.0.vocabulary.tmt" }
-}
+::use(catasto, version: "1.0.0")
+
+"tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": catasto.git(
+  "https://github.com/tomet-lang/vocabularies.git",
+  rev: main,
+  path: "vocabularies/rust/rust@1.0.0.vocabulary.tmt"
+)
 ```
 
 ## Upstreams
 
-Files that come from the same place name it once. `::upstreams` goes at the top of `catasto.ctmt`, before the first path, as a map from a name to `git` and `rev`, and optionally a `root`:
+Files that come from the same place name it once. `::upstream(...)` goes at the top of `catasto.ctmt`, alongside `::use(catasto, version: "1.0.0")` and before the first path, mapping each name to a `catasto.git(...)` constructor with `rev` and optionally a `root`:
 
 ```text
-::upstreams{
-  vocabularies: { git: "https://github.com/tomet-lang/vocabularies.git", rev: main, root: vocabularies }
-}
+::use(catasto, version: "1.0.0")
+::upstream(
+  vocabularies: catasto.git("https://github.com/tomet-lang/vocabularies.git", rev: main, root: vocabularies)
+)
 
-"tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": {
-  source: { upstream: vocabularies, path: "rust/rust@1.0.0.vocabulary.tmt" }
-}
+"tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": catasto.upstream(
+  vocabularies,
+  path: "rust/rust@1.0.0.vocabulary.tmt"
+)
 ```
 
 `root` is the directory of the repository that the `path`s of its entries start from: above, `rust/rust@1.0.0.vocabulary.tmt` is the file `vocabularies/rust/rust@1.0.0.vocabulary.tmt`. Without it they start at the top of the repository. It must be relative and stay inside the repository, and a `path` cannot climb out of it.
 
-An upstream is not a macro and the name does not leave the manifest. It is read into the full `git`, `rev` and `path` while the file is loaded, so `catasto.lock` records the same `git`, `rev`, `commit` and `sha256` as when they are written out, and moving an entry between the two forms does not make it stale. The `git` and `rev` of an upstream are checked where it is declared. An entry says `upstream` or `git` and `rev`, not both. `::upstreams` appears once, and it is the only declaration catasto reads.
+An upstream is not a macro and the name does not leave the manifest. It is resolved into the full `git`, `rev` and `path` while the file is loaded, so `catasto.lock` records the same `git`, `rev`, `commit` and `sha256` as when they are written out, and moving an entry between the two forms does not make it stale. The `git` URL and `rev` of an upstream are checked where it is declared (and `path` and `symlink` are disallowed there). An entry uses `catasto.upstream(...)` or `catasto.git(...)`, not both. `::use` and `::upstream` are the declarations catasto reads.
 `catasto upstream add --force NAME GIT [--rev R] [--root DIR]` replaces the definition of an existing upstream name, leaving entries and comments where they are. It edits the manifest only, without touching the lock or files; run `catasto sync` afterward to take affected files from the new place.
 
-An entry may also say whether the file is executable:
+An entry may also say whether the file is executable by wrapping the constructor call in a tuple:
 
 ```text
-"scripts/tool.sh": { source: "../shared/tool.sh", executable: true }
+"scripts/tool.sh": (catasto.local("../shared/tool.sh"), executable: true)
 ```
 
 `executable: true` places the file with its executable bits set and `executable: false` with them cleared, whatever the source says. Left out, the source decides: a git file is executable when it is `100755` there, and a local file is never executable. The lock records the mode that results (`"mode": "executable"`, absent for a normal file), and `check` calls an entry `unlocked` when what it declares is not what the lock holds, until `catasto sync` (or `catasto lock`) is run.

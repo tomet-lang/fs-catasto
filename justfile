@@ -43,9 +43,10 @@ bench count="400" size_kib="512":
     work="$(mktemp -d)"
     trap 'rm -rf "$work"' EXIT
     mkdir -p "$work/src" "$work/ws"
+    printf '::use(catasto, version: "1.0.0")\n\n' > "$work/ws/catasto.ctmt"
     for i in $(seq 1 {{count}}); do
         head -c $(({{size_kib}} * 1024)) /dev/urandom > "$work/src/f$i.bin"
-        printf '"f%s.bin": { source: "../src/f%s.bin" }\n' "$i" "$i" >> "$work/ws/catasto.ctmt"
+        printf '"f%s.bin": catasto.local("../src/f%s.bin")\n' "$i" "$i" >> "$work/ws/catasto.ctmt"
     done
     echo "{{count}} files x {{size_kib}} KiB"
     TIMEFORMAT='%R s wall  %U s user'

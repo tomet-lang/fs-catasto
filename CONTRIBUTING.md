@@ -1,4 +1,4 @@
-<!-- Generated from tmtroot/contributing.tmt. Edit that, then `tomet export .`. -->
+${macro.generated\_by(self.path)}
 
 # Contributing to fs-catasto
 

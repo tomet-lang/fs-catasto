@@ -1,33 +1,34 @@
 ::kind(config)
 ::id(config-vault)
-::macros{
+::macro(
   copyright: "(C) 2026 Tomet Projects"
-  generated_by: "<!-- Generated from ${1}. Edit that, then `tomet export .`. -->"
-}
-::vocabularies{
-  rust: @file(tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt)
-  writ: @file(tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt)
-}
-::format{
-  meta: { always_newline: true }
-  heading: { space_inside_brackets: true }
-  table: { adjust_width: auto, max_col_width: 50 }
-  link: {
-    no_space: true
-    group_order: "[]()"
-  }
-  quote: { always_newline: true }
-  callout: {
-    style: { content: block }
-  }
-  list: {
-    multiline: {
-      style: { content: box }
-    }
-  }
-}
-::workspace{
-  ignore: list(
-    "tmtroot/generated",
+  generated_by: [@comment[ Generated from $(1). Edit that, then `tomet export .`. ]]
+)
+::vocabulary(
+  catasto: @file(tmtroot/schema/vocabularies/catasto@1.0.0.vocabulary.tmt)
+  rust:    @file(tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt)
+  writ:    @file(tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt)
+)
+::format(
+  meta:    (always_newline: true)
+  heading: (space_inside_brackets: true)
+  table:   (adjust_width: auto, max_col_width: 50)
+  element: (
+    link: (
+      no_space: true
+      group_order: "[]()"
+    )
+    callout: (
+      style: (content: block)
+    )
   )
-}
+  quote: (always_newline: true)
+  list: (
+    multiline: (
+      style: (content: box)
+    )
+  )
+)
+::workspace(
+  ignore: ("tmtroot/generated")
+)

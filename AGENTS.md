@@ -1,4 +1,4 @@
-<!-- Generated from tmtroot/agents.tmt. Edit that, then `tomet export .`. -->
+${macro.generated\_by(self.path)}
 
 # Catasto
 
