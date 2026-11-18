@@ -10,7 +10,65 @@ Just as a cadastre (@em[catasto]) records the boundaries and parcels of land,
 `catasto` defines and verifies directory rules, naming conventions, media
 manifests, and content lockfiles across a workspace.
 
-A workspace declares the files it manages in `catasto.ctmt`. [`lock`] records
-their SHA-256 in `catasto.lock`, [`check`] reports drift, and [`sync`]
-re-fetches the files from their sources: local paths, or files in git
-repositories pinned to a commit.
+A workspace declares the files and repositories it manages in `catasto.ctmt`.
+\[`lock`\] records their SHA-256 and commits in `catasto.lock`, \[`check`\] reports
+drift, and \[`sync`\] re-fetches them from their sources.
+
+==[Module discovery]
+
+Workspace discovery across directory trees.
+
+===[Functions]
+
+====[fn is_ignored_dir]
+
+Returns true if a directory name matches a VCS or build artifact directory.
+
+====[fn normalize_path]
+
+Normalizes a path by stripping leading `./` curdir components for cleaner display.
+
+====[fn discover_workspaces]
+
+Discovers every catasto workspace under `root`, `root` itself included.
+
+A workspace is a directory that holds a `catasto.ctmt`. `root` counts when it holds one, and the search goes on
+below it and below every workspace it finds: a manifest never hides another one. `--all` means "every
+`catasto.ctmt` under the root", and a workspace that sits inside another is still its own (its manifest and lock
+are read from its own directory).
+
+The search skips VCS directories and build artifacts (`.git`, `.jj`, `.agents`, `target`, `node_modules`,
+`result`, `dist`, `.cache`, `tmp`) and does not follow symlinks.
+
+The result is sorted, so `root` comes first and the rest follow in a fixed order.
+
+==[Module submodule]
+
+`.gitmodules` generation and verification for repository entries.
+
+===[Enums]
+
+====[enum GitmodulesDrift]
+
+What kind of drift `.gitmodules` has compared to `catasto.ctmt`.
+
+===[Functions]
+
+====[fn render_gitmodules]
+
+Renders `.gitmodules` text from the manifest, or `None` if no entry has `submodule: true`.
+
+====[fn sync_gitmodules]
+
+Synchronizes `.gitmodules` on disk with `manifest`.
+
+Writes the file if `submodule: true` entries exist; removes it if previously tracked submodules are gone.
+Leaves an unrelated `.gitmodules` untouched when neither `manifest` nor `lock` declares any submodule.
+
+====[fn check_gitmodules]
+
+Checks whether `.gitmodules` has drifted from `manifest`.
+
+===[Constants]
+
+====[const GITMODULES_FILE]

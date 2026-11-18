@@ -10,24 +10,29 @@ ${macro.generated_by(self.path)}
 ==[ Core Philosophy & Principles ]
 
 ===[ Precedence of Instructions ]
+
 The rules in this document serve as the project baseline and defaults. Explicit instructions given by the user in a conversation always take precedence over these defaults.
 
 ===[ User-First Design over Developer Convenience ]
+
 Always prioritize the end-user experience, syntax ergonomics, and API design.
 If there is tension between developer or implementation convenience and user simplicity, user simplicity must always win. Never compromise user experience just because an implementation is easier.
 
 ===[ Resist Path-of-Least-Resistance & Legacy Bias ]
+
 The existing implementation is never a justification or reason for new design choices.
 -| Do not justify decisions with "it is already implemented this way, so let's stick with it."
 -| Prioritize architectural beauty, elegance, and long-term correctness over the path of least resistance.
 -| Understand the existing context thoroughly, but never take shortcuts or settle for lazy patches.
 
 ===[ Transparent Execution ]
+
 Always state what you intend to do before doing it. Never execute non-trivial actions or commands silently.
 
 ==[ Single Source of Truth & Documentation ]
 
 ===[ Never edit `.md` directly ]
+
 All Markdown files (`README.md`, `AGENTS.md`, `CONTRIBUTING.md`) are generated build artifacts, not source files. `CLAUDE.md` is the one exception: it holds only the line `@AGENTS.md`.
 - Never edit a generated `.md` file directly.
 - Always edit the corresponding `.tmt` file under @dir(tmtroot/).

@@ -8,7 +8,8 @@
         "rev": "main",
         "path": "base/.editorconfig"
       },
-      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+      "commit": "7a0a52ae2f5814dc6f75b3f54303d0031e9229dc",
+      "mode": "executable"
     },
     ".envrc": {
       "sha256": "3c8bdb9d52dd4e7440a504e0f43bb3a1929c06f8f4f2d4d7ef41baab974e39e2",
@@ -17,7 +18,7 @@
         "rev": "main",
         "path": "base/.envrc"
       },
-      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+      "commit": "7a0a52ae2f5814dc6f75b3f54303d0031e9229dc"
     },
     ".gitattributes": {
       "sha256": "2c4d2530e6c2f455de09b135a57ea1ec71790ccffaa4eadcdd4643ee466d76c3",
@@ -26,7 +27,7 @@
         "rev": "main",
         "path": "base/.gitattributes"
       },
-      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+      "commit": "7a0a52ae2f5814dc6f75b3f54303d0031e9229dc"
     },
     ".github/workflows/nix-ci.yml": {
       "sha256": "572ebb0f03d139314ee7c638e6e6cf62b585b3bf112dd0e71dfd1905dad562bc",
@@ -35,7 +36,7 @@
         "rev": "main",
         "path": "base/.github/workflows/nix-ci.yml"
       },
-      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+      "commit": "7a0a52ae2f5814dc6f75b3f54303d0031e9229dc"
     },
     "LICENSE-APACHE": {
       "sha256": "a549c19a5c34ad57b10e336bdfad9cb6040c2fc311ed217f01c7a9c4ddee6015",
@@ -44,7 +45,7 @@
         "rev": "main",
         "path": "base/LICENSE-APACHE"
       },
-      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+      "commit": "7a0a52ae2f5814dc6f75b3f54303d0031e9229dc"
     },
     "LICENSE-MIT": {
       "sha256": "24d88f36f2620d2b18d70bc2136e103b1f9910a63a4614d94404577b2a41f5a0",
@@ -53,34 +54,35 @@
         "rev": "main",
         "path": "base/LICENSE-MIT"
       },
-      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+      "commit": "7a0a52ae2f5814dc6f75b3f54303d0031e9229dc"
     },
     "nix/formatter.nix": {
-      "sha256": "520fd59fc3243a1220b18ba0ce3b710de7c91a46a7d71be0e8f28d9bac55e093",
+      "sha256": "a8868cd1cda64877a3dc4986f5ec45fc1390aba49a6fa41846ca865438844772",
       "source": {
         "git": "https://github.com/tomet-lang/commonfiles.git",
         "rev": "main",
         "path": "base/nix/formatter.nix"
       },
-      "commit": "4d2293d73bc91a742ba57dad7cb4c652726af836"
+      "commit": "7a0a52ae2f5814dc6f75b3f54303d0031e9229dc",
+      "mode": "executable"
     },
     "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": {
-      "sha256": "11af349642b16e1f78054789e995c212e2f13bca4fbba42a5db126ae71f6e1d1",
+      "sha256": "41b022ca9a034d7894d041039fc85fb793a4e5149da52ccc3191e88056430209",
       "source": {
         "git": "https://github.com/tomet-lang/vocabularies.git",
         "rev": "main",
         "path": "vocabularies/rust/rust@1.0.0.vocabulary.tmt"
       },
-      "commit": "25813ecc72785d2f87bf52ad3dcd454a70b6f41a"
+      "commit": "7c8a43e240bfb5680d24e9711c4a42f09df4e75f"
     },
     "tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt": {
-      "sha256": "3fd2b5b89ae1beb0b0abf1e3fc269f933ca9385876cfb5d005aba730f67acef3",
+      "sha256": "2662a7f93d70d90f0e6de79a333036a01e89875b6ceeb11f5a7207e263ef4677",
       "source": {
         "git": "https://github.com/tomet-lang/vocabularies.git",
         "rev": "main",
         "path": "vocabularies/writ/writ@1.0.0.vocabulary.tmt"
       },
-      "commit": "25813ecc72785d2f87bf52ad3dcd454a70b6f41a"
+      "commit": "7c8a43e240bfb5680d24e9711c4a42f09df4e75f"
     }
   }
 }

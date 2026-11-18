@@ -18,14 +18,14 @@ declarations at the top and the `"path": value` entries below them -- and
 then insert or cut a span. Everything else stays byte for byte.
 
 None of them judges the result. A caller parses the new text with
-[`crate::Manifest::parse`] before it writes anything, so an edit that makes
+\[`crate::Manifest::parse`\] before it writes anything, so an edit that makes
 the file invalid is refused and the file is untouched.
 
 ===[Structs]
 
 ====[struct UpstreamText]
 
-What `::upstreams` says about one place.
+What `::upstream(...)` says about one place.
 
 ====[struct AlreadyDeclared]
 
@@ -61,19 +61,19 @@ Undeclares `dest`: its entry and the comment lines directly above it.
 
 ====[fn add_upstream]
 
-Names a place in `::upstreams`, creating the declaration when there is none.
+Names a place in `::upstream(...)`, creating the declaration when there is none.
 
 ====[fn add_or_replace_upstream]
 
-Names a place in `::upstreams`, or replaces its definition if `force`.
+Names a place in `::upstream(...)`, or replaces its definition if `force`.
 
 ====[fn remove_upstream]
 
-Drops a place from `::upstreams`; the declaration goes with its last place.
+Drops a place from `::upstream(...)`; the declaration goes with its last place.
 
 ====[fn upstream_is_used]
 
-Whether some entry of `text` names `upstream` as its source.
+Whether some entry of `text` names `upstream` via `catasto.upstream(...)`.
 
 ==[Module lock]
 
@@ -83,11 +83,15 @@ The generated `catasto.lock` data model and serialization.
 
 ====[struct Lock]
 
-What each managed file looked like when it was locked.
+What each managed file and repository looked like when it was locked.
 
 ====[struct Locked]
 
 One locked file.
+
+====[struct LockedRepo]
+
+One locked repository entry.
 
 ===[Enums]
 
@@ -109,45 +113,33 @@ The format version this catasto reads and writes.
 
 The hand-written `catasto.ctmt` declaration.
 
-A manifest is a cotomet map from a path inside the workspace to what
-catasto knows about that path. Today an entry says where the file comes
-from:
+A manifest declares `::use(catasto, version: "1.0.0")`, optional shared
+Git repositories in `::upstream(...)`, and maps workspace-relative paths to
+constructor calls from the `catasto` vocabulary:
 
 ```text
-"tmtroot/schema/vocabularies/writ.vocabulary.tmt": { source: "../vocabularies/writ.vocabulary.tmt" }
-
-"tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
-  source: { git: "https://example.com/vocabularies.git", rev: v1, path: "rust.vocabulary.tmt" }
-}
+`` ::use(catasto, version: "1.0.0")
+`` ::upstream(
+``   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, root: vocabularies)
+`` )
+``
+`` "tmtroot/schema/vocabularies/writ.vocabulary.tmt": catasto.local("../vocabularies/writ.vocabulary.tmt")
+``
+`` "tmtroot/schema/vocabularies/rust.vocabulary.tmt": catasto.upstream(
+``   vocabularies,
+``   path: "rust/rust.vocabulary.tmt"
+`` )
+``
+`` "scripts/deploy.sh": (
+``   catasto.git("https://example.com/tools.git", rev: v1, path: "deploy.sh"),
+``   executable: true
+`` )
 ```
 
-The key comes first because every declaration catasto will take is about a
-path, and the lockfile is keyed by path too. An entry is always a map; a
-`source` is a string for a local file, or a map for a git repository.
-Quote a `rev` that reads as a number (`rev: "1.2"`), or cotomet reads it as
-one.
-
-A place that several entries come from is named once, in an `::upstreams`
-declaration at the top of the file, and each entry refers to it:
-
-```text
-::upstreams{
-  vocabularies: { git: "https://example.com/vocabularies.git", rev: v1 }
-}
-
-"tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
-  source: { upstream: vocabularies, path: "rust.vocabulary.tmt" }
-}
-```
-
-An upstream may name a `root`, the directory of the repository that its
-entries' `path`s start from: with `root: vocabularies` in the declaration,
-`path: "rust/rust.vocabulary.tmt"` is the file `vocabularies/rust/rust.vocabulary.tmt`.
-
-An upstream is not a macro: it is resolved while the file is read, into
-the `git`, `rev` and `path` map written out in full (the `root` joined in
-front of the `path`), so everything after the parse, and the lockfile, see
-the same [`Source`] either way.
+An upstream is resolved while the file is read, into the full `git`, `rev`
+and `path` of \[`Source::Git`\] (joining `root` in front of `path`), so
+everything after the parse, and the lockfile, see the same \[`Source`\]
+either way.
 
 ===[Module url]
 
@@ -170,6 +162,10 @@ Classifies a `git` value from `catasto.ctmt`.
 
 ===[Functions]
 
+====[fn vocabulary]
+
+Returns the parsed canonical `catasto@1.0.0` vocabulary.
+
 ====[fn reject_misnamed]
 
 Fails when `expected` is missing from `root` but a file whose name differs from it only in case is there.
@@ -186,28 +182,33 @@ differently from one machine to the next.
 
 File name of the manifest, relative to the workspace root.
 
+====[const VOCABULARY_TMT]
+
+Canonical `catasto@1.0.0` vocabulary source.
+
 ==[Module spec]
 
 Manifest schema specifications for `catasto.ctmt`.
 
-Provides [`ConfigGroupSpec`] representations of `::upstreams` and manifest path entries
+Provides \[`ConfigGroupSpec`\] representations of `::upstream` and manifest path entries
 using `#[derive(Config)]` from `tomet-spec`.
 
 ===[Structs]
 
 ====[struct UpstreamSpec]
 
-Upstream repository definitions declared in `::upstreams`.
+Upstream repository definitions declared in `::upstream(...)`.
 
-An upstream declares a named Git repository at a pinned revision, optionally
-with a `root` directory inside the repository from which entry paths start.
+An upstream declares a named `catasto.git(...)` repository at a pinned revision,
+optionally with a `root` directory inside the repository from which entry paths start.
 
 ====[struct ManifestEntrySpec]
 
-Manifest file entry declaring a managed workspace file.
+Manifest entry declaring a managed workspace file or repository.
 
-Each top-level map entry in `catasto.ctmt` binds a workspace-relative file path
-to its canonical content origin (`source`).
+Each top-level entry in `catasto.ctmt` binds a workspace-relative path
+to a `catasto.{upstream,git,local,repo}(...)` constructor call; file entries
+may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
 
 ===[Functions]
 

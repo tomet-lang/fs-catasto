@@ -1,6 +1,5 @@
 ::kind(vocabulary)
 ::vocabulary(rust, version: "1.0.0")
-
 ::element(
   crate: (
     display: inline
@@ -12,7 +11,4 @@
         positional: true
         required: true
         about: | The crate name (e.g. "my-crate-core", "my-crate-cli").
-      )
-    )
-  )
-)
+))))

@@ -1,6 +1,5 @@
 ::kind(vocabulary)
 ::vocabulary(catasto, version: "1.0.0")
-
 ::constructor(
   git: (
     about: | A file or repository in Git.
@@ -28,9 +27,7 @@
         type: string
         default: follow
         about: | How symlinks in the repository are handled (`follow` or `keep`).
-      )
-    )
-  )
+  )))
   upstream: (
     about: | A file from an upstream repository declared in `::upstream(...)`.
     args: (
@@ -49,9 +46,7 @@
         type: string
         default: follow
         about: | How symlinks in the repository are handled (`follow` or `keep`).
-      )
-    )
-  )
+  )))
   local: (
     about: | A file on the local filesystem, relative to the workspace root.
     args: (
@@ -60,9 +55,7 @@
         positional: true
         required: true
         about: | Path to the local source file, relative to the workspace root.
-      )
-    )
-  )
+  )))
   repo: (
     about: | A Git repository cloned as a directory or submodule in the workspace.
     args: (
@@ -80,7 +73,4 @@
         type: bool
         default: false
         about: | Whether to register the repository in `.gitmodules`.
-      )
-    )
-  )
-)
+))))

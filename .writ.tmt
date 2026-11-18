@@ -14,16 +14,15 @@ does not relax the rule to fit the change it wanted to make.
 
 ==[ crate-layering ]
 
-@rule(
-  crate-layering
+@rule(crate-layering){
   guard: (twrit: layers)
   layers: (
     3: ("app")
     2: ("crates/catasto-core")
-    1: ("crates/catasto-git")
+    1: ("crates/catasto-git", "crates/catasto-manifest")
     0: ("crates/catasto-digest")
   )
-)
+}
 
 Every workspace member belongs to exactly one layer, and depends only on
 layers strictly below its own. Same-layer dependencies are allowed;
@@ -36,23 +35,21 @@ manifest, and lockfile engine (`catasto-core`). Layer 3 is the CLI program
 
 ==[ rust-api-docs ]
 
-@rule(
-  rust-api-docs
+@rule(rust-api-docs){
   guard: (twrit: rust-api)
   rust_api: (
     out: "tmtroot/generated/crates"
   )
-)
+}
 
 API documentation for all workspace Rust crates must be kept up to date
 with the source code and inner doc-comments (`//!`, `///`).
 
 ==[ tmtroot-output-not-edited ]
 
-@rule(
-  tmtroot-output-not-edited
+@rule(tmtroot-output-not-edited){
   guard: (runs: "just docs-check")
-)
+}
 
 A file exported from @dir(tmtroot/) is generated. Do not hand-edit it. Edit
 the source and re-export.

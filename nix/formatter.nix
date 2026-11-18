@@ -9,8 +9,7 @@
     #--- Shell ---
     shfmt.enable = true;
     shellcheck.enable = true;
-
-    #--- Main ---
+    #--- Rust ---
     rustfmt.enable = true;
     taplo = {
       enable = true;
@@ -19,15 +18,14 @@
           align_entries = true;
           align_comments = true;
           reorder_keys = false;
-          column_width = 120;
         };
         rule = [
           {
-            include = [ "Cargo.toml" ];
             keys = [
               "dependencies"
               "dev-dependencies"
               "build-dependencies"
+              "workspace.dependencies"
             ];
             formatting = {
               reorder_keys = true;
@@ -35,6 +33,33 @@
           }
         ];
       };
+    };
+
+    #--- Biome ---
+    biome = {
+      enable = true;
+      formatCommand = "format";
+      settings = {
+        formatter = {
+          enabled = true;
+          useEditorconfig = true;
+        };
+        linter.enabled = false;
+        assist.enabled = false;
+      };
+      includes = [
+        "*.json"
+        "*.jsonc"
+        #--- Web ---
+        "*.js"
+        "*.ts"
+        "*.mjs"
+        "*.mts"
+        "*.cjs"
+        "*.cts"
+        "*.jsx"
+        "*.tsx"
+      ];
     };
   };
 

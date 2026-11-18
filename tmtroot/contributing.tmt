@@ -23,6 +23,7 @@ ${macro.generated_by(self.path)}
 All commits must follow the Conventional Commits format: `type(scope): description`.
 
 ===[ Types ]
+
 -| `feat`: New feature.
 -| `fix`: Bug fix.
 -| `docs`: Documentation changes (`.tmt` or generated docs).
@@ -32,6 +33,7 @@ All commits must follow the Conventional Commits format: `type(scope): descripti
 -| `chore`: Build scripts, dependencies, tooling, repo maintenance.
 
 ===[ Scopes ]
+
 Use the affected component as the scope:
 -| **CLI**: `cli` (`app`)
 -| **Core**: `core` (`crates/catasto-core`)
