@@ -5,7 +5,9 @@ use crate::check::check;
 use catasto_git::testing::TestRepo;
 
 const MANIFEST: &str = "\
-\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\" }
+::use(catasto, version: \"1.0.0\")
+
+\"vocab/writ.tmt\": catasto.local(\"../vocabularies/writ.tmt\")
 ";
 
 fn sync(root: &Path) -> Result<Lock> {
@@ -92,7 +94,7 @@ impl GitFixture {
         std::fs::write(
                 vault.join("catasto.ctmt"),
                 format!(
-                    "\"vocab/w.tmt\": {{ source: {{ git: {:?}, rev: main, path: \"shared/w.tmt\" }} }}\n",
+                    "::use(catasto, version: \"1.0.0\")\n\n\"vocab/w.tmt\": catasto.git({:?}, rev: main, path: \"shared/w.tmt\")\n",
                     repo.url()
                 ),
             )
@@ -224,9 +226,10 @@ fn two_repositories() -> (tempfile::TempDir, PathBuf, PathBuf, TestRepo, TestRep
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"v/a1.tmt\": {{ source: {{ git: {first:?}, rev: main, path: \"a1.tmt\" }} }}\n\
-                 \"v/b1.tmt\": {{ source: {{ git: {second:?}, rev: main, path: \"b1.tmt\" }} }}\n\
-                 \"v/a2.tmt\": {{ source: {{ git: {first:?}, rev: main, path: \"a2.tmt\" }} }}\n",
+            "::use(catasto, version: \"1.0.0\")\n\n\
+             \"v/a1.tmt\": catasto.git({first:?}, rev: main, path: \"a1.tmt\")\n\
+             \"v/b1.tmt\": catasto.git({second:?}, rev: main, path: \"b1.tmt\")\n\
+             \"v/a2.tmt\": catasto.git({first:?}, rev: main, path: \"a2.tmt\")\n",
             first = first.url(),
             second = second.url(),
         ),
@@ -290,8 +293,9 @@ fn the_error_reported_is_the_first_in_manifest_order() {
     std::fs::write(
             vault.join("catasto.ctmt"),
             format!(
-                "\"v/b.tmt\": {{ source: {{ git: {second:?}, rev: main, path: \"missing-b.tmt\" }} }}\n\
-                 \"v/a.tmt\": {{ source: {{ git: {first:?}, rev: main, path: \"missing-a.tmt\" }} }}\n",
+                "::use(catasto, version: \"1.0.0\")\n\n\
+                 \"v/b.tmt\": catasto.git({second:?}, rev: main, path: \"missing-b.tmt\")\n\
+                 \"v/a.tmt\": catasto.git({first:?}, rev: main, path: \"missing-a.tmt\")\n",
                 first = first.url(),
                 second = second.url(),
             ),
@@ -341,7 +345,7 @@ fn sync_symlink_follow_and_keep_and_switching() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"out.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\" }} }}",
+            "::use(catasto, version: \"1.0.0\")\n\n\"out.txt\": catasto.git({:?}, rev: main, path: \"link.txt\")\n",
             repo.url()
         ),
     )
@@ -358,7 +362,7 @@ fn sync_symlink_follow_and_keep_and_switching() {
     // 2. switch from follow to keep: sync replaces destination with symlink
     std::fs::write(
             vault.join("catasto.ctmt"),
-            format!("\"out.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\", symlink: keep }} }}", repo.url()),
+            format!("::use(catasto, version: \"1.0.0\")\n\n\"out.txt\": catasto.git({:?}, rev: main, path: \"link.txt\", symlink: keep)\n", repo.url()),
         ).unwrap();
     sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
 
@@ -374,7 +378,7 @@ fn sync_symlink_follow_and_keep_and_switching() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"out.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\" }} }}",
+            "::use(catasto, version: \"1.0.0\")\n\n\"out.txt\": catasto.git({:?}, rev: main, path: \"link.txt\")\n",
             repo.url()
         ),
     )
@@ -410,7 +414,7 @@ fn sync_follow_never_writes_through_destination_symlink() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"dest.txt\": {{ source: {{ git: {:?}, rev: main, path: \"src.txt\" }} }}",
+            "::use(catasto, version: \"1.0.0\")\n\n\"dest.txt\": catasto.git({:?}, rev: main, path: \"src.txt\")\n",
             repo.url()
         ),
     )
@@ -450,7 +454,7 @@ fn sync_keeps_the_mode_of_an_existing_destination() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"run.sh\": {{ source: {{ git: {:?}, rev: main, path: \"run.sh\" }} }}",
+            "::use(catasto, version: \"1.0.0\")\n\n\"run.sh\": catasto.git({:?}, rev: main, path: \"run.sh\")\n",
             repo.url()
         ),
     )
@@ -483,7 +487,7 @@ fn sync_clears_executable_bits_the_source_does_not_have_even_when_the_lock_never
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"run.sh\": {{ source: {{ git: {:?}, rev: main, path: \"run.sh\" }} }}",
+            "::use(catasto, version: \"1.0.0\")\n\n\"run.sh\": catasto.git({:?}, rev: main, path: \"run.sh\")\n",
             repo.url()
         ),
     )
@@ -521,7 +525,7 @@ fn sync_sets_the_executable_bits_the_source_has_on_a_copy_that_lacks_them() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"tool.sh\": {{ source: {{ git: {:?}, rev: main, path: \"tool.sh\" }} }}",
+            "::use(catasto, version: \"1.0.0\")\n\n\"tool.sh\": catasto.git({:?}, rev: main, path: \"tool.sh\")\n",
             repo.url()
         ),
     )
@@ -554,7 +558,7 @@ fn sync_bad_link_source_leaves_workspace_untouched() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"out.txt\": {{ source: {{ git: {:?}, rev: main, path: \"loop_a\" }} }}",
+            "::use(catasto, version: \"1.0.0\")\n\n\"out.txt\": catasto.git({:?}, rev: main, path: \"loop_a\")\n",
             repo.url()
         ),
     )
@@ -581,7 +585,10 @@ fn dry_run_with_moved_commit_reports_changes_and_leaves_workspace_untouched() {
     std::fs::create_dir_all(&vault).unwrap();
 
     let manifest_text = format!(
-        "::upstreams{{\n  common: {{ git: {:?}, rev: main }}\n}}\n\n\"a.tmt\": {{ source: {{ upstream: common, path: \"a.tmt\" }} }}\n\"b.tmt\": {{ source: {{ upstream: common, path: \"b.tmt\" }} }}\n",
+        "::use(catasto, version: \"1.0.0\")\n\
+         ::upstream(\n  common: catasto.git({:?}, rev: main)\n)\n\n\
+         \"a.tmt\": catasto.upstream(common, path: \"a.tmt\")\n\
+         \"b.tmt\": catasto.upstream(common, path: \"b.tmt\")\n",
         repo.url()
     );
     std::fs::write(vault.join("catasto.ctmt"), &manifest_text).unwrap();
@@ -673,8 +680,9 @@ fn sync_executable_file_creates_mode_and_update_tracks_flipping() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"normal.txt\": {{ source: {{ git: {:?}, rev: main, path: \"normal.txt\" }} }}\n\
-             \"tool.sh\": {{ source: {{ git: {:?}, rev: main, path: \"tool.sh\" }} }}\n",
+            "::use(catasto, version: \"1.0.0\")\n\n\
+             \"normal.txt\": catasto.git({:?}, rev: main, path: \"normal.txt\")\n\
+             \"tool.sh\": catasto.git({:?}, rev: main, path: \"tool.sh\")\n",
             repo.url(),
             repo.url()
         ),
@@ -752,7 +760,7 @@ fn a_local_source_declared_executable_is_placed_executable_and_locked_as_such() 
     let (_tmp, vault, _source) = workspace();
     std::fs::write(
         vault.join("catasto.ctmt"),
-        "\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\", executable: true }\n",
+        "::use(catasto, version: \"1.0.0\")\n\n\"vocab/writ.tmt\": (catasto.local(\"../vocabularies/writ.tmt\"), executable: true)\n",
     )
     .unwrap();
 
@@ -779,7 +787,7 @@ fn a_git_source_that_is_executable_is_placed_without_the_bits_when_the_entry_dec
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "\"tool.sh\": {{ source: {{ git: {:?}, rev: main, path: \"tool.sh\" }}, executable: false }}\n",
+            "::use(catasto, version: \"1.0.0\")\n\n\"tool.sh\": (catasto.git({:?}, rev: main, path: \"tool.sh\"), executable: false)\n",
             repo.url()
         ),
     )
@@ -801,7 +809,7 @@ fn changing_the_declared_mode_is_unlocked_until_sync_puts_it_right() {
 
     std::fs::write(
         vault.join("catasto.ctmt"),
-        "\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\", executable: true }\n",
+        "::use(catasto, version: \"1.0.0\")\n\n\"vocab/writ.tmt\": (catasto.local(\"../vocabularies/writ.tmt\"), executable: true)\n",
     )
     .unwrap();
     let report = check(&vault).unwrap();
@@ -829,7 +837,7 @@ fn lock_records_the_declared_mode_without_the_network() {
     sync(&vault).unwrap();
     std::fs::write(
         vault.join("catasto.ctmt"),
-        "\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\", executable: true }\n",
+        "::use(catasto, version: \"1.0.0\")\n\n\"vocab/writ.tmt\": (catasto.local(\"../vocabularies/writ.tmt\"), executable: true)\n",
     )
     .unwrap();
     // `lock` records what is on disk, so the file is made executable by hand first.

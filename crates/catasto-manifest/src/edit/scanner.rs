@@ -8,8 +8,8 @@ pub(super) struct Declaration {
     pub(super) name: String,
     /// From the `::` to the end of its last token.
     pub(super) span: Range<usize>,
-    /// The `{ ... }` with its braces, if it has one.
-    pub(super) data: Option<Range<usize>>,
+    /// The `(...)` arguments group with its parentheses, if it has one.
+    pub(super) args: Option<Range<usize>>,
 }
 
 /// One `key: value` line group.
@@ -79,22 +79,24 @@ pub(super) fn scan(text: &str) -> Result<Layout> {
         let start = cursor.at;
         cursor.at += 2;
         let name = cursor.take_while(is_name_char).to_owned();
-        let mut data = None;
+        let mut args = None;
         loop {
             match cursor.peek() {
-                Some('(') => cursor.skip_balanced()?,
-                Some('{') => {
+                Some('(') => {
                     let from = cursor.at;
                     cursor.skip_balanced()?;
-                    data = Some(from..cursor.at);
+                    if args.is_none() {
+                        args = Some(from..cursor.at);
+                    }
                 }
+                Some('{') => cursor.skip_balanced()?,
                 _ => break,
             }
         }
         layout.declarations.push(Declaration {
             name,
             span: start..cursor.at,
-            data,
+            args,
         });
     }
 
@@ -104,6 +106,67 @@ pub(super) fn scan(text: &str) -> Result<Layout> {
 
 pub(super) fn scan_entries(text: &str, range: Range<usize>) -> Result<Vec<Entry>> {
     scan_entries_from(text, range)
+}
+
+/// Finds the byte span of the first unnamed item inside a `(...)` tuple span.
+pub(super) fn first_unnamed_in_tuple(
+    text: &str,
+    tuple_span: &Range<usize>,
+) -> Result<Option<Range<usize>>> {
+    if tuple_span.end <= tuple_span.start + 1 {
+        return Ok(None);
+    }
+    let mut cursor = Cursor::new(text, tuple_span.start + 1..tuple_span.end - 1);
+    loop {
+        cursor.skip_blank();
+        if cursor.at >= cursor.end {
+            return Ok(None);
+        }
+        let item_start = cursor.at;
+        if cursor.peek() == Some('"') {
+            cursor.string()?;
+            cursor.skip_inline();
+            if cursor.peek() == Some(':') {
+                cursor.at += 1;
+                cursor.skip_blank();
+                cursor.value_to_eol()?;
+                continue;
+            }
+            return Ok(Some(item_start..cursor.at));
+        }
+
+        // Scan until we know whether this item is `key: value` or an unnamed value/call.
+        let mut is_named = false;
+        while let Some(c) = cursor.peek() {
+            match c {
+                ':' => {
+                    is_named = true;
+                    break;
+                }
+                '(' | '{' | '[' | '"' | ',' | '\n' => break,
+                '/' if cursor.rest().starts_with("//") => break,
+                c if c.is_whitespace() => {
+                    cursor.skip_inline();
+                    if cursor.peek() == Some(':') {
+                        is_named = true;
+                    }
+                    break;
+                }
+                c => cursor.at += c.len_utf8(),
+            }
+        }
+
+        if is_named {
+            cursor.at += 1;
+            cursor.skip_blank();
+            cursor.value_to_eol()?;
+            continue;
+        }
+
+        cursor.at = item_start;
+        let item_end = cursor.value_to_eol()?;
+        return Ok(Some(item_start..item_end));
+    }
 }
 
 fn scan_entries_from(text: &str, range: Range<usize>) -> Result<Vec<Entry>> {

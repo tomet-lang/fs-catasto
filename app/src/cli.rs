@@ -157,7 +157,7 @@ pub struct AddArgs {
     /// upstream, inside the repository, or on disk with --local. Defaults to
     /// DEST (except with --local, which requires the path).
     pub from: Option<String>,
-    /// Take it from a place named in `::upstreams`.
+    /// Take it from a place named in `::upstream(...)`.
     #[arg(long, value_name = "NAME")]
     pub upstream: Option<String>,
     /// Take it from this git repository (`https://` or a local path).
@@ -179,7 +179,7 @@ pub struct AddArgs {
 
 #[derive(Subcommand)]
 pub enum UpstreamCommand {
-    /// Name a git repository, so entries can say `upstream: NAME`.
+    /// Name a git repository, so entries can use `catasto.upstream(NAME, ...)`.
     Add {
         /// The name, letters, digits, `_` and `-`.
         name: String,

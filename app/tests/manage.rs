@@ -166,7 +166,8 @@ fn the_comments_the_manifest_opened_with_survive_every_edit() {
         manifest.starts_with("// The files catasto manages"),
         "{manifest}"
     );
-    assert!(manifest.contains("::upstreams{"), "{manifest}");
+    assert!(manifest.contains("::use(catasto, version: \"1.0.0\")"), "{manifest}");
+    assert!(manifest.contains("::upstream("), "{manifest}");
     assert!(manifest.contains("\"b.tmt\""), "{manifest}");
     assert!(!manifest.contains("\"a.tmt\""), "{manifest}");
 }
@@ -241,8 +242,7 @@ fn add_defaults_path_to_dest_for_upstream_and_git_and_nested_dest() {
     assert_eq!(w.read("a.tmt"), "a one");
     let manifest = w.read("catasto.ctmt");
     assert!(manifest.contains("\"a.tmt\":"), "{manifest}");
-    assert!(manifest.contains("path: \"a.tmt\""), "{manifest}");
-    assert!(manifest.contains("upstream: shared"), "{manifest}");
+    assert!(manifest.contains("catasto.upstream(shared, path: \"a.tmt\")"), "{manifest}");
     let listed = w.ok(&["list"]);
     assert!(listed.contains("shared:a.tmt"), "{listed}");
 
@@ -251,7 +251,7 @@ fn add_defaults_path_to_dest_for_upstream_and_git_and_nested_dest() {
     assert_eq!(w.read("sub/b.tmt"), "b one");
     let manifest = w.read("catasto.ctmt");
     assert!(manifest.contains("\"sub/b.tmt\":"), "{manifest}");
-    assert!(manifest.contains("path: \"sub/b.tmt\""), "{manifest}");
+    assert!(manifest.contains("catasto.upstream(shared, path: \"sub/b.tmt\")"), "{manifest}");
     let listed = w.ok(&["list"]);
     assert!(listed.contains("shared:sub/b.tmt"), "{listed}");
 

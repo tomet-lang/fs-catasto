@@ -12,34 +12,38 @@
 //! the file invalid is refused and the file is untouched.
 
 use anyhow::{Result, anyhow, bail};
+use tomet_ast::Value;
+use tomet_scalar::Scalar;
 
 mod scanner;
 #[cfg(test)]
 mod tests;
 
-use scanner::{cut_lines, is_name_char, line_start, scan, scan_entries, splice};
+use scanner::{
+    Layout, cut_lines, first_unnamed_in_tuple, is_name_char, line_start, scan, scan_entries, splice,
+};
 
 /// Where a managed file comes from, as the text of one entry writes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceText {
-    /// `{ upstream: name, path: "..." }`
+    /// `catasto.upstream(name, path: "...")`
     Upstream {
         name: String,
         path: String,
         keep_symlink: bool,
     },
-    /// `{ git: "...", rev: ..., path: "..." }`
+    /// `catasto.git("...", rev: ..., path: "...")`
     Git {
         git: String,
         rev: String,
         path: String,
         keep_symlink: bool,
     },
-    /// `"relative/path"`
+    /// `catasto.local("relative/path")`
     Local { path: String },
 }
 
-/// What `::upstreams` says about one place.
+/// What `::upstream(...)` says about one place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpstreamText {
     pub git: String,
@@ -120,30 +124,34 @@ pub fn add_or_replace_entry(
             return Err(anyhow::Error::new(AlreadyDeclared::entry(dest)));
         }
         let val_span = existing.value.clone();
-        let value_str = &text[val_span.clone()];
-        let open_brace = value_str
-            .find('{')
-            .ok_or_else(|| anyhow!("malformed entry for {dest}: missing `{{`"))?;
-        let close_brace = value_str
-            .rfind('}')
-            .ok_or_else(|| anyhow!("malformed entry for {dest}: missing `}}`"))?;
-        let inner_start = val_span.start + open_brace + 1;
-        let inner_end = val_span.start + close_brace;
-        let fields = scan_entries(text, inner_start..inner_end)?;
-        let source_field = fields
-            .iter()
-            .find(|f| f.key == "source")
-            .ok_or_else(|| anyhow!("entry {dest} has no `source` field to replace"))?;
-
         let new_source = source_value_text(source);
-        if text[source_field.value.clone()] == new_source {
-            return Ok((text.to_owned(), AddOutcome::Unchanged));
-        }
-        let new_text = splice(text, source_field.value.clone(), &new_source);
-        return Ok((new_text, AddOutcome::Replaced));
+        let replace_span = if text[val_span.clone()].starts_with('(') {
+            first_unnamed_in_tuple(text, &val_span)?
+                .ok_or_else(|| anyhow!("malformed entry tuple for {dest}: missing constructor call"))?
+        } else {
+            val_span
+        };
+
+        let replaced = if text[replace_span.clone()] == new_source {
+            if has_use_catasto(text, &layout) {
+                return Ok((text.to_owned(), AddOutcome::Unchanged));
+            }
+            text.to_owned()
+        } else {
+            splice(text, replace_span, &new_source)
+        };
+        let ensured = ensure_use_catasto(&replaced)?;
+        let outcome = if ensured == text {
+            AddOutcome::Unchanged
+        } else {
+            AddOutcome::Replaced
+        };
+        return Ok((ensured, outcome));
     }
 
-    let mut out = text.trim_end().to_owned();
+    let text_with_use = ensure_use_catasto(text)?;
+    let layout = scan(&text_with_use)?;
+    let mut out = text_with_use.trim_end().to_owned();
     if !out.empty_or_ends_with_newline() {
         out.push('\n');
     }
@@ -182,12 +190,12 @@ pub fn remove_entry(text: &str, dest: &str) -> Result<String> {
     Ok(cut_lines(text, &entry.span))
 }
 
-/// Names a place in `::upstreams`, creating the declaration when there is none.
+/// Names a place in `::upstream(...)`, creating the declaration when there is none.
 pub fn add_upstream(text: &str, name: &str, upstream: &UpstreamText) -> Result<String> {
     add_or_replace_upstream(text, name, upstream, false).map(|(text, _)| text)
 }
 
-/// Names a place in `::upstreams`, or replaces its definition if `force`.
+/// Names a place in `::upstream(...)`, or replaces its definition if `force`.
 pub fn add_or_replace_upstream(
     text: &str,
     name: &str,
@@ -197,140 +205,226 @@ pub fn add_or_replace_upstream(
     if name.is_empty() || !name.chars().all(is_name_char) {
         bail!("an upstream name is letters, digits, `_` and `-`: {name:?}");
     }
-    let layout = scan(text)?;
-    let line = format!("  {name}: {}\n", upstream_text(upstream));
 
-    let Some(decl) = layout.declarations.iter().find(|d| d.name == "upstreams") else {
-        let at = layout.first_item_start(text);
-        let mut block = format!("::upstreams{{\n{line}}}\n");
-        if at == text.len() {
-            // Nothing but comments (or nothing) yet: the block goes after them.
-            let gap = match text {
-                "" => "",
-                t if t.ends_with("\n\n") => "",
-                t if t.ends_with('\n') => "\n",
-                _ => "\n\n",
-            };
-            block = format!("{gap}{block}");
-        } else {
-            block.push('\n');
-        }
-        return Ok((splice(text, at..at, &block), AddOutcome::Added));
-    };
-    let Some(data) = decl.data.clone() else {
-        bail!("`::upstreams` has no map to add to");
-    };
-    let inner = scan_entries(text, data.start + 1..data.end - 1)?;
+    let initial_layout = scan(text)?;
+    if let Some(decl) = initial_layout
+        .declarations
+        .iter()
+        .find(|d| d.name == "upstream")
+    {
+        let Some(args) = decl.args.clone() else {
+            bail!("`::upstream` has no parentheses to add to");
+        };
+        let inner = scan_entries(text, args.start + 1..args.end - 1)?;
+        let close_line = line_start(text, args.end - 1);
+        let is_multiline =
+            text[close_line..args.end - 1].trim().is_empty() && close_line > args.start;
+        let line = format!("  {name}: {}\n", upstream_text(upstream));
 
-    let close_line = line_start(text, data.end - 1);
-    let is_multiline = text[close_line..data.end - 1].trim().is_empty() && close_line > data.start;
-
-    if let Some(existing) = inner.iter().find(|entry| entry.key == name) {
-        if !force {
-            return Err(anyhow::Error::new(AlreadyDeclared::upstream(name)));
-        }
-        if text[existing.value.clone()].trim() == upstream_text(upstream) {
-            return Ok((text.to_owned(), AddOutcome::Unchanged));
-        }
-        if is_multiline {
-            let start = line_start(text, existing.value.start);
-            let end = text[existing.value.end..]
-                .find('\n')
-                .map_or(existing.value.end, |at| existing.value.end + at + 1);
-            return Ok((splice(text, start..end, &line), AddOutcome::Replaced));
-        }
-
-        // A one-line block rewritten in full
-        let mut block = String::from("::upstreams{\n");
-        for entry in &inner {
-            if entry.key == name {
-                block.push_str(&line);
+        if let Some(existing) = inner.iter().find(|entry| entry.key == name) {
+            if !force {
+                return Err(anyhow::Error::new(AlreadyDeclared::upstream(name)));
+            }
+            let replaced = if text[existing.value.clone()].trim() == upstream_text(upstream) {
+                if has_use_catasto(text, &initial_layout) {
+                    return Ok((text.to_owned(), AddOutcome::Unchanged));
+                }
+                text.to_owned()
+            } else if is_multiline {
+                let start = line_start(text, existing.value.start);
+                let end = text[existing.value.end..]
+                    .find('\n')
+                    .map_or(existing.value.end, |at| existing.value.end + at + 1);
+                splice(text, start..end, &line)
             } else {
+                let mut block = String::from("::upstream(\n");
+                for entry in &inner {
+                    if entry.key == name {
+                        block.push_str(&line);
+                    } else {
+                        block.push_str(&format!(
+                            "  {}: {}\n",
+                            key_text(&entry.key),
+                            text[entry.value.clone()].trim()
+                        ));
+                    }
+                }
+                block.push(')');
+                splice(text, decl.span.clone(), &block)
+            };
+            let ensured = ensure_use_catasto(&replaced)?;
+            let outcome = if ensured == text {
+                AddOutcome::Unchanged
+            } else {
+                AddOutcome::Replaced
+            };
+            return Ok((ensured, outcome));
+        }
+
+        let added = if is_multiline {
+            splice(text, close_line..close_line, &line)
+        } else {
+            let mut block = String::from("::upstream(\n");
+            for entry in &inner {
                 block.push_str(&format!(
                     "  {}: {}\n",
                     key_text(&entry.key),
                     text[entry.value.clone()].trim()
                 ));
             }
-        }
-        block.push('}');
-        return Ok((splice(text, decl.span.clone(), &block), AddOutcome::Replaced));
+            block.push_str(&line);
+            block.push(')');
+            splice(text, decl.span.clone(), &block)
+        };
+        let ensured = ensure_use_catasto(&added)?;
+        return Ok((ensured, AddOutcome::Added));
     }
 
-    // A closing brace on a line of its own: add a line above it and leave the rest.
-    if is_multiline {
-        return Ok((splice(text, close_line..close_line, &line), AddOutcome::Added));
-    }
+    let text_with_use = ensure_use_catasto(text)?;
+    let layout = scan(&text_with_use)?;
+    let line = format!("  {name}: {}\n", upstream_text(upstream));
 
-    // A block written on one line: write it out in full.
-    let mut block = String::from("::upstreams{\n");
-    for entry in &inner {
-        block.push_str(&format!(
-            "  {}: {}\n",
-            key_text(&entry.key),
-            text[entry.value.clone()].trim()
-        ));
-    }
-    block.push_str(&line);
-    block.push('}');
-    Ok((splice(text, decl.span.clone(), &block), AddOutcome::Added))
-}
-
-/// Drops a place from `::upstreams`; the declaration goes with its last place.
-pub fn remove_upstream(text: &str, name: &str) -> Result<String> {
-    let layout = scan(text)?;
-    let decl = layout
+    // Place `::upstream(...)` directly below `::use(catasto, ...)`.
+    let use_decl = layout
         .declarations
         .iter()
-        .find(|d| d.name == "upstreams")
-        .ok_or_else(|| anyhow!("upstream `{name}` is not declared"))?;
-    let data = decl
-        .data
-        .clone()
-        .ok_or_else(|| anyhow!("upstream `{name}` is not declared"))?;
-    let inner = scan_entries(text, data.start + 1..data.end - 1)?;
-    let Some(entry) = inner.iter().find(|entry| entry.key == name) else {
-        bail!("upstream `{name}` is not declared");
+        .find(|d| d.name == "use")
+        .ok_or_else(|| anyhow!("missing `::use(catasto)` declaration"))?;
+    let after_use = text_with_use[use_decl.span.end..]
+        .find('\n')
+        .map_or(text_with_use.len(), |at| use_decl.span.end + at + 1);
+    let prefix = if text_with_use[..after_use].ends_with('\n') {
+        ""
+    } else {
+        "\n"
     };
-    if inner.len() == 1 {
-        // The last one: the whole declaration, and the blank line after it.
-        let mut end = decl.span.end;
-        let rest = &text[end..];
-        let after = rest.trim_start_matches([' ', '\t']);
-        if after.starts_with('\n') {
-            end += rest.len() - after.len() + 1;
-        }
-        let rest = &text[end..];
-        if rest.starts_with('\n') {
-            end += 1;
-        }
-        let start = line_start(text, decl.span.start);
-        return Ok(splice(text, start..end, ""));
-    }
-    Ok(cut_lines(text, &entry.span))
+    let block = format!("{prefix}::upstream(\n{line})\n");
+    Ok((
+        splice(&text_with_use, after_use..after_use, &block),
+        AddOutcome::Added,
+    ))
 }
 
-/// Whether some entry of `text` names `upstream` as its source.
-pub fn upstream_is_used(text: &str, upstream: &str) -> Result<Vec<String>> {
+/// Drops a place from `::upstream(...)`; the declaration goes with its last place.
+pub fn remove_upstream(text: &str, name: &str) -> Result<String> {
     let layout = scan(text)?;
-    let mut users = Vec::new();
-    for entry in &layout.entries {
-        let value = &text[entry.value.clone()];
-        let mut rest = value;
-        while let Some(at) = rest.find("upstream") {
-            let after = rest[at + "upstream".len()..].trim_start();
-            if let Some(after) = after.strip_prefix(':') {
-                let after = after.trim_start().trim_start_matches('"');
-                let name: String = after.chars().take_while(|c| is_name_char(*c)).collect();
-                if name == upstream {
-                    users.push(entry.key.clone());
-                    break;
-                }
+    for decl in layout.declarations.iter().filter(|d| d.name == "upstream") {
+        let Some(args) = decl.args.clone() else {
+            continue;
+        };
+        let inner = scan_entries(text, args.start + 1..args.end - 1)?;
+        let Some(entry) = inner.iter().find(|entry| entry.key == name) else {
+            continue;
+        };
+        if inner.len() == 1 {
+            // The last one: remove the declaration, and any blank line after it
+            // unless that blank line separates an earlier header declaration
+            // from body entries.
+            let mut end = decl.span.end;
+            let rest = &text[end..];
+            let after = rest.trim_start_matches([' ', '\t']);
+            if after.starts_with('\n') {
+                end += rest.len() - after.len() + 1;
             }
-            rest = &rest[at + "upstream".len()..];
+            let start = line_start(text, decl.span.start);
+            let has_earlier_decl = layout
+                .declarations
+                .iter()
+                .any(|other| other.span.end <= start);
+            let has_following_content = !text[end..].trim().is_empty();
+            if text[end..].starts_with('\n') && !(has_earlier_decl && has_following_content) {
+                end += 1;
+            }
+            return Ok(splice(text, start..end, ""));
+        }
+        let close_line = line_start(text, args.end - 1);
+        let is_multiline =
+            text[close_line..args.end - 1].trim().is_empty() && close_line > args.start;
+        if is_multiline {
+            return Ok(cut_lines(text, &entry.span));
+        }
+        let mut block = String::from("::upstream(\n");
+        for item in &inner {
+            if item.key != name {
+                block.push_str(&format!(
+                    "  {}: {}\n",
+                    key_text(&item.key),
+                    text[item.value.clone()].trim()
+                ));
+            }
+        }
+        block.push(')');
+        return Ok(splice(text, decl.span.clone(), &block));
+    }
+    bail!("upstream `{name}` is not declared");
+}
+
+/// Whether some entry of `text` names `upstream` via `catasto.upstream(...)`.
+pub fn upstream_is_used(text: &str, upstream: &str) -> Result<Vec<String>> {
+    let file = cotomet::parse_file(text).map_err(|e| anyhow!("{e}"))?;
+    let Value::Tuple(entries) = &file.body else {
+        return Ok(Vec::new());
+    };
+    let mut users = Vec::new();
+    for entry in entries.entries() {
+        let Some(path) = entry.name() else { continue };
+        let call = match entry.value() {
+            Value::Call(_, _) => entry.value(),
+            Value::Tuple(tuple) => match tuple.unnamed().next() {
+                Some(v @ Value::Call(_, _)) => v,
+                _ => continue,
+            },
+            _ => continue,
+        };
+        let Value::Call(head, args) = call else {
+            continue;
+        };
+        if head != "catasto.upstream" {
+            continue;
+        }
+        let target = args.get("upstream").or_else(|| args.nth_unnamed(0));
+        if matches!(target, Some(Value::Scalar(Scalar::Text(name))) if name == upstream) {
+            users.push(path.to_owned());
         }
     }
     Ok(users)
+}
+
+fn has_use_catasto(text: &str, layout: &Layout) -> bool {
+    layout.declarations.iter().any(|decl| {
+        if decl.name != "use" {
+            return false;
+        }
+        let Some(args) = &decl.args else {
+            return false;
+        };
+        let Ok(Value::Tuple(tuple)) = tomet_ast_parser::parse_value(&text[args.clone()]) else {
+            return false;
+        };
+        let target = tuple.get("target").or_else(|| tuple.nth_unnamed(0));
+        matches!(target, Some(Value::Scalar(Scalar::Text(ns))) if ns == "catasto")
+    })
+}
+
+fn ensure_use_catasto(text: &str) -> Result<String> {
+    let layout = scan(text)?;
+    if has_use_catasto(text, &layout) {
+        return Ok(text.to_owned());
+    }
+    let at = layout.first_item_start(text);
+    let mut block = String::from("::use(catasto, version: \"1.0.0\")\n");
+    if at == text.len() {
+        let gap = match text {
+            "" => "",
+            t if t.ends_with("\n\n") => "",
+            t if t.ends_with('\n') => "\n",
+            _ => "\n\n",
+        };
+        block = format!("{gap}{block}");
+    } else if layout.declarations.is_empty() {
+        block.push('\n');
+    }
+    Ok(splice(text, at..at, &block))
 }
 
 fn source_value_text(source: &SourceText) -> String {
@@ -342,7 +436,7 @@ fn source_value_text(source: &SourceText) -> String {
         } => {
             let symlink = if *keep_symlink { ", symlink: keep" } else { "" };
             format!(
-                "{{ upstream: {}, path: {}{symlink} }}",
+                "catasto.upstream({}, path: {}{symlink})",
                 scalar(name),
                 quoted(path)
             )
@@ -355,35 +449,35 @@ fn source_value_text(source: &SourceText) -> String {
         } => {
             let symlink = if *keep_symlink { ", symlink: keep" } else { "" };
             format!(
-                "{{ git: {}, rev: {}, path: {}{symlink} }}",
+                "catasto.git({}, rev: {}, path: {}{symlink})",
                 quoted(git),
                 scalar(rev),
                 quoted(path)
             )
         }
-        SourceText::Local { path } => quoted(path),
+        SourceText::Local { path } => format!("catasto.local({})", quoted(path)),
     }
 }
 
 fn entry_text(dest: &str, source: &SourceText) -> String {
     let source = source_value_text(source);
-    format!("{}: {{\n  source: {source}\n}}\n", quoted(dest))
+    format!("{}: {source}\n", quoted(dest))
 }
 
 fn upstream_text(upstream: &UpstreamText) -> String {
     let mut text = format!(
-        "{{ git: {}, rev: {}",
+        "catasto.git({}, rev: {}",
         quoted(&upstream.git),
         scalar(&upstream.rev)
     );
     if let Some(root) = &upstream.root {
         text.push_str(&format!(", root: {}", scalar_path(root)));
     }
-    text.push_str(" }");
+    text.push(')');
     text
 }
 
-/// A map key, quoted unless it is a plain word.
+/// A key, quoted unless it is a plain word.
 fn key_text(key: &str) -> String {
     if !key.is_empty() && key.chars().all(is_name_char) {
         key.to_owned()
@@ -402,7 +496,7 @@ fn scalar(value: &str) -> String {
         && value
             .chars()
             .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.' | '/'));
-    if word && !matches!(value, "null" | "true" | "false") {
+    if word && !matches!(value, "null" | "none" | "auto" | "true" | "false") {
         value.to_owned()
     } else {
         quoted(value)

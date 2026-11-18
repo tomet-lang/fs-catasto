@@ -3,17 +3,14 @@ use crate::Manifest;
 
 const VOCAB: &str = "\
 // The files catasto manages in this workspace.
-::upstreams{
-  vocabularies: { git: \"https://example.com/v.git\", rev: main, root: vocabularies }
-}
+::use(catasto, version: \"1.0.0\")
+::upstream(
+  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main, root: vocabularies)
+)
 
 // the rust one
-\"schema/rust.tmt\": {
-  source: { upstream: vocabularies, path: \"rust/rust.tmt\" }
-}
-\"schema/writ.tmt\": {
-  source: { upstream: vocabularies, path: \"writ/writ.tmt\" }
-}
+\"schema/rust.tmt\": catasto.upstream(vocabularies, path: \"rust/rust.tmt\")
+\"schema/writ.tmt\": catasto.upstream(vocabularies, path: \"writ/writ.tmt\")
 ";
 
 fn up(name: &str, path: &str) -> SourceText {
@@ -25,10 +22,10 @@ fn up(name: &str, path: &str) -> SourceText {
 }
 
 #[test]
-fn scanning_finds_the_declaration_and_the_entries() {
+fn scanning_finds_the_declarations_and_the_entries() {
     let layout = scan(VOCAB).unwrap();
-    assert_eq!(layout.declarations.len(), 1);
-    assert_eq!(layout.declarations[0].name, "upstreams");
+    let decls: Vec<_> = layout.declarations.iter().map(|d| d.name.as_str()).collect();
+    assert_eq!(decls, ["use", "upstream"]);
     let keys: Vec<_> = layout.entries.iter().map(|e| e.key.as_str()).collect();
     assert_eq!(keys, ["schema/rust.tmt", "schema/writ.tmt"]);
 }
@@ -38,13 +35,13 @@ fn an_entry_is_added_after_the_last_and_the_rest_is_untouched() {
     let text = add_entry(VOCAB, "schema/ui.tmt", &up("vocabularies", "ui/ui.tmt")).unwrap();
     assert!(text.starts_with(VOCAB), "{text}");
     assert!(text.ends_with(
-        "\"schema/ui.tmt\": {\n  source: { upstream: vocabularies, path: \"ui/ui.tmt\" }\n}\n"
+        "\"schema/ui.tmt\": catasto.upstream(vocabularies, path: \"ui/ui.tmt\")\n"
     ));
     assert!(Manifest::parse(&text).is_ok());
 }
 
 #[test]
-fn the_first_entry_goes_below_a_blank_line() {
+fn the_first_entry_inserts_use_and_goes_below_a_blank_line() {
     let text = add_entry(
         "// nothing yet\n",
         "a.tmt",
@@ -55,7 +52,24 @@ fn the_first_entry_goes_below_a_blank_line() {
     .unwrap();
     assert_eq!(
         text,
-        "// nothing yet\n\n\"a.tmt\": {\n  source: \"../a.tmt\"\n}\n"
+        "// nothing yet\n\n::use(catasto, version: \"1.0.0\")\n\n\"a.tmt\": catasto.local(\"../a.tmt\")\n"
+    );
+    assert!(Manifest::parse(&text).is_ok());
+}
+
+#[test]
+fn adding_to_empty_manifest_inserts_use_and_entry() {
+    let text = add_entry(
+        "",
+        "a.tmt",
+        &SourceText::Local {
+            path: "../a.tmt".into(),
+        },
+    )
+    .unwrap();
+    assert_eq!(
+        text,
+        "::use(catasto, version: \"1.0.0\")\n\n\"a.tmt\": catasto.local(\"../a.tmt\")\n"
     );
     assert!(Manifest::parse(&text).is_ok());
 }
@@ -78,8 +92,11 @@ fn a_removed_entry_takes_its_comment_lines_and_nothing_else() {
 
 #[test]
 fn the_comment_that_opens_the_file_is_not_an_entrys() {
-    let text = "// about this file\n\"a.tmt\": { source: \"x\" }\n";
-    assert_eq!(remove_entry(text, "a.tmt").unwrap(), "// about this file\n");
+    let text = "// about this file\n::use(catasto, version: \"1.0.0\")\n\n\"a.tmt\": catasto.local(\"x\")\n";
+    assert_eq!(
+        remove_entry(text, "a.tmt").unwrap(),
+        "// about this file\n::use(catasto, version: \"1.0.0\")\n\n"
+    );
 }
 
 #[test]
@@ -89,17 +106,20 @@ fn removing_what_is_not_there_says_so() {
 }
 
 #[test]
-fn a_value_with_braces_and_strings_inside_is_read_whole() {
-    let text = "\"a\": {\n  source: { git: \"https://x/}.git\", rev: main, path: \"p // q\" } // trailing\n}\n\"b\": { source: \"y\" }\n";
+fn a_value_with_parens_and_strings_inside_is_read_whole() {
+    let text = "::use(catasto, version: \"1.0.0\")\n\n\"a\": (\n  catasto.git(\"https://x/).git\", rev: main, path: \"p // q\"), // trailing\n  executable: true\n)\n\"b\": catasto.local(\"y\")\n";
     let layout = scan(text).unwrap();
     assert_eq!(layout.entries.len(), 2);
     assert_eq!(layout.entries[1].key, "b");
     let after = remove_entry(text, "a").unwrap();
-    assert_eq!(after, "\"b\": { source: \"y\" }\n");
+    assert_eq!(
+        after,
+        "::use(catasto, version: \"1.0.0\")\n\n\"b\": catasto.local(\"y\")\n"
+    );
 }
 
 #[test]
-fn an_upstream_goes_above_the_closing_brace_of_a_block_on_lines_of_its_own() {
+fn an_upstream_goes_above_the_closing_paren_of_a_block_on_lines_of_its_own() {
     let text = add_upstream(
         VOCAB,
         "shared",
@@ -110,15 +130,18 @@ fn an_upstream_goes_above_the_closing_brace_of_a_block_on_lines_of_its_own() {
         },
     )
     .unwrap();
-    assert!(text.contains(
-            "  vocabularies: { git: \"https://example.com/v.git\", rev: main, root: vocabularies }\n  shared: { git: \"https://example.com/s.git\", rev: v1 }\n}\n"
-        ), "{text}");
+    assert!(
+        text.contains(
+            "  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main, root: vocabularies)\n  shared: catasto.git(\"https://example.com/s.git\", rev: v1)\n)\n"
+        ),
+        "{text}"
+    );
     assert!(Manifest::parse(&text).is_ok());
 }
 
 #[test]
 fn a_block_on_one_line_is_written_out_when_it_gains_a_place() {
-    let one = "::upstreams{ a: { git: \"https://x/a.git\", rev: main } }\n\"f\": { source: { upstream: a, path: \"p\" } }\n";
+    let one = "::use(catasto, version: \"1.0.0\")\n::upstream(a: catasto.git(\"https://x/a.git\", rev: main))\n\n\"f\": catasto.upstream(a, path: \"p\")\n";
     let text = add_upstream(
         one,
         "b",
@@ -130,18 +153,18 @@ fn a_block_on_one_line_is_written_out_when_it_gains_a_place() {
     )
     .unwrap();
     assert!(
-            text.starts_with(
-                "::upstreams{\n  a: { git: \"https://x/a.git\", rev: main }\n  b: { git: \"https://x/b.git\", rev: main, root: dir/sub }\n}\n"
-            ),
-            "{text}"
-        );
+        text.starts_with(
+            "::use(catasto, version: \"1.0.0\")\n::upstream(\n  a: catasto.git(\"https://x/a.git\", rev: main)\n  b: catasto.git(\"https://x/b.git\", rev: main, root: dir/sub)\n)\n"
+        ),
+        "{text}"
+    );
     assert!(Manifest::parse(&text).is_ok(), "{text}");
 }
 
 #[test]
-fn the_first_upstream_creates_the_declaration_above_the_entries() {
+fn the_first_upstream_creates_the_declaration_and_use_above_the_entries() {
     let text = add_upstream(
-        "// header\n\n\"f\": { source: \"x\" }\n",
+        "// header\n\n\"f\": catasto.local(\"x\")\n",
         "v",
         &UpstreamText {
             git: "https://x/v.git".into(),
@@ -152,11 +175,11 @@ fn the_first_upstream_creates_the_declaration_above_the_entries() {
     .unwrap();
     assert!(
         text.starts_with(
-            "// header\n\n::upstreams{\n  v: { git: \"https://x/v.git\", rev: main }\n}\n\n\"f\""
+            "// header\n\n::use(catasto, version: \"1.0.0\")\n::upstream(\n  v: catasto.git(\"https://x/v.git\", rev: main)\n)\n\n\"f\""
         ),
         "{text}"
     );
-    assert!(Manifest::parse(&text).is_ok());
+    assert!(Manifest::parse(&text).is_ok(), "{text}");
 }
 
 #[test]
@@ -172,6 +195,7 @@ fn a_rev_that_reads_as_a_number_is_quoted() {
     )
     .unwrap();
     assert!(text.contains("rev: \"1.2\""), "{text}");
+    assert!(text.contains("::use(catasto, version: \"1.0.0\")"), "{text}");
     assert!(Manifest::parse(&text).is_ok());
 }
 
@@ -190,8 +214,15 @@ fn an_upstream_is_removed_and_the_declaration_goes_with_the_last() {
     let one = remove_upstream(&two, "shared").unwrap();
     assert_eq!(one, VOCAB);
 
-    let none = remove_upstream("::upstreams{\n  a: { git: \"https://x/a.git\", rev: main }\n}\n\n\"f\": { source: \"x\" }\n", "a").unwrap();
-    assert_eq!(none, "\"f\": { source: \"x\" }\n");
+    let none = remove_upstream(
+        "::use(catasto, version: \"1.0.0\")\n::upstream(\n  a: catasto.git(\"https://x/a.git\", rev: main)\n)\n\n\"f\": catasto.local(\"x\")\n",
+        "a",
+    )
+    .unwrap();
+    assert_eq!(
+        none,
+        "::use(catasto, version: \"1.0.0\")\n\n\"f\": catasto.local(\"x\")\n"
+    );
 }
 
 #[test]
@@ -201,6 +232,13 @@ fn who_uses_an_upstream_is_found_in_the_entries() {
         ["schema/rust.tmt", "schema/writ.tmt"]
     );
     assert!(upstream_is_used(VOCAB, "other").unwrap().is_empty());
+
+    let mixed = "::use(catasto, version: \"1.0.0\")\n\
+                 ::upstream(a: catasto.git(\"https://x/a.git\", rev: main))\n\
+                 // catasto.upstream(a, path: \"ignored-comment\")\n\
+                 \"p1\": (catasto.upstream(upstream: \"a\", path: \"one\"), executable: true)\n\
+                 \"p2\": catasto.local(\"upstream: a\")\n";
+    assert_eq!(upstream_is_used(mixed, "a").unwrap(), ["p1"]);
 }
 
 #[test]
@@ -232,11 +270,11 @@ fn entry_text_with_and_without_keep_symlink() {
     };
     assert_eq!(
         entry_text("CLAUDE.md", &upstream_follow),
-        "\"CLAUDE.md\": {\n  source: { upstream: commonfiles, path: \"CLAUDE.md\" }\n}\n"
+        "\"CLAUDE.md\": catasto.upstream(commonfiles, path: \"CLAUDE.md\")\n"
     );
     assert_eq!(
         entry_text("CLAUDE.md", &upstream_keep),
-        "\"CLAUDE.md\": {\n  source: { upstream: commonfiles, path: \"CLAUDE.md\", symlink: keep }\n}\n"
+        "\"CLAUDE.md\": catasto.upstream(commonfiles, path: \"CLAUDE.md\", symlink: keep)\n"
     );
 
     let git_follow = SourceText::Git {
@@ -253,102 +291,126 @@ fn entry_text_with_and_without_keep_symlink() {
     };
     assert_eq!(
         entry_text("bin/tool", &git_follow),
-        "\"bin/tool\": {\n  source: { git: \"https://example.com/repo.git\", rev: main, path: \"bin/tool\" }\n}\n"
+        "\"bin/tool\": catasto.git(\"https://example.com/repo.git\", rev: main, path: \"bin/tool\")\n"
     );
     assert_eq!(
         entry_text("bin/tool", &git_keep),
-        "\"bin/tool\": {\n  source: { git: \"https://example.com/repo.git\", rev: main, path: \"bin/tool\", symlink: keep }\n}\n"
+        "\"bin/tool\": catasto.git(\"https://example.com/repo.git\", rev: main, path: \"bin/tool\", symlink: keep)\n"
     );
 
     // Verify added entry with symlink: keep parses cleanly
-    let text = add_entry(VOCAB, "link.tmt", &SourceText::Upstream {
-        name: "vocabularies".into(),
-        path: "rust/rust.tmt".into(),
-        keep_symlink: true,
-    }).unwrap();
+    let text = add_entry(
+        VOCAB,
+        "link.tmt",
+        &SourceText::Upstream {
+            name: "vocabularies".into(),
+            path: "rust/rust.tmt".into(),
+            keep_symlink: true,
+        },
+    )
+    .unwrap();
     assert!(Manifest::parse(&text).is_ok());
 }
 
 #[test]
-fn add_or_replace_entry_keeps_position_comment_and_extra_fields() {
+fn add_or_replace_entry_keeps_position_comment_and_executable_in_tuple() {
     let manifest = "\
 // A comment before the entries
-\"first.tmt\": {
-  source: \"old/first.tmt\"
-}
+::use(catasto, version: \"1.0.0\")
+::upstream(
+  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main)
+)
+
+\"first.tmt\": catasto.local(\"old/first.tmt\")
 
 // A comment on the target entry
-\"target.tmt\": {
-  source: \"old/target.tmt\",
-  extra: \"preserve-me\"
-}
+\"target.sh\": (
+  catasto.local(\"old/target.sh\"),
+  executable: true
+)
 
-// A comment on the third entry
-\"third.tmt\": {
-  source: \"old/third.tmt\"
-}
+// A comment on the bare target
+\"bare.tmt\": catasto.local(\"old/bare.tmt\")
 ";
 
     let new_source = SourceText::Upstream {
         name: "vocabularies".into(),
-        path: "new/target.tmt".into(),
+        path: "new/target.sh".into(),
         keep_symlink: false,
     };
 
     // 1. without force: fails with AlreadyDeclared
-    let err = add_or_replace_entry(manifest, "target.tmt", &new_source, false).unwrap_err();
-    let already = err.downcast_ref::<AlreadyDeclared>().expect("downcast to AlreadyDeclared");
-    assert_eq!(already.dest, "target.tmt");
+    let err = add_or_replace_entry(manifest, "target.sh", &new_source, false).unwrap_err();
+    let already = err
+        .downcast_ref::<AlreadyDeclared>()
+        .expect("downcast to AlreadyDeclared");
+    assert_eq!(already.dest, "target.sh");
     assert_eq!(
         err.to_string(),
-        "target.tmt is already declared (use --force to replace its source)"
+        "target.sh is already declared (use --force to replace its source)"
     );
 
-    // 2. with force: replaces source and keeps position, comment and extra field
+    // 2. with force on tuple entry: replaces call and keeps comment and executable: true
     let (replaced_text, outcome) =
-        add_or_replace_entry(manifest, "target.tmt", &new_source, true).unwrap();
+        add_or_replace_entry(manifest, "target.sh", &new_source, true).unwrap();
     assert_eq!(outcome, AddOutcome::Replaced);
     assert_eq!(
         replaced_text,
         "\
 // A comment before the entries
-\"first.tmt\": {
-  source: \"old/first.tmt\"
-}
+::use(catasto, version: \"1.0.0\")
+::upstream(
+  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main)
+)
+
+\"first.tmt\": catasto.local(\"old/first.tmt\")
 
 // A comment on the target entry
-\"target.tmt\": {
-  source: { upstream: vocabularies, path: \"new/target.tmt\" },
-  extra: \"preserve-me\"
-}
+\"target.sh\": (
+  catasto.upstream(vocabularies, path: \"new/target.sh\"),
+  executable: true
+)
 
-// A comment on the third entry
-\"third.tmt\": {
-  source: \"old/third.tmt\"
-}
+// A comment on the bare target
+\"bare.tmt\": catasto.local(\"old/bare.tmt\")
 "
     );
+    assert!(Manifest::parse(&replaced_text).is_ok());
 
     // 3. replacing with an equal source returns the same text (Unchanged)
     let (unchanged_text, outcome) =
-        add_or_replace_entry(&replaced_text, "target.tmt", &new_source, true).unwrap();
+        add_or_replace_entry(&replaced_text, "target.sh", &new_source, true).unwrap();
     assert_eq!(outcome, AddOutcome::Unchanged);
     assert_eq!(unchanged_text, replaced_text);
+
+    // 4. with force on bare call entry: replaces whole call
+    let bare_source = SourceText::Local {
+        path: "new/bare.tmt".into(),
+    };
+    let (replaced_bare, outcome) =
+        add_or_replace_entry(&replaced_text, "bare.tmt", &bare_source, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert!(
+        replaced_bare.contains("\"bare.tmt\": catasto.local(\"new/bare.tmt\")"),
+        "{replaced_bare}"
+    );
+    assert!(Manifest::parse(&replaced_bare).is_ok());
 }
 
 #[test]
 fn add_or_replace_upstream_multiline_block() {
     let manifest = "\
-::upstreams{
+::use(catasto, version: \"1.0.0\")
+::upstream(
   // comment above first
-  first: { git: \"https://example.com/first.git\", rev: v1 }
+  first: catasto.git(\"https://example.com/first.git\", rev: v1)
   // comment above middle
-  middle: { git: \"https://example.com/middle.git\", rev: v1 }
+  middle: catasto.git(\"https://example.com/middle.git\", rev: v1)
   // comment above last
-  last: { git: \"https://example.com/last.git\", rev: v1 }
-}
+  last: catasto.git(\"https://example.com/last.git\", rev: v1)
+)
 
-\"a.tmt\": { source: { upstream: middle, path: \"a.tmt\" } }
+\"a.tmt\": catasto.upstream(middle, path: \"a.tmt\")
 ";
 
     let new_middle = UpstreamText {
@@ -376,16 +438,17 @@ fn add_or_replace_upstream_multiline_block() {
     assert_eq!(
         replaced_middle,
         "\
-::upstreams{
+::use(catasto, version: \"1.0.0\")
+::upstream(
   // comment above first
-  first: { git: \"https://example.com/first.git\", rev: v1 }
+  first: catasto.git(\"https://example.com/first.git\", rev: v1)
   // comment above middle
-  middle: { git: \"https://example.com/new-middle.git\", rev: v2, root: subdir }
+  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, root: subdir)
   // comment above last
-  last: { git: \"https://example.com/last.git\", rev: v1 }
-}
+  last: catasto.git(\"https://example.com/last.git\", rev: v1)
+)
 
-\"a.tmt\": { source: { upstream: middle, path: \"a.tmt\" } }
+\"a.tmt\": catasto.upstream(middle, path: \"a.tmt\")
 "
     );
     assert!(Manifest::parse(&replaced_middle).is_ok());
@@ -408,16 +471,17 @@ fn add_or_replace_upstream_multiline_block() {
     assert_eq!(
         replaced_first,
         "\
-::upstreams{
+::use(catasto, version: \"1.0.0\")
+::upstream(
   // comment above first
-  first: { git: \"https://example.com/new-first.git\", rev: main }
+  first: catasto.git(\"https://example.com/new-first.git\", rev: main)
   // comment above middle
-  middle: { git: \"https://example.com/new-middle.git\", rev: v2, root: subdir }
+  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, root: subdir)
   // comment above last
-  last: { git: \"https://example.com/last.git\", rev: v1 }
-}
+  last: catasto.git(\"https://example.com/last.git\", rev: v1)
+)
 
-\"a.tmt\": { source: { upstream: middle, path: \"a.tmt\" } }
+\"a.tmt\": catasto.upstream(middle, path: \"a.tmt\")
 "
     );
     assert!(Manifest::parse(&replaced_first).is_ok());
@@ -434,16 +498,17 @@ fn add_or_replace_upstream_multiline_block() {
     assert_eq!(
         replaced_last,
         "\
-::upstreams{
+::use(catasto, version: \"1.0.0\")
+::upstream(
   // comment above first
-  first: { git: \"https://example.com/new-first.git\", rev: main }
+  first: catasto.git(\"https://example.com/new-first.git\", rev: main)
   // comment above middle
-  middle: { git: \"https://example.com/new-middle.git\", rev: v2, root: subdir }
+  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, root: subdir)
   // comment above last
-  last: { git: \"https://example.com/new-last.git\", rev: v3 }
-}
+  last: catasto.git(\"https://example.com/new-last.git\", rev: v3)
+)
 
-\"a.tmt\": { source: { upstream: middle, path: \"a.tmt\" } }
+\"a.tmt\": catasto.upstream(middle, path: \"a.tmt\")
 "
     );
     assert!(Manifest::parse(&replaced_last).is_ok());
@@ -451,7 +516,7 @@ fn add_or_replace_upstream_multiline_block() {
 
 #[test]
 fn add_or_replace_upstream_oneline_block() {
-    let manifest = "::upstreams{ a: { git: \"https://x/a.git\", rev: main }, b: { git: \"https://x/b.git\", rev: main } }\n";
+    let manifest = "::use(catasto, version: \"1.0.0\")\n::upstream(a: catasto.git(\"https://x/a.git\", rev: main), b: catasto.git(\"https://x/b.git\", rev: main))\n";
     let new_b = UpstreamText {
         git: "https://x/b2.git".into(),
         rev: "v2".into(),
@@ -463,10 +528,11 @@ fn add_or_replace_upstream_oneline_block() {
     assert_eq!(
         replaced,
         "\
-::upstreams{
-  a: { git: \"https://x/a.git\", rev: main }
-  b: { git: \"https://x/b2.git\", rev: v2 }
-}
+::use(catasto, version: \"1.0.0\")
+::upstream(
+  a: catasto.git(\"https://x/a.git\", rev: main)
+  b: catasto.git(\"https://x/b2.git\", rev: v2)
+)
 "
     );
     assert!(Manifest::parse(&replaced).is_ok());

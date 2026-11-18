@@ -29,13 +29,13 @@ impl MultiRepoEnv {
 
         fs::write(
             repo_a.join("catasto.ctmt"),
-            "\"common.txt\": { source: \"../shared/common.txt\" }\n",
+            "::use(catasto, version: \"1.0.0\")\n\n\"common.txt\": catasto.local(\"../shared/common.txt\")\n",
         )
         .unwrap();
 
         fs::write(
             repo_b.join("catasto.ctmt"),
-            "\"common.txt\": { source: \"../shared/common.txt\" }\n",
+            "::use(catasto, version: \"1.0.0\")\n\n\"common.txt\": catasto.local(\"../shared/common.txt\")\n",
         )
         .unwrap();
 
@@ -182,14 +182,14 @@ fn all_covers_a_root_manifest_and_a_workspace_inside_another() {
     // The root is a workspace of its own, and `repo_a` holds one more.
     fs::write(
         env.root.join("catasto.ctmt"),
-        "\"root.txt\": { source: \"shared/common.txt\" }\n",
+        "::use(catasto, version: \"1.0.0\")\n\n\"root.txt\": catasto.local(\"shared/common.txt\")\n",
     )
     .unwrap();
     let inner = env.repo_a.join("inner");
     fs::create_dir_all(&inner).unwrap();
     fs::write(
         inner.join("catasto.ctmt"),
-        "\"inner.txt\": { source: \"../../shared/common.txt\" }\n",
+        "::use(catasto, version: \"1.0.0\")\n\n\"inner.txt\": catasto.local(\"../../shared/common.txt\")\n",
     )
     .unwrap();
 

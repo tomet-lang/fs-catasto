@@ -1,20 +1,25 @@
 [package]
-name = "catasto-manifest"
-version.workspace = true
-edition.workspace = true
+name                   = "catasto-manifest"
+version.workspace      = true
+edition.workspace      = true
 rust-version.workspace = true
-license.workspace = true
-description = "Manifest syntax, schema models, and AST/CST editing for catasto."
-publish = false
+license.workspace      = true
+description            = "Manifest syntax, schema models, and AST/CST editing for catasto."
+publish                = false
 
 [dependencies]
-cotomet = { workspace = true }
-tomet-spec = { workspace = true }
-
-#= Crates.io
-serde = { workspace = true }
+cotomet           = { workspace = true }
+tomet-ast         = { workspace = true }
+tomet-ast-parser  = { workspace = true }
+tomet-declaration = { workspace = true }
+tomet-scalar      = { workspace = true }
+tomet-semantics   = { workspace = true }
+tomet-spec        = { workspace = true }
+tomet-type        = { workspace = true }
+#--- Crates.io ---
+serde      = { workspace = true }
 serde_json = { workspace = true }
-anyhow = { workspace = true }
+anyhow     = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

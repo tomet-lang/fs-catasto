@@ -2,7 +2,9 @@ use super::*;
 use crate::lockfile::lock;
 
 const MANIFEST: &str = "\
-\"vocab/writ.tmt\": { source: \"../vocabularies/writ.tmt\" }
+::use(catasto, version: \"1.0.0\")
+
+\"vocab/writ.tmt\": catasto.local(\"../vocabularies/writ.tmt\")
 ";
 
 /// A vault at `<tmp>/vault` with a sibling `<tmp>/vocabularies`, already locked.
@@ -134,7 +136,7 @@ fn a_missing_root_is_an_error() {
     assert!(check(&dir.path().join("nope")).is_err());
 }
 
-const GIT_SOURCE: &str = "{ git: \"/does/not/exist.git\", rev: main, path: \"w.tmt\" }";
+const GIT_SOURCE: &str = "catasto.git(\"/does/not/exist.git\", rev: main, path: \"w.tmt\")";
 
 /// A vault with one git-sourced file whose lock entry records `commit`.
 fn git_vault(commit: Option<&str>) -> tempfile::TempDir {
@@ -142,7 +144,7 @@ fn git_vault(commit: Option<&str>) -> tempfile::TempDir {
     std::fs::write(dir.path().join("w.tmt"), "abc").unwrap();
     std::fs::write(
         dir.path().join("catasto.ctmt"),
-        format!("\"w.tmt\": {{ source: {GIT_SOURCE} }}\n"),
+        format!("::use(catasto, version: \"1.0.0\")\n\n\"w.tmt\": {GIT_SOURCE}\n"),
     )
     .unwrap();
     let commit = commit
@@ -209,7 +211,7 @@ fn check_symlink_keep_and_default_table() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("catasto.ctmt"),
-            format!("\"link\": {{ source: {manifest_src} }}"),
+            format!("::use(catasto, version: \"1.0.0\")\n\n\"link\": {manifest_src}\n"),
         )
         .unwrap();
         std::fs::write(
@@ -223,8 +225,8 @@ fn check_symlink_keep_and_default_table() {
     };
 
     let keep_manifest =
-        "{ git: \"https://example.com/v.git\", rev: main, path: \"link\", symlink: keep }";
-    let default_manifest = "{ git: \"https://example.com/v.git\", rev: main, path: \"link\" }";
+        "catasto.git(\"https://example.com/v.git\", rev: main, path: \"link\", symlink: keep)";
+    let default_manifest = "catasto.git(\"https://example.com/v.git\", rev: main, path: \"link\")";
     let keep_lock = "{\"git\":\"https://example.com/v.git\",\"rev\":\"main\",\"path\":\"link\",\"symlink\":\"keep\"}";
     let default_lock = "{\"git\":\"https://example.com/v.git\",\"rev\":\"main\",\"path\":\"link\"}";
 
@@ -310,8 +312,10 @@ fn check_detects_executable_bit_drift_in_both_directions() {
     use std::os::unix::fs::PermissionsExt;
 
     let manifest = "\
-\"normal.txt\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"normal.txt\" } }
-\"tool.sh\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"tool.sh\" } }
+::use(catasto, version: \"1.0.0\")
+
+\"normal.txt\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"normal.txt\")
+\"tool.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"tool.sh\")
 ";
     let hash_normal = catasto_digest::sha256_hex(b"normal content");
     let hash_tool = catasto_digest::sha256_hex(b"tool content");
@@ -366,7 +370,7 @@ fn old_lock_without_mode_is_clean_when_destination_is_normal_file() {
     use std::os::unix::fs::PermissionsExt;
 
     // An old lock for tool.sh has no mode field
-    let manifest = "\"tool.sh\": { source: { git: \"https://example.com/v.git\", rev: v1, path: \"tool.sh\" } }";
+    let manifest = "::use(catasto, version: \"1.0.0\")\n\n\"tool.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"tool.sh\")\n";
     let hash = catasto_digest::sha256_hex(b"#!/bin/sh\n");
     let lock_text = format!(
         "{{\n  \"version\": 1,\n  \"files\": {{\n    \

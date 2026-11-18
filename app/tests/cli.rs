@@ -41,7 +41,7 @@ impl Workspace {
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
         std::fs::write(
             vault.join("catasto.ctmt"),
-            "\"schema/writ.vocabulary.tmt\": { source: \"../vocabularies/writ.vocabulary.tmt\" }\n",
+            "::use(catasto, version: \"1.0.0\")\n\n\"schema/writ.vocabulary.tmt\": catasto.local(\"../vocabularies/writ.vocabulary.tmt\")\n",
         )
         .unwrap();
         std::fs::write(&source, "canonical").unwrap();
@@ -177,7 +177,7 @@ impl GitWorkspace {
         std::fs::write(
             ws.vault.join("catasto.ctmt"),
             format!(
-                "\"schema/w.tmt\": {{ source: {{ git: {:?}, rev: main, path: \"w.tmt\" }} }}\n",
+                "::use(catasto, version: \"1.0.0\")\n\n\"schema/w.tmt\": catasto.git({:?}, rev: main, path: \"w.tmt\")\n",
                 ws.remote
             ),
         )
@@ -295,7 +295,7 @@ fn e2e_git_symlink_follow() {
     std::fs::write(
         ws.vault.join("catasto.ctmt"),
         format!(
-            "\"followed.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\" }} }}\n",
+            "::use(catasto, version: \"1.0.0\")\n\n\"followed.txt\": catasto.git({:?}, rev: main, path: \"link.txt\")\n",
             ws.remote
         ),
     )
@@ -327,7 +327,7 @@ fn e2e_git_symlink_keep() {
     std::fs::write(
         ws.vault.join("catasto.ctmt"),
         format!(
-            "\"kept.txt\": {{ source: {{ git: {:?}, rev: main, path: \"link.txt\", symlink: keep }} }}\n",
+            "::use(catasto, version: \"1.0.0\")\n\n\"kept.txt\": catasto.git({:?}, rev: main, path: \"link.txt\", symlink: keep)\n",
             ws.remote
         ),
     )

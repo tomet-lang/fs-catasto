@@ -74,12 +74,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "bumpalo"
-version = "3.20.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "72f5acc6cb2ba439de613abc23857ec3d78374d8ed5ac84e9d11336e87da8649"
-
-[[package]]
 name = "catasto-cli"
 version = "0.1.0"
 dependencies = [
@@ -142,7 +136,13 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "tomet-ast",
+ "tomet-ast-parser",
+ "tomet-declaration",
+ "tomet-scalar",
+ "tomet-semantics",
  "tomet-spec",
+ "tomet-type",
 ]
 
 [[package]]
@@ -216,7 +216,7 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 [[package]]
 name = "cotomet"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "serde_cotomet",
  "tomet-ast",
@@ -326,41 +326,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 
 [[package]]
-name = "futures-core"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92d699e522242e69e3003b94ecc1f960f3a5e015aa7c5d7486e65ad01dd94f5e"
-
-[[package]]
-name = "futures-task"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cd417de3d1d015fc3bfd2b1ea46dfc7bab72ef86f1cc7cc9c78e728b34a6d1fd"
-
-[[package]]
-name = "futures-util"
-version = "0.3.34"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0d50a92467f8ba5dd6e3ee5d4bd04d73ab2e4e1c44474a0674821dfce14b79bc"
-dependencies = [
- "futures-core",
- "futures-task",
- "pin-project-lite",
- "slab",
-]
-
-[[package]]
-name = "getrandom"
-version = "0.2.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff2abc00be7fca6ebc474524697ae276ad847ad0a6b3faa4bcb027e9a4614ad0"
-dependencies = [
- "cfg-if",
- "libc",
- "wasi",
-]
-
-[[package]]
 name = "getrandom"
 version = "0.4.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -426,7 +391,7 @@ version = "0.1.35"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "1c00acbd29eabad4a2392fa0e921c874934dbbf4194312ad20f04a0ed67a3cb3"
 dependencies = [
- "getrandom 0.4.3",
+ "getrandom",
  "libc",
 ]
 
@@ -436,17 +401,6 @@ version = "0.1.0"
 source = "git+https://github.com/tomet-lang/jobserver-gate.git#9bf7703366ee404b1671e1ebbc4d0a88e6de3dd7"
 dependencies = [
  "jobserver",
-]
-
-[[package]]
-name = "js-sys"
-version = "0.3.106"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7883d941dae510fb2d978fc3fe018c71c9e2892fd38854de3e8b92c2e5ad9cc5"
-dependencies = [
- "cfg-if",
- "futures-util",
- "wasm-bindgen",
 ]
 
 [[package]]
@@ -486,15 +440,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "nanoid"
-version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3ffa00dec017b5b1a8b7cf5e2c008bfda1aa7e0697ac1508b491fdf2622fb4d8"
-dependencies = [
- "rand",
-]
-
-[[package]]
 name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -505,21 +450,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "pin-project-lite"
-version = "0.2.17"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a89322df9ebe1c1578d689c92318e070967d1042b512afbe49518723f4e6d5cd"
-
-[[package]]
-name = "ppv-lite86"
-version = "0.2.21"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "85eae3c4ed2f50dcfe72643da4befc30deadb458a9b590d720cde2f2b1e97da9"
-dependencies = [
- "zerocopy",
-]
 
 [[package]]
 name = "proc-macro2"
@@ -544,36 +474,6 @@ name = "r-efi"
 version = "6.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8dcc9c7d52a811697d2151c701e0d08956f92b0e24136cf4cf27b57a6a0d9bf"
-
-[[package]]
-name = "rand"
-version = "0.8.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e058c7de0b26af77780c769414d6257830bb240f3c38477dbc2c16e5f54d6d4c"
-dependencies = [
- "libc",
- "rand_chacha",
- "rand_core",
-]
-
-[[package]]
-name = "rand_chacha"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6c10a63a0fa32252be49d21e7709d4d4baf8d231c2dbce1eaa8141b9b127d88"
-dependencies = [
- "ppv-lite86",
- "rand_core",
-]
-
-[[package]]
-name = "rand_core"
-version = "0.6.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec0be4795e2f6a28069bec0b5ff3e2ac9bafc99e6a9a7dc3547996c5c816922c"
-dependencies = [
- "getrandom 0.2.17",
-]
 
 [[package]]
 name = "rayon"
@@ -627,12 +527,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "rustversion"
-version = "1.0.23"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f"
-
-[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -654,11 +548,13 @@ dependencies = [
 [[package]]
 name = "serde_cotomet"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "serde",
  "tomet-ast",
  "tomet-ast-parser",
+ "tomet-scalar",
+ "tomet-spelling",
 ]
 
 [[package]]
@@ -711,12 +607,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bbbb5d9659141646ae647b42fe094daf6c6192d1620870b449d9557f748b2daa"
 
 [[package]]
-name = "slab"
-version = "0.4.12"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0c790de23124f9ab44544d7ac05d60440adc586479ce501c1d6d7da3cd8c9cf5"
-
-[[package]]
 name = "strsim"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -751,7 +641,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd"
 dependencies = [
  "fastrand",
- "getrandom 0.4.3",
+ "getrandom",
  "once_cell",
  "rustix",
  "windows-sys",
@@ -766,7 +656,7 @@ checksum = "f18aa187839b2bdb1ad2fa35ead8c4c2976b64e4363c386d45ac0f7ee85c9233"
 [[package]]
 name = "tomet-address"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "serde",
  "tomet-ast",
@@ -777,17 +667,19 @@ dependencies = [
 [[package]]
 name = "tomet-ast"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "serde",
+ "tomet-scalar",
  "tomet-span",
+ "tomet-spelling",
  "unicode-width",
 ]
 
 [[package]]
 name = "tomet-ast-parser"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
  "tomet-cst",
@@ -801,21 +693,23 @@ dependencies = [
 [[package]]
 name = "tomet-config"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
  "tomet-ast-parser",
  "tomet-declaration",
+ "tomet-scalar",
  "tomet-semantics",
  "tomet-semantics-core",
  "tomet-spec-derive",
+ "tomet-style",
  "tomet-tree",
 ]
 
 [[package]]
 name = "tomet-cst"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "rowan",
 ]
@@ -823,22 +717,19 @@ dependencies = [
 [[package]]
 name = "tomet-cst-parser"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-cst",
  "tomet-lexer",
- "tomet-position",
- "tomet-span",
- "tomet-tree",
- "unicode-width",
 ]
 
 [[package]]
 name = "tomet-declaration"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
+ "tomet-scalar",
  "tomet-semantics-core",
  "tomet-span",
  "tomet-tree",
@@ -846,24 +737,17 @@ dependencies = [
 ]
 
 [[package]]
-name = "tomet-field-utils"
-version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
-dependencies = [
- "nanoid",
- "tomet-config",
- "tomet-type",
- "uuid",
-]
-
-[[package]]
 name = "tomet-formatter"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
  "tomet-ast-parser",
  "tomet-config",
+ "tomet-cst",
+ "tomet-cst-parser",
+ "tomet-spelling",
+ "tomet-style",
  "tomet-tree",
  "unicode-width",
 ]
@@ -871,7 +755,7 @@ dependencies = [
 [[package]]
 name = "tomet-lexer"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-cst",
  "tomet-span",
@@ -880,7 +764,7 @@ dependencies = [
 [[package]]
 name = "tomet-load-config"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast-parser",
  "tomet-config",
@@ -889,45 +773,54 @@ dependencies = [
 [[package]]
 name = "tomet-lowering"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
  "tomet-cst",
  "tomet-lexer",
  "tomet-position",
+ "tomet-scalar",
  "tomet-span",
  "tomet-tree",
- "unicode-width",
 ]
 
 [[package]]
 name = "tomet-position"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 
 [[package]]
 name = "tomet-printer"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
  "tomet-config",
- "tomet-field-utils",
- "tomet-formatter",
  "tomet-semantics",
+ "tomet-spelling",
  "tomet-style",
  "tomet-tree",
+ "tomet-type",
+]
+
+[[package]]
+name = "tomet-scalar"
+version = "0.5.0"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
+dependencies = [
+ "serde",
 ]
 
 [[package]]
 name = "tomet-semantics"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "serde_json",
  "tomet-address",
  "tomet-ast",
  "tomet-declaration",
+ "tomet-scalar",
  "tomet-semantics-core",
  "tomet-span",
  "tomet-tree",
@@ -937,16 +830,17 @@ dependencies = [
 [[package]]
 name = "tomet-semantics-core"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
+ "tomet-scalar",
  "tomet-type",
 ]
 
 [[package]]
 name = "tomet-span"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "serde",
 ]
@@ -954,13 +848,14 @@ dependencies = [
 [[package]]
 name = "tomet-spec"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "clap",
  "tomet-ast",
  "tomet-config",
  "tomet-formatter",
  "tomet-printer",
+ "tomet-scalar",
  "tomet-span",
  "tomet-spec-derive",
  "tomet-tree",
@@ -969,7 +864,7 @@ dependencies = [
 [[package]]
 name = "tomet-spec-derive"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -977,31 +872,40 @@ dependencies = [
 ]
 
 [[package]]
+name = "tomet-spelling"
+version = "0.5.0"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
+dependencies = [
+ "tomet-scalar",
+ "tomet-type",
+]
+
+[[package]]
 name = "tomet-style"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
- "tomet-config",
- "tomet-field-utils",
- "tomet-semantics",
- "tomet-tree",
- "tomet-type",
+ "unicode-width",
 ]
 
 [[package]]
 name = "tomet-tree"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
 dependencies = [
  "tomet-ast",
+ "tomet-scalar",
  "tomet-span",
 ]
 
 [[package]]
 name = "tomet-type"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#f491eea535e0d08a4d545b6bd21a4808b295c96a"
+source = "git+https://github.com/tomet-lang/tomet.git#6ae8a95d7fc02b70dff06336d82f646d0512b6d0"
+dependencies = [
+ "tomet-scalar",
+]
 
 [[package]]
 name = "typenum"
@@ -1028,68 +932,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 
 [[package]]
-name = "uuid"
-version = "1.26.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ef6dac1e96601b4fb3acccccff2139741fcb757cb9a36089bf5be91cfb285ce"
-dependencies = [
- "getrandom 0.4.3",
- "js-sys",
- "wasm-bindgen",
-]
-
-[[package]]
-name = "wasi"
-version = "0.11.1+wasi-snapshot-preview1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ccf3ec651a847eb01de73ccad15eb7d99f80485de043efb2f370cd654f4ea44b"
-
-[[package]]
-name = "wasm-bindgen"
-version = "0.2.129"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9bb54f33acc68fd454578d9820b0bde1a1a3d17aa17bb7b6595806d02886d409"
-dependencies = [
- "cfg-if",
- "once_cell",
- "rustversion",
- "wasm-bindgen-macro",
- "wasm-bindgen-shared",
-]
-
-[[package]]
-name = "wasm-bindgen-macro"
-version = "0.2.129"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e29d0c35b16e224a7eeb5cd2d25e3e1968fbd65604117b44d3b789d00ee8535"
-dependencies = [
- "quote",
- "wasm-bindgen-macro-support",
-]
-
-[[package]]
-name = "wasm-bindgen-macro-support"
-version = "0.2.129"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f501a8bc3719dba86ef8ae4728879c08001bea749eb1333ac5b91e040e2a6b7"
-dependencies = [
- "bumpalo",
- "proc-macro2",
- "quote",
- "syn 3.0.9",
- "wasm-bindgen-shared",
-]
-
-[[package]]
-name = "wasm-bindgen-shared"
-version = "0.2.129"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "23f0c9c52aa7cd7d77769a4cfe2a9adb1b331f489a41d912ce14513d5ab995c6"
-dependencies = [
- "unicode-ident",
-]
-
-[[package]]
 name = "windows-link"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1102,26 +944,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ae137229bcbd6cdf0f7b80a31df61766145077ddf49416a728b02cb3921ff3fc"
 dependencies = [
  "windows-link",
-]
-
-[[package]]
-name = "zerocopy"
-version = "0.8.63"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e5fe1f8f1b06191a00962174c61aa5005e0bb391a6d80d07e24d115c01a92ed8"
-dependencies = [
- "zerocopy-derive",
-]
-
-[[package]]
-name = "zerocopy-derive"
-version = "0.8.63"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "863ad3ac83293fb4d740aedbfdc9240dd8d1a50c1099acd76ce80ce7c7230c7f"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]

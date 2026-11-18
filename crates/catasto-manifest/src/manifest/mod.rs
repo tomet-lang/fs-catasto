@@ -1,48 +1,38 @@
 //! The hand-written `catasto.ctmt` declaration.
 //!
-//! A manifest is a cotomet map from a path inside the workspace to what
-//! catasto knows about that path. Today an entry says where the file comes
-//! from:
+//! A manifest declares `::use(catasto, version: "1.0.0")`, optional shared
+//! Git repositories in `::upstream(...)`, and maps workspace-relative paths to
+//! constructor calls from the `catasto` vocabulary:
 //!
 //! ```text
-//! "tmtroot/schema/vocabularies/writ.vocabulary.tmt": { source: "../vocabularies/writ.vocabulary.tmt" }
+//! ::use(catasto, version: "1.0.0")
+//! ::upstream(
+//!   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, root: vocabularies)
+//! )
 //!
-//! "tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
-//!   source: { git: "https://example.com/vocabularies.git", rev: v1, path: "rust.vocabulary.tmt" }
-//! }
+//! "tmtroot/schema/vocabularies/writ.vocabulary.tmt": catasto.local("../vocabularies/writ.vocabulary.tmt")
+//!
+//! "tmtroot/schema/vocabularies/rust.vocabulary.tmt": catasto.upstream(
+//!   vocabularies,
+//!   path: "rust/rust.vocabulary.tmt"
+//! )
+//!
+//! "scripts/deploy.sh": (
+//!   catasto.git("https://example.com/tools.git", rev: v1, path: "deploy.sh"),
+//!   executable: true
+//! )
 //! ```
 //!
-//! The key comes first because every declaration catasto will take is about a
-//! path, and the lockfile is keyed by path too. An entry is always a map; a
-//! `source` is a string for a local file, or a map for a git repository.
-//! Quote a `rev` that reads as a number (`rev: "1.2"`), or cotomet reads it as
-//! one.
-//!
-//! A place that several entries come from is named once, in an `::upstreams`
-//! declaration at the top of the file, and each entry refers to it:
-//!
-//! ```text
-//! ::upstreams{
-//!   vocabularies: { git: "https://example.com/vocabularies.git", rev: v1 }
-//! }
-//!
-//! "tmtroot/schema/vocabularies/rust.vocabulary.tmt": {
-//!   source: { upstream: vocabularies, path: "rust.vocabulary.tmt" }
-//! }
-//! ```
-//!
-//! An upstream may name a `root`, the directory of the repository that its
-//! entries' `path`s start from: with `root: vocabularies` in the declaration,
-//! `path: "rust/rust.vocabulary.tmt"` is the file `vocabularies/rust/rust.vocabulary.tmt`.
-//!
-//! An upstream is not a macro: it is resolved while the file is read, into
-//! the `git`, `rev` and `path` map written out in full (the `root` joined in
-//! front of the `path`), so everything after the parse, and the lockfile, see
-//! the same [`Source`] either way.
+//! An upstream is resolved while the file is read, into the full `git`, `rev`
+//! and `path` of [`Source::Git`] (joining `root` in front of `path`), so
+//! everything after the parse, and the lockfile, see the same [`Source`]
+//! either way.
 
 use std::path::{Component, Path};
+use std::sync::LazyLock;
 
 use anyhow::{Result, bail};
+use tomet_semantics::Vocabulary;
 
 #[cfg(test)]
 mod tests;
@@ -56,6 +46,21 @@ pub use url::{UrlKind, classify};
 
 /// File name of the manifest, relative to the workspace root.
 pub const MANIFEST_FILE: &str = "catasto.ctmt";
+
+/// Canonical `catasto@1.0.0` vocabulary source.
+pub const VOCABULARY_TMT: &str =
+    include_str!("../../../../tmtroot/schema/vocabularies/catasto@1.0.0.vocabulary.tmt");
+
+static VOCABULARY: LazyLock<Vocabulary> = LazyLock::new(|| {
+    let doc = tomet_ast_parser::parse_file(VOCABULARY_TMT)
+        .expect("embedded catasto@1.0.0.vocabulary.tmt must parse");
+    Vocabulary::from_file(&doc).expect("embedded catasto@1.0.0.vocabulary.tmt must be a vocabulary")
+});
+
+/// Returns the parsed canonical `catasto@1.0.0` vocabulary.
+pub fn vocabulary() -> &'static Vocabulary {
+    &VOCABULARY
+}
 
 /// Fails when `expected` is missing from `root` but a file whose name differs from it only in case is there.
 ///

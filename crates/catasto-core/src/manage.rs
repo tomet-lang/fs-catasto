@@ -23,7 +23,8 @@ use crate::sync::{SyncMode, sync_only};
 /// What `catasto init` writes: comments only, which is a valid empty manifest.
 const SKELETON: &str = "\
 // The files catasto manages in this workspace. Each key is a path here;
-// `source` is where its canonical content comes from.
+// its value is a constructor from the `catasto` vocabulary saying where its
+// canonical content comes from.
 //
 // Name a place once and take files from it:
 //
@@ -32,13 +33,12 @@ const SKELETON: &str = "\
 //
 // which leaves, below this comment,
 //
-//   ::upstreams{
-//     shared: { git: \"https://example.com/shared.git\", rev: main }
-//   }
+//   ::use(catasto, version: \"1.0.0\")
+//   ::upstream(
+//     shared: catasto.git(\"https://example.com/shared.git\", rev: main)
+//   )
 //
-//   \"docs/terms.tmt\": {
-//     source: { upstream: shared, path: \"terms.tmt\" }
-//   }
+//   \"docs/terms.tmt\": catasto.upstream(shared, path: \"terms.tmt\")
 ";
 
 /// Creates `catasto.ctmt` in `root`. It never overwrites one.
@@ -122,7 +122,7 @@ pub fn remove(root: &Path, dest: &str, delete_file: bool) -> Result<()> {
     Ok(())
 }
 
-/// Names a place in `::upstreams`, or replaces its definition if `force`.
+/// Names a place in `::upstream(...)`, or replaces its definition if `force`.
 pub fn upstream_add(
     root: &Path,
     name: &str,
@@ -142,7 +142,7 @@ pub fn upstream_add(
     Ok((outcome, used))
 }
 
-/// Drops a place from `::upstreams`; refused while an entry still uses it.
+/// Drops a place from `::upstream(...)`; refused while an entry still uses it.
 pub fn upstream_remove(root: &Path, name: &str) -> Result<()> {
     edit_manifest(root, |text| {
         let users = edit::upstream_is_used(text, name)?;
@@ -154,7 +154,7 @@ pub fn upstream_remove(root: &Path, name: &str) -> Result<()> {
     Ok(())
 }
 
-/// The places `::upstreams` names.
+/// The places `::upstream(...)` names.
 pub fn upstream_list(root: &Path) -> Result<Vec<UpstreamInfo>> {
     upstreams_of(&read_manifest(root)?)
 }

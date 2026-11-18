@@ -7,11 +7,12 @@ use anyhow::{Context, Result, anyhow, bail};
 use serde::de::value::MapAccessDeserializer;
 use serde::de::{self, MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use tomet_ast::Value;
+use tomet_scalar::Scalar;
+use tomet_semantics::Constructed;
 
-use super::MANIFEST_FILE;
-use super::is_inside_workspace;
-use super::reject_misnamed;
-use super::upstream::Upstreams;
+use super::upstream::Header;
+use super::{MANIFEST_FILE, is_inside_workspace, reject_misnamed, vocabulary};
 
 /// The set of files catasto manages in a workspace.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -40,47 +41,6 @@ impl Managed {
     }
 }
 
-/// What a manifest entry holds, keyed by its path.
-#[derive(Deserialize)]
-#[serde(deny_unknown_fields, expecting = "a map with a `source`")]
-pub(super) struct Entry {
-    pub(super) source: Source,
-    #[serde(default)]
-    pub(super) executable: Option<bool>,
-}
-
-impl<'de> Deserialize<'de> for Manifest {
-    /// Reads the entries in the order they were written. The cotomet parser
-    /// already rejects a path written twice, so a manifest read from text has
-    /// no duplicates; validation still checks one built in code.
-    fn deserialize<D: Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        struct Entries;
-
-        impl<'de> Visitor<'de> for Entries {
-            type Value = Manifest;
-
-            fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a map from workspace paths to entries")
-            }
-
-            fn visit_map<A: MapAccess<'de>>(self, mut map: A) -> Result<Manifest, A::Error> {
-                let mut managed = Vec::new();
-                while let Some(path) = map.next_key::<String>()? {
-                    let entry: Entry = map.next_value()?;
-                    managed.push(Managed {
-                        path: path.into(),
-                        source: entry.source,
-                        executable: entry.executable,
-                    });
-                }
-                Ok(Manifest { managed })
-            }
-        }
-
-        deserializer.deserialize_map(Entries)
-    }
-}
-
 /// How symlinks in a git source are handled.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Symlink {
@@ -102,16 +62,9 @@ impl Serialize for Symlink {
 
 /// Origin of a managed file.
 ///
-/// Written as a string for a local file, or a map for a git repository, so
-/// further kinds can be added without breaking the format:
-///
-/// ```text
-/// source: "../vocabularies/writ.vocabulary.tmt"
-/// source: { git: "https://example.com/vocabularies.git", rev: v1, path: "writ.vocabulary.tmt" }
-/// source: { git: "https://example.com/vocabularies.git", rev: v1, path: "writ.vocabulary.tmt", symlink: keep }
-/// ```
-///
-/// The lockfile writes the same shapes in JSON.
+/// Written in `catasto.ctmt` as a constructor call (`catasto.local(...)`,
+/// `catasto.git(...)`, `catasto.upstream(...)`), and serialized in JSON for
+/// `catasto.lock`.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Source {
     /// A file on the local filesystem, relative to the workspace root.
@@ -140,7 +93,7 @@ impl Source {
     }
 }
 
-/// The map form of [`Source`]; unknown keys are rejected.
+/// The map form of [`Source`] in `catasto.lock`; unknown keys are rejected.
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct GitSource {
@@ -201,9 +154,8 @@ fn deserialize_symlink<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Sym
     deserializer.deserialize_any(SymlinkVisitor)
 }
 
-/// Reads a `rev`, which must be a string. cotomet reads `1.2` and `20260101` as
-/// numbers, and a tag that is one has to be quoted.
-pub(super) fn quoted_rev<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
+/// Reads a `rev`, which must be a string. Numeric revisions must be quoted.
+fn quoted_rev<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::Error> {
     struct Rev;
 
     impl Visitor<'_> for Rev {
@@ -331,6 +283,151 @@ impl Serialize for Source {
     }
 }
 
+pub(super) fn require_text(constructed: &Constructed, arg: &str, context: &str) -> Result<String> {
+    match constructed.get(arg) {
+        Some(Value::Scalar(Scalar::Text(s))) => Ok(s.clone()),
+        Some(_) => bail!("{context}: `{arg}` must be a string"),
+        None => bail!("{context}: missing required argument `{arg}`"),
+    }
+}
+
+pub(super) fn require_rev(constructed: &Constructed, context: &str) -> Result<String> {
+    match constructed.get("rev") {
+        Some(Value::Scalar(Scalar::Text(s))) => Ok(s.clone()),
+        Some(Value::Scalar(Scalar::Int(_) | Scalar::Float(_) | Scalar::Number(_))) => {
+            bail!("{context}: {NUMBER_REV}")
+        }
+        Some(_) => bail!("{context}: `rev` must be a string"),
+        None => bail!("{context}: missing required argument `rev`"),
+    }
+}
+
+fn parse_symlink(constructed: &Constructed, context: &str) -> Result<Symlink> {
+    match constructed.get("symlink") {
+        None => Ok(Symlink::Follow),
+        Some(Value::Scalar(Scalar::Text(s))) => match s.as_str() {
+            "follow" => Ok(Symlink::Follow),
+            "keep" => Ok(Symlink::Keep),
+            other => bail!("{context}: invalid symlink option `{other}`; expected `follow` or `keep`"),
+        },
+        Some(_) => bail!("{context}: invalid symlink option; expected `follow` or `keep`"),
+    }
+}
+
+fn split_entry_value<'a>(path: &str, value: &'a Value) -> Result<(&'a Value, Option<bool>)> {
+    match value {
+        Value::Call(_, _) => Ok((value, None)),
+        Value::Tuple(tuple) => {
+            let mut unnamed = tuple.unnamed();
+            let Some(call) = unnamed.next() else {
+                bail!(
+                    "{path}: entry tuple must start with a constructor call, e.g. `(catasto.local(\"...\"), executable: true)`"
+                );
+            };
+            if unnamed.next().is_some() {
+                bail!("{path}: entry tuple takes only one constructor call");
+            }
+            if !matches!(call, Value::Call(_, _)) {
+                bail!(
+                    "{path}: first item of entry tuple must be a constructor call (e.g. `catasto.local(\"...\")`)"
+                );
+            }
+            let mut executable = None;
+            for (key, val) in tuple.named() {
+                if key != "executable" {
+                    bail!("{path}: unknown entry field `{key}`; only `executable` is allowed");
+                }
+                let Value::Scalar(Scalar::Bool(b)) = val else {
+                    bail!("{path}: `executable` must be a boolean (`true` or `false`)");
+                };
+                executable = Some(*b);
+            }
+            Ok((call, executable))
+        }
+        _ => bail!(
+            "{path}: entry must be a constructor call (e.g. `catasto.local(\"...\")`) or `(call, executable: bool)`"
+        ),
+    }
+}
+
+fn parse_entry_source(path: &str, call_value: &Value, header: &Header) -> Result<Source> {
+    if !header.has_use {
+        bail!(
+            "`catasto` constructors require `::use(catasto, version: \"1.0.0\")` at the top of the manifest"
+        );
+    }
+    let constructed = vocabulary()
+        .read_call(call_value)
+        .map_err(|e| anyhow!("{path}: {e}"))?;
+
+    match constructed.name.as_str() {
+        "local" => {
+            let local_path = require_text(&constructed, "path", path)?;
+            if local_path.is_empty() {
+                bail!("{path}: a source path must not be empty");
+            }
+            Ok(Source::Path(local_path.into()))
+        }
+        "git" => {
+            if let Value::Call(_, raw_args) = call_value
+                && raw_args.contains_key("root")
+            {
+                bail!(
+                    "{path}: `catasto.git` in a manifest entry cannot specify `root`; declare an upstream in `::upstream(...)` or include it in `path`"
+                );
+            }
+            let git = require_text(&constructed, "url", path)?;
+            let rev = require_rev(&constructed, path)?;
+            check_git(&git, &rev).map_err(|e| anyhow!("{path}: {e}"))?;
+            let file_path = match constructed.get("path") {
+                Some(Value::Scalar(Scalar::Text(p))) => PathBuf::from(p),
+                Some(_) => bail!("{path}: `path` must be a string"),
+                None => bail!("{path}: `catasto.git` requires `path`"),
+            };
+            if !is_inside_workspace(&file_path) {
+                bail!(
+                    "{path}: git path must be relative and stay inside the repository: {}",
+                    file_path.display()
+                );
+            }
+            let symlink = parse_symlink(&constructed, path)?;
+            Ok(Source::Git {
+                git,
+                rev,
+                path: file_path,
+                symlink,
+            })
+        }
+        "upstream" => {
+            let name = require_text(&constructed, "upstream", path)?;
+            let upstream = header
+                .upstreams
+                .get(&name)
+                .map_err(|e| anyhow!("{path}: {e}"))?;
+            let entry_path_str = require_text(&constructed, "path", path)?;
+            let entry_path = PathBuf::from(&entry_path_str);
+            if !is_inside_workspace(&entry_path) {
+                bail!(
+                    "{path}: upstream path must be relative and stay inside the repository: {}",
+                    entry_path.display()
+                );
+            }
+            let full_path = match &upstream.root {
+                Some(root) => root.join(&entry_path),
+                None => entry_path,
+            };
+            let symlink = parse_symlink(&constructed, path)?;
+            Ok(Source::Git {
+                git: upstream.git.clone(),
+                rev: upstream.rev.clone(),
+                path: full_path,
+                symlink,
+            })
+        }
+        other => bail!("{path}: unknown constructor `catasto.{other}`"),
+    }
+}
+
 impl Manifest {
     /// Loads `catasto.ctmt` from `root`. A missing file is an empty manifest.
     pub fn load(root: &Path) -> Result<Self> {
@@ -347,15 +444,30 @@ impl Manifest {
 
     /// Parses and validates manifest text.
     ///
-    /// The `::upstreams` declaration at the top is read first and its names
-    /// are written into the entries that use them; the entries are then read
-    /// as if they had been written in full. A file with nothing but comments
-    /// is the empty manifest.
+    /// A file with nothing but comments (or only `::use(catasto, ...)`) is the
+    /// empty manifest.
     pub fn parse(text: &str) -> Result<Self> {
         let file = cotomet::parse_file(text).map_err(|e| anyhow!("{e}"))?;
-        let upstreams = Upstreams::from_header(&file.header)?;
-        let body = upstreams.resolve(file.body)?;
-        let manifest: Self = cotomet::from_value(body).map_err(|e| anyhow!("{e}"))?;
+        let header = Header::from_header(&file.header)?;
+        let Value::Tuple(entries) = &file.body else {
+            bail!("manifest body must be a map from workspace paths to entries");
+        };
+
+        let mut managed = Vec::with_capacity(entries.len());
+        for entry in entries.entries() {
+            let Some(path) = entry.name() else {
+                bail!("manifest entry must have a workspace path key");
+            };
+            let (call_value, executable) = split_entry_value(path, entry.value())?;
+            let source = parse_entry_source(path, call_value, &header)?;
+            managed.push(Managed {
+                path: path.into(),
+                source,
+                executable,
+            });
+        }
+
+        let manifest = Self { managed };
         manifest.validate()?;
         Ok(manifest)
     }
