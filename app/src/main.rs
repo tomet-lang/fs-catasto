@@ -42,9 +42,7 @@ fn run(cli: Cli) -> anyhow::Result<ExitCode> {
         Command::Check { path, all, json } => {
             commands::check::check(&commands::root(root, path)?, all, json)
         }
-        Command::Lock { path, all } => {
-            commands::lock::lock(&commands::root(root, path)?, all)
-        }
+        Command::Lock { path, all } => commands::lock::lock(&commands::root(root, path)?, all),
         Command::Sync {
             path,
             all,

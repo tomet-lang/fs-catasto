@@ -24,7 +24,11 @@ fn up(name: &str, path: &str) -> SourceText {
 #[test]
 fn scanning_finds_the_declarations_and_the_entries() {
     let layout = scan(VOCAB).unwrap();
-    let decls: Vec<_> = layout.declarations.iter().map(|d| d.name.as_str()).collect();
+    let decls: Vec<_> = layout
+        .declarations
+        .iter()
+        .map(|d| d.name.as_str())
+        .collect();
     assert_eq!(decls, ["use", "upstream"]);
     let keys: Vec<_> = layout.entries.iter().map(|e| e.key.as_str()).collect();
     assert_eq!(keys, ["schema/rust.tmt", "schema/writ.tmt"]);
@@ -34,9 +38,9 @@ fn scanning_finds_the_declarations_and_the_entries() {
 fn an_entry_is_added_after_the_last_and_the_rest_is_untouched() {
     let text = add_entry(VOCAB, "schema/ui.tmt", &up("vocabularies", "ui/ui.tmt")).unwrap();
     assert!(text.starts_with(VOCAB), "{text}");
-    assert!(text.ends_with(
-        "\"schema/ui.tmt\": catasto.upstream(vocabularies, path: \"ui/ui.tmt\")\n"
-    ));
+    assert!(
+        text.ends_with("\"schema/ui.tmt\": catasto.upstream(vocabularies, path: \"ui/ui.tmt\")\n")
+    );
     assert!(Manifest::parse(&text).is_ok());
 }
 
@@ -195,7 +199,10 @@ fn a_rev_that_reads_as_a_number_is_quoted() {
     )
     .unwrap();
     assert!(text.contains("rev: \"1.2\""), "{text}");
-    assert!(text.contains("::use(catasto, version: \"1.0.0\")"), "{text}");
+    assert!(
+        text.contains("::use(catasto, version: \"1.0.0\")"),
+        "{text}"
+    );
     assert!(Manifest::parse(&text).is_ok());
 }
 
@@ -561,7 +568,8 @@ fn adds_and_replaces_repo_entry() {
         branch: None,
         submodule: false,
     };
-    let (replaced, outcome) = add_or_replace_entry(&text, "tools/sisho", &plain_repo, true).unwrap();
+    let (replaced, outcome) =
+        add_or_replace_entry(&text, "tools/sisho", &plain_repo, true).unwrap();
     assert_eq!(outcome, AddOutcome::Replaced);
     assert_eq!(
         replaced,

@@ -291,16 +291,16 @@ fn the_error_reported_is_the_first_in_manifest_order() {
     let (_tmp, vault, cache, first, second) = two_repositories();
     // Both repositories fail, the second one's entry is written first.
     std::fs::write(
-            vault.join("catasto.ctmt"),
-            format!(
-                "::use(catasto, version: \"1.0.0\")\n\n\
+        vault.join("catasto.ctmt"),
+        format!(
+            "::use(catasto, version: \"1.0.0\")\n\n\
                  \"v/b.tmt\": catasto.git({second:?}, rev: main, path: \"missing-b.tmt\")\n\
                  \"v/a.tmt\": catasto.git({first:?}, rev: main, path: \"missing-a.tmt\")\n",
-                first = first.url(),
-                second = second.url(),
-            ),
-        )
-        .unwrap();
+            first = first.url(),
+            second = second.url(),
+        ),
+    )
+    .unwrap();
 
     for _ in 0..5 {
         let err = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap_err();
@@ -624,7 +624,10 @@ fn dry_run_with_moved_commit_reports_changes_and_leaves_workspace_untouched() {
     assert!(output.contains("-a one"), "{output}");
     assert!(output.contains("+a two"), "{output}");
     assert!(!output.contains("b.tmt"), "{output}");
-    assert!(output.ends_with("would change 1 of 2 file(s)\n"), "{output}");
+    assert!(
+        output.ends_with("would change 1 of 2 file(s)\n"),
+        "{output}"
+    );
 
     // Assert workspace files and lock are byte-for-byte untouched!
     assert_eq!(
@@ -645,19 +648,34 @@ fn dry_run_with_moved_commit_reports_changes_and_leaves_workspace_untouched() {
     );
 
     // 2. Dry run with --only b.tmt (its upstream moved, but file content didn't change)
-    let report_b =
-        sync_dry_run(&vault, SyncMode::Update, Some(&cache), &[PathBuf::from("b.tmt")]).unwrap();
+    let report_b = sync_dry_run(
+        &vault,
+        SyncMode::Update,
+        Some(&cache),
+        &[PathBuf::from("b.tmt")],
+    )
+    .unwrap();
     assert_eq!(report_b.total_files, 1);
     assert_eq!(report_b.changed_files, 0);
     assert_eq!(
         report_b.output,
-        format!("common main: {} -> {}\nnothing would change\n", &c1[..7], &c2[..7])
+        format!(
+            "common main: {} -> {}\nnothing would change\n",
+            &c1[..7],
+            &c2[..7]
+        )
     );
 
     // 3. Real sync --update makes exactly the changes shown
     sync_with(&vault, SyncMode::Update, Some(&cache)).unwrap();
-    assert_eq!(std::fs::read_to_string(vault.join("a.tmt")).unwrap(), "a two\n");
-    assert_eq!(std::fs::read_to_string(vault.join("b.tmt")).unwrap(), "b one\n");
+    assert_eq!(
+        std::fs::read_to_string(vault.join("a.tmt")).unwrap(),
+        "a two\n"
+    );
+    assert_eq!(
+        std::fs::read_to_string(vault.join("b.tmt")).unwrap(),
+        "b one\n"
+    );
 
     // 4. Following dry-run now reports nothing would change
     let report_after = sync_dry_run(&vault, SyncMode::Update, Some(&cache), &[]).unwrap();
@@ -709,7 +727,10 @@ fn sync_executable_file_creates_mode_and_update_tracks_flipping() {
         Some(LockMode::Executable)
     );
     let lock_text = std::fs::read_to_string(vault.join("catasto.lock")).unwrap();
-    assert!(lock_text.contains("\"mode\": \"executable\""), "{lock_text}");
+    assert!(
+        lock_text.contains("\"mode\": \"executable\""),
+        "{lock_text}"
+    );
 
     // 2. Upstream flips: tool.sh becomes non-executable (chmod -x), normal.txt becomes executable (chmod +x)
     repo.commit_non_executable("tool.sh", "#!/bin/sh\nnot executable now\n");
@@ -746,7 +767,6 @@ fn sync_executable_file_creates_mode_and_update_tracks_flipping() {
         Some(LockMode::Executable)
     );
 }
-
 
 #[cfg(unix)]
 fn is_executable(path: &Path) -> bool {
@@ -962,8 +982,16 @@ fn sync_dry_run_does_not_clone_repo_or_write_gitmodules() {
         panic!("expected DryRun");
     };
 
-    assert!(report.output.contains("would clone repo tools/sisho"), "{}", report.output);
-    assert!(report.output.contains("would create .gitmodules"), "{}", report.output);
+    assert!(
+        report.output.contains("would clone repo tools/sisho"),
+        "{}",
+        report.output
+    );
+    assert!(
+        report.output.contains("would create .gitmodules"),
+        "{}",
+        report.output
+    );
     assert!(!vault.join("tools/sisho").exists());
     assert!(!vault.join(".gitmodules").exists());
     assert!(!vault.join("catasto.lock").exists());

@@ -70,8 +70,6 @@ impl TestRepo {
         self.git(&["rev-parse", "HEAD"])
     }
 
-
-
     /// Creates a symlink at `path` pointing to `target`, commits it, and returns the commit id.
     #[cfg(unix)]
     pub fn commit_symlink(&self, path: &str, target: &str) -> String {

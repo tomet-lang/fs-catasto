@@ -1,26 +1,26 @@
 [package]
-name = "catasto-core"
-version.workspace = true
-edition.workspace = true
+name                   = "catasto-core"
+version.workspace      = true
+edition.workspace      = true
 rust-version.workspace = true
-license.workspace = true
-description = "Core engine and models for catasto filesystem schemas and lockfiles."
-publish = false
+license.workspace      = true
+description            = "Core engine and models for catasto filesystem schemas and lockfiles."
+publish                = false
 
 [dependencies]
-catasto-digest = { workspace = true }
-catasto-git = { workspace = true }
+catasto-digest   = { workspace = true }
+catasto-git      = { workspace = true }
 catasto-manifest = { workspace = true }
+#---
 jobserver-gate = { workspace = true }
-cotomet = { workspace = true }
-
-#= Crates.io
-anyhow = { workspace = true }
-rayon = { workspace = true }
-serde = { workspace = true }
+cotomet        = { workspace = true }
+#--- Crates.io ---
+anyhow     = { workspace = true }
+rayon      = { workspace = true }
+serde      = { workspace = true }
 serde_json = { workspace = true }
-similar = { workspace = true }
+similar    = { workspace = true }
 
 [dev-dependencies]
 catasto-git = { workspace = true, features = ["testing"] }
-tempfile = { workspace = true }
+tempfile    = { workspace = true }

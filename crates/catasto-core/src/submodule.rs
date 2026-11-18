@@ -148,7 +148,10 @@ mod tests {
         );
 
         sync_gitmodules(dir.path(), &manifest, &lock).unwrap();
-        assert_eq!(check_gitmodules(dir.path(), &manifest, &lock).unwrap(), None);
+        assert_eq!(
+            check_gitmodules(dir.path(), &manifest, &lock).unwrap(),
+            None
+        );
 
         // Tamper with .gitmodules
         std::fs::write(dir.path().join(GITMODULES_FILE), "tampered").unwrap();
@@ -187,7 +190,10 @@ mod tests {
         let lock = Lock::default();
 
         std::fs::write(dir.path().join(GITMODULES_FILE), "unrelated").unwrap();
-        assert_eq!(check_gitmodules(dir.path(), &manifest, &lock).unwrap(), None);
+        assert_eq!(
+            check_gitmodules(dir.path(), &manifest, &lock).unwrap(),
+            None
+        );
 
         sync_gitmodules(dir.path(), &manifest, &lock).unwrap();
         assert_eq!(

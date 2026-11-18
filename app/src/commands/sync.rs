@@ -18,12 +18,7 @@ pub fn sync(
     }
 }
 
-fn sync_single(
-    path: &Path,
-    update: bool,
-    only: &[PathBuf],
-    dry_run: bool,
-) -> Result<ExitCode> {
+fn sync_single(path: &Path, update: bool, only: &[PathBuf], dry_run: bool) -> Result<ExitCode> {
     let mode = if update {
         SyncMode::Update
     } else {
@@ -36,7 +31,10 @@ fn sync_single(
     }
     let lock = catasto_core::sync_only(path, mode, None, only)?;
     if only.is_empty() {
-        println!("{}", format_sync_summary(lock.locked.len(), lock.repos.len()));
+        println!(
+            "{}",
+            format_sync_summary(lock.locked.len(), lock.repos.len())
+        );
     } else {
         println!(
             "synced {} of {} file(s)",
@@ -55,12 +53,7 @@ fn format_sync_summary(files: usize, repos: usize) -> String {
     }
 }
 
-fn sync_all(
-    root: &Path,
-    update: bool,
-    only: &[PathBuf],
-    dry_run: bool,
-) -> Result<ExitCode> {
+fn sync_all(root: &Path, update: bool, only: &[PathBuf], dry_run: bool) -> Result<ExitCode> {
     let workspaces = catasto_core::discover_workspaces(root)?;
     if workspaces.is_empty() {
         println!("catasto: no workspaces discovered under {}", root.display());

@@ -71,7 +71,6 @@ impl World {
         self.git(&["commit", "--quiet", "-m", content]);
     }
 
-
     #[cfg(unix)]
     fn commit_symlink(&self, path: &str, target: &str) {
         let link = self.remote.join(path);
@@ -81,7 +80,12 @@ impl World {
         let _ = std::fs::remove_file(&link);
         std::os::unix::fs::symlink(target, &link).unwrap();
         self.git(&["add", "--all"]);
-        self.git(&["commit", "--quiet", "-m", &format!("link {path} -> {target}")]);
+        self.git(&[
+            "commit",
+            "--quiet",
+            "-m",
+            &format!("link {path} -> {target}"),
+        ]);
     }
 
     /// `catasto <args>` in the vault.
@@ -166,7 +170,10 @@ fn the_comments_the_manifest_opened_with_survive_every_edit() {
         manifest.starts_with("// The files catasto manages"),
         "{manifest}"
     );
-    assert!(manifest.contains("::use(catasto, version: \"1.0.0\")"), "{manifest}");
+    assert!(
+        manifest.contains("::use(catasto, version: \"1.0.0\")"),
+        "{manifest}"
+    );
     assert!(manifest.contains("::upstream("), "{manifest}");
     assert!(manifest.contains("\"b.tmt\""), "{manifest}");
     assert!(!manifest.contains("\"a.tmt\""), "{manifest}");
@@ -242,7 +249,10 @@ fn add_defaults_path_to_dest_for_upstream_and_git_and_nested_dest() {
     assert_eq!(w.read("a.tmt"), "a one");
     let manifest = w.read("catasto.ctmt");
     assert!(manifest.contains("\"a.tmt\":"), "{manifest}");
-    assert!(manifest.contains("catasto.upstream(shared, path: \"a.tmt\")"), "{manifest}");
+    assert!(
+        manifest.contains("catasto.upstream(shared, path: \"a.tmt\")"),
+        "{manifest}"
+    );
     let listed = w.ok(&["list"]);
     assert!(listed.contains("shared:a.tmt"), "{listed}");
 
@@ -251,7 +261,10 @@ fn add_defaults_path_to_dest_for_upstream_and_git_and_nested_dest() {
     assert_eq!(w.read("sub/b.tmt"), "b one");
     let manifest = w.read("catasto.ctmt");
     assert!(manifest.contains("\"sub/b.tmt\":"), "{manifest}");
-    assert!(manifest.contains("catasto.upstream(shared, path: \"sub/b.tmt\")"), "{manifest}");
+    assert!(
+        manifest.contains("catasto.upstream(shared, path: \"sub/b.tmt\")"),
+        "{manifest}"
+    );
     let listed = w.ok(&["list"]);
     assert!(listed.contains("shared:sub/b.tmt"), "{listed}");
 
@@ -480,7 +493,14 @@ fn add_force_cli_exit_codes_and_messages() {
     assert!(out.contains("a.tmt: declared as given"), "{out}");
 
     // 4. Add with --force and different source: exit code 0, prints "replaced a.tmt"
-    let out = w.ok(&["add", "a.tmt", "--upstream", "shared", "sub/b.tmt", "--force"]);
+    let out = w.ok(&[
+        "add",
+        "a.tmt",
+        "--upstream",
+        "shared",
+        "sub/b.tmt",
+        "--force",
+    ]);
     assert!(out.starts_with("replaced a.tmt"), "{out}");
     assert_eq!(w.read("a.tmt"), "b one");
 }
@@ -509,7 +529,13 @@ fn upstream_add_force_cli_exit_codes_and_messages() {
     w.commit("a.tmt", "a two on v2");
     w.git(&["tag", "v2"]);
     let out = w.ok(&[
-        "upstream", "add", "shared", w.url(), "--rev", "v2", "--force",
+        "upstream",
+        "add",
+        "shared",
+        w.url(),
+        "--rev",
+        "v2",
+        "--force",
     ]);
     assert!(out.contains("replaced upstream shared"), "{out}");
     assert!(
@@ -521,7 +547,13 @@ fn upstream_add_force_cli_exit_codes_and_messages() {
     // Add unused upstream "unused"
     w.ok(&["upstream", "add", "unused", w.url()]);
     let out = w.ok(&[
-        "upstream", "add", "unused", w.url(), "--rev", "v2", "--force",
+        "upstream",
+        "add",
+        "unused",
+        w.url(),
+        "--rev",
+        "v2",
+        "--force",
     ]);
     assert!(out.contains("replaced upstream unused"), "{out}");
     assert!(
@@ -621,13 +653,22 @@ fn sync_dry_run_cli_contract() {
     assert!(stdout.contains("-a one"), "{stdout}");
     assert!(stdout.contains("+a two"), "{stdout}");
     assert!(!stdout.contains("b.tmt"), "{stdout}");
-    assert!(stdout.ends_with("would change 1 of 2 file(s)\n"), "{stdout}");
+    assert!(
+        stdout.ends_with("would change 1 of 2 file(s)\n"),
+        "{stdout}"
+    );
 
     // Manifest, lock and files are left byte for byte as before
     assert_eq!(std::fs::read(w.vault.join("a.tmt")).unwrap(), a_before);
     assert_eq!(std::fs::read(w.vault.join("b.tmt")).unwrap(), b_before);
-    assert_eq!(std::fs::read(w.vault.join("catasto.ctmt")).unwrap(), manifest_before);
-    assert_eq!(std::fs::read(w.vault.join("catasto.lock")).unwrap(), lock_before);
+    assert_eq!(
+        std::fs::read(w.vault.join("catasto.ctmt")).unwrap(),
+        manifest_before
+    );
+    assert_eq!(
+        std::fs::read(w.vault.join("catasto.lock")).unwrap(),
+        lock_before
+    );
 
     // 2. --only limits it
     let out = w.run(&["sync", "--update", "--dry-run", "--only", "b.tmt"]);
@@ -650,10 +691,21 @@ fn sync_dry_run_cli_contract() {
     assert_eq!(stdout, "nothing would change\n");
 
     // 5. Unknown rev fails with exit 1 and the same message sync --update gives
-    w.ok(&["upstream", "add", "shared", w.url(), "--rev", "no-such", "--force"]);
+    w.ok(&[
+        "upstream",
+        "add",
+        "shared",
+        w.url(),
+        "--rev",
+        "no-such",
+        "--force",
+    ]);
     let err_sync = w.fails(&["sync", "--update"]);
     let err_dry_run = w.fails(&["sync", "--update", "--dry-run"]);
-    assert!(err_dry_run.contains("revision \"no-such\" not found"), "{err_dry_run}");
+    assert!(
+        err_dry_run.contains("revision \"no-such\" not found"),
+        "{err_dry_run}"
+    );
     assert_eq!(err_dry_run, err_sync);
 }
 
@@ -675,7 +727,10 @@ fn executable_bit_cli_contract() {
 
     // Lockfile records "mode": "executable"
     let lock_text = w.read("catasto.lock");
-    assert!(lock_text.contains("\"mode\": \"executable\""), "{lock_text}");
+    assert!(
+        lock_text.contains("\"mode\": \"executable\""),
+        "{lock_text}"
+    );
 
     // 2. catasto check is clean
     assert!(w.run(&["check"]).status.success());
@@ -719,7 +774,10 @@ fn add_repo_and_remove_repo_with_submodule_updates_gitmodules_and_list() {
     assert!(w.vault.join("tools/sisho/.git").exists());
     assert!(w.exists(".gitmodules"));
     let gitmodules = w.read(".gitmodules");
-    assert!(gitmodules.contains("[submodule \"tools/sisho\"]"), "{gitmodules}");
+    assert!(
+        gitmodules.contains("[submodule \"tools/sisho\"]"),
+        "{gitmodules}"
+    );
     assert!(gitmodules.contains("branch = main"), "{gitmodules}");
 
     let manifest = w.read("catasto.ctmt");

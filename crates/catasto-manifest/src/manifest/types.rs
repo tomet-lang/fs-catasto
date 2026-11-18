@@ -376,7 +376,9 @@ fn parse_symlink(constructed: &Constructed, context: &str) -> Result<Symlink> {
         Some(Value::Scalar(Scalar::Text(s))) => match s.as_str() {
             "follow" => Ok(Symlink::Follow),
             "keep" => Ok(Symlink::Keep),
-            other => bail!("{context}: invalid symlink option `{other}`; expected `follow` or `keep`"),
+            other => {
+                bail!("{context}: invalid symlink option `{other}`; expected `follow` or `keep`")
+            }
         },
         Some(_) => bail!("{context}: invalid symlink option; expected `follow` or `keep`"),
     }

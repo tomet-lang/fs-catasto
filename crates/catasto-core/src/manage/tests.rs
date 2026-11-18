@@ -233,10 +233,13 @@ fn adding_a_declared_path_again_is_refused() {
     fx.add("a.tmt", "a.tmt").unwrap();
     let before = fx.manifest();
     let err = fx.add("a.tmt", "a.tmt").unwrap_err();
-    let already = err.downcast_ref::<AlreadyDeclared>().expect("AlreadyDeclared");
+    let already = err
+        .downcast_ref::<AlreadyDeclared>()
+        .expect("AlreadyDeclared");
     assert_eq!(already.dest, "a.tmt");
     assert!(
-        err.to_string().contains("a.tmt is already declared (use --force to replace its source)"),
+        err.to_string()
+            .contains("a.tmt is already declared (use --force to replace its source)"),
         "{err}"
     );
     assert_eq!(fx.manifest(), before);
@@ -480,7 +483,9 @@ fn add_force_outcomes_and_guarantees() {
     let lock_before = std::fs::read_to_string(fx.root.join(LOCK_FILE)).unwrap();
     let file_before = fx.read("docs/file.tmt");
 
-    let err = fx.add_force("docs/file.tmt", "no/such/file.tmt").unwrap_err();
+    let err = fx
+        .add_force("docs/file.tmt", "no/such/file.tmt")
+        .unwrap_err();
     assert!(format!("{err:#}").contains("could not add"));
 
     assert_eq!(fx.manifest(), manifest_before);

@@ -629,7 +629,10 @@ fn reports_mode_for_followed_link_to_executable() {
         )
         .unwrap();
     assert!(fetched_follow.executable);
-    assert_eq!(fetched_follow.content, Content::File(b"#!/bin/sh\n".to_vec()));
+    assert_eq!(
+        fetched_follow.content,
+        Content::File(b"#!/bin/sh\n".to_vec())
+    );
 
     let fetched_keep = cache
         .fetch(

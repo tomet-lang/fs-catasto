@@ -236,7 +236,10 @@ pub(crate) fn write_lock_selected_with_hashes(
             let commit = match source {
                 Source::Path(_) => None,
                 Source::Git { .. } => Some(commits.get(&path).cloned().with_context(|| {
-                    format!("no locked commit for {}: run `catasto sync`", path.display())
+                    format!(
+                        "no locked commit for {}: run `catasto sync`",
+                        path.display()
+                    )
                 })?),
             };
             let mode = modes.get(&path).copied();

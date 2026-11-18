@@ -72,7 +72,10 @@ fn comments_and_unquoted_values_are_fine() {
     ))
     .unwrap();
 
-    assert_eq!(manifest.managed[0].source(), Some(&path_source("../v/a.tmt")));
+    assert_eq!(
+        manifest.managed[0].source(),
+        Some(&path_source("../v/a.tmt"))
+    );
 }
 
 #[test]
@@ -130,7 +133,10 @@ fn use_declaration_rejects_incompatible_versions_and_unknown_vocabularies() {
         "::use(other)",
         "::use()",
     ] {
-        assert!(Manifest::parse(&format!("{bad}\n")).is_err(), "accepted {bad}");
+        assert!(
+            Manifest::parse(&format!("{bad}\n")).is_err(),
+            "accepted {bad}"
+        );
     }
 }
 
@@ -139,10 +145,9 @@ fn constructors_require_use_catasto_in_header() {
     let err = Manifest::parse("\"a.tmt\": catasto.local(\"s\")\n").unwrap_err();
     assert!(err.to_string().contains("::use(catasto"), "{err}");
 
-    let err = Manifest::parse(
-        "::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main))\n",
-    )
-    .unwrap_err();
+    let err =
+        Manifest::parse("::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main))\n")
+            .unwrap_err();
     assert!(err.to_string().contains("::use(catasto"), "{err}");
 }
 
@@ -251,7 +256,10 @@ fn a_local_source_and_a_written_out_git_source_need_no_upstream() {
     ))
     .unwrap();
     assert_eq!(manifest.managed[0].source(), Some(&path_source("../a.tmt")));
-    assert!(matches!(manifest.managed[1].source(), Some(Source::Git { .. })));
+    assert!(matches!(
+        manifest.managed[1].source(),
+        Some(Source::Git { .. })
+    ));
 }
 
 #[test]
@@ -346,7 +354,8 @@ fn rejects_legacy_upstreams_and_unknown_declarations() {
     ))
     .unwrap_err();
     assert!(
-        err.to_string().contains("unknown declaration `::upstreams`"),
+        err.to_string()
+            .contains("unknown declaration `::upstreams`"),
         "{err}"
     );
 
@@ -579,9 +588,7 @@ fn rejects_paths_that_escape_the_workspace() {
 
 #[test]
 fn rejects_duplicate_paths() {
-    let text = format!(
-        "{USE}\"a\": catasto.local(\"s\")\n\"a\": catasto.local(\"t\")\n"
-    );
+    let text = format!("{USE}\"a\": catasto.local(\"s\")\n\"a\": catasto.local(\"t\")\n");
     let err = Manifest::parse(&text).unwrap_err();
     assert!(err.to_string().contains("duplicate key `a`"), "{err}");
 }
@@ -690,7 +697,8 @@ fn rejects_executable_on_repo_entry() {
         ))
         .unwrap_err();
         assert!(
-            err.to_string().contains("catasto.repo(...) cannot declare executable"),
+            err.to_string()
+                .contains("catasto.repo(...) cannot declare executable"),
             "{err}"
         );
     }

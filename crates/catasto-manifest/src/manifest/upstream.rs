@@ -43,11 +43,12 @@ impl Header {
     ///
     /// Catasto recognizes `::use(catasto, ...)` and `::upstream(...)`.
     pub(super) fn from_header(header: &[AstDeclaration]) -> Result<Self> {
-        let sem_decls: Vec<SemDeclaration> = header
-            .iter()
-            .filter_map(SemDeclaration::from_ast)
-            .collect();
-        if let Some((_, problem)) = check_declarations(&sem_decls, Host::Ctmt).into_iter().next() {
+        let sem_decls: Vec<SemDeclaration> =
+            header.iter().filter_map(SemDeclaration::from_ast).collect();
+        if let Some((_, problem)) = check_declarations(&sem_decls, Host::Ctmt)
+            .into_iter()
+            .next()
+        {
             bail!("{problem}");
         }
 
@@ -118,7 +119,9 @@ fn validate_use_decl(sem_decl: &SemDeclaration) -> Result<()> {
         bail!("`::use` requires a vocabulary name, e.g. `::use(catasto, version: \"1.0.0\")`");
     };
     let Some(Scalar::Text(target)) = target_val.as_scalar() else {
-        bail!("`::use` vocabulary name must be a string, e.g. `::use(catasto, version: \"1.0.0\")`");
+        bail!(
+            "`::use` vocabulary name must be a string, e.g. `::use(catasto, version: \"1.0.0\")`"
+        );
     };
     if target != "catasto" {
         bail!("unknown vocabulary `{target}`; catasto only reads `::use(catasto, ...)`");
@@ -195,7 +198,8 @@ impl Upstreams {
                 let known = if self.named.is_empty() {
                     "none is declared; add `::upstream(...)` at the top".to_owned()
                 } else {
-                    let names: Vec<_> = self.named.iter().map(|(known, _)| known.as_str()).collect();
+                    let names: Vec<_> =
+                        self.named.iter().map(|(known, _)| known.as_str()).collect();
                     format!("declared: {}", names.join(", "))
                 };
                 anyhow!("unknown upstream `{name}` ({known})")

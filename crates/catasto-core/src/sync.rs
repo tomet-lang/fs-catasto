@@ -509,10 +509,9 @@ fn fetch_entry(
     managed: &Managed,
 ) -> Result<Fetched> {
     let ManagedKind::File {
-        source:
-            source @ Source::Git {
-                rev, path, symlink, ..
-            },
+        source: source @ Source::Git {
+            rev, path, symlink, ..
+        },
         ..
     } = &managed.kind
     else {
@@ -588,7 +587,10 @@ fn apply_executable_mode(target: &Path, is_executable: bool) -> Result<()> {
         std::fs::set_permissions(target, std::fs::Permissions::from_mode(new_mode)).with_context(
             || {
                 let verb = if is_executable { "set" } else { "clear" };
-                format!("cannot {verb} executable permissions on {}", target.display())
+                format!(
+                    "cannot {verb} executable permissions on {}",
+                    target.display()
+                )
             },
         )?;
     }

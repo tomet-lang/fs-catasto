@@ -132,8 +132,9 @@ pub fn add_or_replace_entry(
         let val_span = existing.value.clone();
         let new_source = source_value_text(source);
         let replace_span = if text[val_span.clone()].starts_with('(') {
-            first_unnamed_in_tuple(text, &val_span)?
-                .ok_or_else(|| anyhow!("malformed entry tuple for {dest}: missing constructor call"))?
+            first_unnamed_in_tuple(text, &val_span)?.ok_or_else(|| {
+                anyhow!("malformed entry tuple for {dest}: missing constructor call")
+            })?
         } else {
             val_span
         };

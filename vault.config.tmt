@@ -1,8 +1,8 @@
 ::kind(config)
 ::id(config-vault)
 ::macro(
-  copyright: "(C) 2026 Tomet Projects"
-  generated_by: [@comment[ Generated from $(1). Edit that, then `tomet export .`. ]]
+  copyright:    "(C) 2026 Tomet Projects"
+  generated_by: @comment[ Generated from $(1). Edit that, then `tomet export .`. ]
 )
 ::vocabulary(
   catasto: @file(tmtroot/schema/vocabularies/catasto@1.0.0.vocabulary.tmt)
@@ -10,25 +10,22 @@
   writ:    @file(tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt)
 )
 ::format(
-  meta:    (always_newline: true)
-  heading: (space_inside_brackets: true)
-  table:   (adjust_width: auto, max_col_width: 50)
+  meta: (always_newline: true)
+  section: (
+    space_inside_brackets: true
+    blank_before: true
+    blank_after: true
+  )
+  list:        (multiline.style.content: "box")
+  code:        (fence.lines: "marked")
+  map:         (align_values: true, collapse_closing_parens: true)
+  declaration: (blank_after: true, blank_between: false)
   element: (
-    link: (
-      no_space: true
-      group_order: "[]()"
-    )
-    callout: (
-      style: (content: block)
-    )
-  )
-  quote: (always_newline: true)
-  list: (
-    multiline: (
-      style: (content: box)
-    )
-  )
-)
+    table:   (adjust_width: auto, max_col_width: 50)
+    link:    (no_space: true, group_order: "[]()")
+    quote:   (always_newline: true)
+    callout: (style: (content: block))
+))
 ::workspace(
   ignore: ("tmtroot/generated")
 )

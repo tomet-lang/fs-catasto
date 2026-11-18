@@ -1,6 +1,6 @@
 [workspace]
-resolver = "3"
-members  = ["app", "crates/catasto-core", "crates/catasto-digest", "crates/catasto-git", "crates/catasto-manifest"]
+resolver        = "3"
+members         = ["app", "crates/catasto-core", "crates/catasto-digest", "crates/catasto-git", "crates/catasto-manifest"]
 default-members = ["app"]
 
 [workspace.package]

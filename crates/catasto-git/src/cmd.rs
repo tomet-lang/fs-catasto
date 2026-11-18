@@ -155,11 +155,7 @@ pub fn remote_url(dest: &Path) -> Result<String> {
 pub fn current_branch(dest: &Path) -> Result<Option<String>> {
     let output = run_worktree(dest, &["branch", "--show-current"])?;
     let b = String::from_utf8_lossy(&output.stdout).trim().to_owned();
-    if b.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(b))
-    }
+    if b.is_empty() { Ok(None) } else { Ok(Some(b)) }
 }
 
 /// Fetches `origin` (including tags) in the repository worktree at `dest`.

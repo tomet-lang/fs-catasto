@@ -249,9 +249,7 @@ fn check_file(
 
 fn check_repo(root: &Path, lock: &Lock, path: &Path, repo: &Repo) -> Result<Vec<ViolationKind>> {
     let Some(_locked) = lock.get_repo(path).filter(|locked| {
-        locked.git == repo.git
-            && locked.branch == repo.branch
-            && locked.submodule == repo.submodule
+        locked.git == repo.git && locked.branch == repo.branch && locked.submodule == repo.submodule
     }) else {
         return Ok(vec![ViolationKind::Unlocked]);
     };

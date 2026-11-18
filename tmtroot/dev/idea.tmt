@@ -1,3 +1,12 @@
+- depots
+- Cookiecutter, Copier, Projen
+- Dotfiles 管理ツール（chezmoi, GNU stow など）
+- set
+- cotomet に features = ["eval"]
+- ssh対応
+- 全レポにレポ毎でcheckできるようにする。
+- remoteを勝手に変えたら脆弱性になるのではないか？
+
 =[ Filesystem Schema ]
 
 Filesystem Schemaとは、

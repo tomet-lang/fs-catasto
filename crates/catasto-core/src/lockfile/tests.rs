@@ -214,8 +214,7 @@ fn lock_round_trip_with_and_without_symlink_keep() {
 #[cfg(unix)]
 fn lock_fails_when_destination_kind_does_not_match_symlink_declaration() {
     let keep_manifest = "::use(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\", symlink: keep)\n";
-    let default_manifest =
-        "::use(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\")\n";
+    let default_manifest = "::use(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\")\n";
 
     // 1. keep declared, but destination is regular file -> error
     let dir1 = workspace(keep_manifest, &[("link", "regular file")]);
@@ -262,8 +261,7 @@ fn mode_executable_round_trips_and_absent_for_normal_file() {
 
 #[test]
 fn lock_preserves_existing_mode() {
-    let manifest =
-        "::use(catasto, version: \"1.0.0\")\n\n\"run.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"run.sh\")\n";
+    let manifest = "::use(catasto, version: \"1.0.0\")\n\n\"run.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"run.sh\")\n";
     let dir = workspace(manifest, &[("run.sh", "#!/bin/sh")]);
     let initial_lock = "{\n  \"version\": 1,\n  \"files\": {\n    \"run.sh\": {\n      \"sha256\": \"x\",\n      \"source\": {\n        \"git\": \"https://example.com/v.git\",\n        \"rev\": \"v1\",\n        \"path\": \"run.sh\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\",\n      \"mode\": \"executable\"\n    }\n  }\n}\n";
     std::fs::write(dir.path().join(LOCK_FILE), initial_lock).unwrap();

@@ -18,10 +18,10 @@ does not relax the rule to fit the change it wanted to make.
   crate-layering
   guard: (twrit: layers)
   layers: (
-    "3": ("app")
-    "2": ("crates/catasto-core")
-    "1": ("crates/catasto-git")
-    "0": ("crates/catasto-digest")
+    3: ("app")
+    2: ("crates/catasto-core")
+    1: ("crates/catasto-git")
+    0: ("crates/catasto-digest")
   )
 )
 

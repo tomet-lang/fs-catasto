@@ -80,7 +80,11 @@ fn check_all(root: &Path, json: bool) -> Result<ExitCode> {
                     failed += 1;
                     if !json {
                         let count = report.violations.len();
-                        let word = if count == 1 { "violation" } else { "violations" };
+                        let word = if count == 1 {
+                            "violation"
+                        } else {
+                            "violations"
+                        };
                         println!("[{num}/{total}] {ws_display} ... failed ({count} {word})");
                         for v in &report.violations {
                             println!("      catasto: {v}");

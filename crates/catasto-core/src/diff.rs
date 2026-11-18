@@ -81,11 +81,7 @@ pub fn diff_file(file: &crate::sync::PlannedFile) -> Result<Option<String>> {
                                         .context_radius(3)
                                         .header(
                                             &format!("a/{}", file.path.display()),
-                                            &format!(
-                                                "b/{}\t{}",
-                                                file.path.display(),
-                                                source_note
-                                            ),
+                                            &format!("b/{}\t{}", file.path.display(), source_note),
                                         )
                                         .to_string();
                                     Ok(Some(diff))
