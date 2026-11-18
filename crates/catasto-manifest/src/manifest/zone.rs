@@ -209,12 +209,12 @@ fn parse_bool(zone_target: &str, field: &str, value: &Value) -> Result<bool> {
 
 fn parse_entry_rules(zone_target: &str, scope: &str, value: &Value) -> Result<EntryRules> {
     let Value::Tuple(tuple) = value else {
-        bail!("zone `{zone_target}`: `{scope}` must be a tuple `(require: ..., allow: ..., deny: ...)`");
+        bail!(
+            "zone `{zone_target}`: `{scope}` must be a tuple `(require: ..., allow: ..., deny: ...)`"
+        );
     };
     if !tuple.has_no_unnamed() {
-        bail!(
-            "zone `{zone_target}`: `{scope}` entries must be named (`require`, `allow`, `deny`)"
-        );
+        bail!("zone `{zone_target}`: `{scope}` entries must be named (`require`, `allow`, `deny`)");
     }
 
     let mut seen_fields = HashSet::new();

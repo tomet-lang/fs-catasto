@@ -6,7 +6,7 @@
 ::zone(
   // --- Tomet ---
   "tmtroot/schema/blueprints": (allow: ("<?kebab>.blueprint.tmt"))
-  "tmtroot/dev/dropped": (allow: ("<?int>-<?kebab>.adr.tmt"))
+  "tmtroot/dev/dropped":       (allow: ("<?int>-<?kebab>.adr.tmt"))
   // --- Crates ---
   "crates/<?kebab>": (
     require: ("Cargo.toml", "src")
@@ -14,13 +14,13 @@
   )
   "crates/<?kebab>/src": (
     files: (allow: ("<?snake>.rs"))
-    dirs: (allow: ("<?snake>"))
+    dirs:  (allow: ("<?snake>"))
   )
   // --- Nix ---
   "nix": (
     recursive: true
-    files: (allow: ("<?kebab>.nix"))
-    dirs: (allow: ("<?kebab>"))
+    files:     (allow: ("<?kebab>.nix"))
+    dirs:      (allow: ("<?kebab>"))
 ))
 
 // --- Vocabularies ---

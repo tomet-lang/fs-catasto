@@ -18,11 +18,11 @@ tomet-semantics   = { workspace = true }
 tomet-spec        = { workspace = true }
 tomet-type        = { workspace = true }
 # ---
-hole-engine       = { workspace = true }
+hole-engine = { workspace = true }
 # --- Crates.io ---
+anyhow     = { workspace = true }
 serde      = { workspace = true }
 serde_json = { workspace = true }
-anyhow     = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

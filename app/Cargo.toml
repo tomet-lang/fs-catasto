@@ -15,17 +15,17 @@ path = "src/main.rs"
 catasto-core     = { workspace = true }
 catasto-manifest = { workspace = true }
 #---
-tomet-spec        = { workspace = true }
 tomet-config      = { workspace = true }
 tomet-load-config = { workspace = true }
+tomet-spec        = { workspace = true }
 #=--- Crates.io ---
 anyhow         = { workspace = true }
 clap           = { workspace = true }
-serde_json     = { workspace = true }
 jobserver-gate = { workspace = true }
 mimalloc       = { workspace = true }
+serde_json     = { workspace = true }
 
 [dev-dependencies]
-tempfile         = { workspace = true }
 serde_json       = { workspace = true }
+tempfile         = { workspace = true }
 tomet-ast-parser = { workspace = true }

@@ -1,6 +1,12 @@
 [workspace]
-resolver        = "3"
-members         = ["app", "crates/catasto-core", "crates/catasto-digest", "crates/catasto-git", "crates/catasto-manifest"]
+resolver = "3"
+members = [
+  "app",
+  "crates/catasto-core",
+  "crates/catasto-digest",
+  "crates/catasto-git",
+  "crates/catasto-manifest",
+]
 default-members = ["app"]
 
 [workspace.package]
@@ -10,11 +16,11 @@ rust-version = "1.85"
 license      = "MIT OR Apache-2.0"
 
 [workspace.dependencies]
+catasto-cli      = { path = "app" }
 catasto-core     = { path = "crates/catasto-core" }
 catasto-digest   = { path = "crates/catasto-digest" }
 catasto-git      = { path = "crates/catasto-git" }
 catasto-manifest = { path = "crates/catasto-manifest" }
-catasto-cli      = { path = "app" }
 #---
 hole-engine    = { git = "https://github.com/tomet-lang/tomet-hole.git" }
 jobserver-gate = { git = "https://github.com/tomet-lang/jobserver-gate.git" }

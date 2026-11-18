@@ -12,9 +12,9 @@ catasto-digest   = { workspace = true }
 catasto-git      = { workspace = true }
 catasto-manifest = { workspace = true }
 #---
-jobserver-gate = { workspace = true }
 cotomet        = { workspace = true }
 hole-engine    = { workspace = true }
+jobserver-gate = { workspace = true }
 tomet-hole     = { workspace = true }
 #--- Crates.io ---
 anyhow     = { workspace = true }

@@ -94,16 +94,20 @@ fn walk_dir(
         let child_inherited: Vec<bool> = zones
             .iter()
             .zip(&active)
-            .map(|(zone, &is_active)| {
-                is_active && zone.recursive && !is_ignored(zone, &child.name)
-            })
+            .map(|(zone, &is_active)| is_active && zone.recursive && !is_ignored(zone, &child.name))
             .collect();
         let child_rel = if rel_dir == "." {
             child.name.clone()
         } else {
             format!("{rel_dir}/{}", child.name)
         };
-        walk_dir(&child.abs_path, &child_rel, zones, &child_inherited, violations)?;
+        walk_dir(
+            &child.abs_path,
+            &child_rel,
+            zones,
+            &child_inherited,
+            violations,
+        )?;
     }
 
     Ok(())
@@ -140,7 +144,13 @@ fn evaluate_zone(
             .copied()
             .filter(|child| !child.is_dir)
             .collect();
-        evaluate_entry_rules(rel_dir, &zone.target.source, &zone.files, &files, violations);
+        evaluate_entry_rules(
+            rel_dir,
+            &zone.target.source,
+            &zone.files,
+            &files,
+            violations,
+        );
     }
 
     if !zone.dirs.is_empty() {

@@ -2,13 +2,13 @@
   "version": 1,
   "files": {
     ".editorconfig": {
-      "sha256": "2640a0cd478e15abaf9ecdabd962ac0937a3f7e1dc39900649d381f693803d94",
+      "sha256": "dd25aacb9e34b5819b0b0645843fd42f786ca0bb4f9089afa922f162e593179f",
       "source": {
         "git": "https://github.com/tomet-lang/commonfiles.git",
         "rev": "main",
         "path": "base/.editorconfig"
       },
-      "commit": "7a0a52ae2f5814dc6f75b3f54303d0031e9229dc",
+      "commit": "6cf1b16447bf2da789ef8a4ca187eab4c81caf32",
       "mode": "executable"
     },
     ".envrc": {
