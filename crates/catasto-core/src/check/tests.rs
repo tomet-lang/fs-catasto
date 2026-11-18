@@ -393,3 +393,51 @@ fn old_lock_without_mode_is_clean_when_destination_is_normal_file() {
     assert!(rep.is_ok(), "{:?}", rep.violations);
 }
 
+#[test]
+fn check_repo_detects_unlocked_missing_and_modified_remote() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    let upstream = catasto_git::testing::TestRepo::new();
+    let head = upstream.commit("README.md", "hello");
+    let other = catasto_git::testing::TestRepo::new();
+    other.commit("README.md", "other");
+
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "::use(catasto, version: \"1.0.0\")\n\n\"deps/tool\": catasto.repo({:?}, branch: main)\n",
+            upstream.url()
+        ),
+    )
+    .unwrap();
+
+    // 1. No lockfile -> Unlocked
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].path, Path::new("deps/tool"));
+    assert_eq!(rep.violations[0].kind, ViolationKind::Unlocked);
+
+    // 2. Locked, but directory missing -> Missing
+    let lock_text = format!(
+        "{{\n  \"version\": 1,\n  \"files\": {{}},\n  \"repos\": {{\n    \"deps/tool\": {{\n      \"git\": {:?},\n      \"branch\": \"main\",\n      \"commit\": \"{head}\"\n    }}\n  }}\n}}\n",
+        upstream.url()
+    );
+    std::fs::write(vault.join("catasto.lock"), lock_text).unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Missing);
+
+    // 3. Cloned from wrong remote -> Modified
+    catasto_git::clone_repo(&other.url(), &vault.join("deps/tool"), Some("main")).unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+
+    // 4. Cloned from expected remote -> Clean
+    std::fs::remove_dir_all(vault.join("deps/tool")).unwrap();
+    catasto_git::clone_repo(&upstream.url(), &vault.join("deps/tool"), Some("main")).unwrap();
+    let rep = check(&vault).unwrap();
+    assert!(rep.is_ok(), "{:?}", rep.violations);
+}

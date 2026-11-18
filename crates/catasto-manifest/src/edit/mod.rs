@@ -41,6 +41,12 @@ pub enum SourceText {
     },
     /// `catasto.local("relative/path")`
     Local { path: String },
+    /// `catasto.repo("...", branch: ..., submodule: true)`
+    Repo {
+        git: String,
+        branch: Option<String>,
+        submodule: bool,
+    },
 }
 
 /// What `::upstream(...)` says about one place.
@@ -456,6 +462,21 @@ fn source_value_text(source: &SourceText) -> String {
             )
         }
         SourceText::Local { path } => format!("catasto.local({})", quoted(path)),
+        SourceText::Repo {
+            git,
+            branch,
+            submodule,
+        } => {
+            let mut out = format!("catasto.repo({}", quoted(git));
+            if let Some(branch) = branch {
+                out.push_str(&format!(", branch: {}", scalar(branch)));
+            }
+            if *submodule {
+                out.push_str(", submodule: true");
+            }
+            out.push(')');
+            out
+        }
     }
 }
 

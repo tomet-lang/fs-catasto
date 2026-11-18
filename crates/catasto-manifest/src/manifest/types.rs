@@ -21,23 +21,91 @@ pub struct Manifest {
     pub managed: Vec<Managed>,
 }
 
-/// One declared file: where it lives in the workspace and where it comes from.
+/// A Git repository cloned as a directory or submodule in the workspace.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Repo {
+    /// An `https://` URL, or a local path relative to the workspace root.
+    pub git: String,
+    /// Branch to check out and track, if declared.
+    pub branch: Option<String>,
+    /// Whether to register the repository in `.gitmodules`.
+    pub submodule: bool,
+}
+
+/// What a managed entry represents: either a single file or a cloned Git repository.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManagedKind {
+    File {
+        /// Where the canonical content comes from.
+        source: Source,
+        /// The executable mode the entry declares, if it does: `Some(true)` places the file executable and
+        /// `Some(false)` not, whatever the source says. `None` leaves it to the source (a git file's `100755`
+        /// or not; a local file is never executable).
+        executable: Option<bool>,
+    },
+    Repo(Repo),
+}
+
+/// One declared entry: where it lives in the workspace and what it is.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Managed {
     /// Location inside the workspace, relative to the root.
     pub path: PathBuf,
-    /// Where the canonical content comes from.
-    pub source: Source,
-    /// The executable mode the entry declares, if it does: `Some(true)` places the file executable and `Some(false)`
-    /// not, whatever the source says. `None` leaves it to the source (a git file's `100755` or not; a local file
-    /// is never executable).
-    pub executable: Option<bool>,
+    /// File source (with optional executable mode) or cloned repository.
+    pub kind: ManagedKind,
 }
 
 impl Managed {
+    /// Returns `true` if this entry manages a file.
+    pub fn is_file(&self) -> bool {
+        matches!(self.kind, ManagedKind::File { .. })
+    }
+
+    /// Returns `true` if this entry manages a cloned repository.
+    pub fn is_repo(&self) -> bool {
+        matches!(self.kind, ManagedKind::Repo(_))
+    }
+
+    /// Returns the file source if this entry is a file.
+    pub fn source(&self) -> Option<&Source> {
+        match &self.kind {
+            ManagedKind::File { source, .. } => Some(source),
+            ManagedKind::Repo(_) => None,
+        }
+    }
+
+    /// Returns the repository spec if this entry is a repo.
+    pub fn repo(&self) -> Option<&Repo> {
+        match &self.kind {
+            ManagedKind::Repo(repo) => Some(repo),
+            ManagedKind::File { .. } => None,
+        }
+    }
+
+    /// Returns the declared executable mode if this entry is a file.
+    pub fn executable(&self) -> Option<bool> {
+        match &self.kind {
+            ManagedKind::File { executable, .. } => *executable,
+            ManagedKind::Repo(_) => None,
+        }
+    }
+
     /// Whether the file is placed executable, given whether its `source` is.
     pub fn is_executable(&self, source_is_executable: bool) -> bool {
-        self.executable.unwrap_or(source_is_executable)
+        match &self.kind {
+            ManagedKind::File { executable, .. } => executable.unwrap_or(source_is_executable),
+            ManagedKind::Repo(_) => false,
+        }
+    }
+}
+
+impl Manifest {
+    /// Iterates over all declared repository entries.
+    pub fn repos(&self) -> impl Iterator<Item = (&Path, &Repo)> {
+        self.managed.iter().filter_map(|m| match &m.kind {
+            ManagedKind::Repo(repo) => Some((m.path.as_path(), repo)),
+            ManagedKind::File { .. } => None,
+        })
     }
 }
 
@@ -350,7 +418,12 @@ fn split_entry_value<'a>(path: &str, value: &'a Value) -> Result<(&'a Value, Opt
     }
 }
 
-fn parse_entry_source(path: &str, call_value: &Value, header: &Header) -> Result<Source> {
+fn parse_entry_kind(
+    path: &str,
+    call_value: &Value,
+    executable: Option<bool>,
+    header: &Header,
+) -> Result<ManagedKind> {
     if !header.has_use {
         bail!(
             "`catasto` constructors require `::use(catasto, version: \"1.0.0\")` at the top of the manifest"
@@ -360,13 +433,46 @@ fn parse_entry_source(path: &str, call_value: &Value, header: &Header) -> Result
         .read_call(call_value)
         .map_err(|e| anyhow!("{path}: {e}"))?;
 
-    match constructed.name.as_str() {
+    if constructed.name == "repo" {
+        if executable.is_some() {
+            bail!("{path}: catasto.repo(...) cannot declare executable");
+        }
+        let git = require_text(&constructed, "url", path)?;
+        crate::manifest::url::classify(&git).map_err(|e| anyhow!("{path}: {e}"))?;
+        let branch = match constructed.get("branch") {
+            None | Some(Value::Scalar(Scalar::None)) => None,
+            Some(Value::Scalar(Scalar::Text(b))) => {
+                if b.is_empty() || b.starts_with('-') {
+                    bail!("{path}: invalid branch name: {b:?}");
+                }
+                Some(b.clone())
+            }
+            Some(Value::Scalar(Scalar::Int(_) | Scalar::Float(_) | Scalar::Number(_))) => {
+                bail!(
+                    "{path}: `branch` reads as a number; write it in quotes, e.g. `branch: \"1.2\"`"
+                );
+            }
+            Some(_) => bail!("{path}: `branch` must be a string"),
+        };
+        let submodule = match constructed.get("submodule") {
+            None => false,
+            Some(Value::Scalar(Scalar::Bool(b))) => *b,
+            Some(_) => bail!("{path}: `submodule` must be a boolean (`true` or `false`)"),
+        };
+        return Ok(ManagedKind::Repo(Repo {
+            git,
+            branch,
+            submodule,
+        }));
+    }
+
+    let source = match constructed.name.as_str() {
         "local" => {
             let local_path = require_text(&constructed, "path", path)?;
             if local_path.is_empty() {
                 bail!("{path}: a source path must not be empty");
             }
-            Ok(Source::Path(local_path.into()))
+            Source::Path(local_path.into())
         }
         "git" => {
             if let Value::Call(_, raw_args) = call_value
@@ -391,12 +497,12 @@ fn parse_entry_source(path: &str, call_value: &Value, header: &Header) -> Result
                 );
             }
             let symlink = parse_symlink(&constructed, path)?;
-            Ok(Source::Git {
+            Source::Git {
                 git,
                 rev,
                 path: file_path,
                 symlink,
-            })
+            }
         }
         "upstream" => {
             let name = require_text(&constructed, "upstream", path)?;
@@ -417,15 +523,17 @@ fn parse_entry_source(path: &str, call_value: &Value, header: &Header) -> Result
                 None => entry_path,
             };
             let symlink = parse_symlink(&constructed, path)?;
-            Ok(Source::Git {
+            Source::Git {
                 git: upstream.git.clone(),
                 rev: upstream.rev.clone(),
                 path: full_path,
                 symlink,
-            })
+            }
         }
         other => bail!("{path}: unknown constructor `catasto.{other}`"),
-    }
+    };
+
+    Ok(ManagedKind::File { source, executable })
 }
 
 impl Manifest {
@@ -459,11 +567,10 @@ impl Manifest {
                 bail!("manifest entry must have a workspace path key");
             };
             let (call_value, executable) = split_entry_value(path, entry.value())?;
-            let source = parse_entry_source(path, call_value, &header)?;
+            let kind = parse_entry_kind(path, call_value, executable, &header)?;
             managed.push(Managed {
                 path: path.into(),
-                source,
-                executable,
+                kind,
             });
         }
 
@@ -485,6 +592,29 @@ impl Manifest {
                 bail!("path is declared twice: {}", managed.path.display());
             }
         }
+        for (repo_path, _) in self.repos() {
+            for managed in &self.managed {
+                if managed.path != repo_path && is_strictly_inside(&managed.path, repo_path) {
+                    bail!(
+                        "entry '{}' cannot be inside declared repo '{}'",
+                        managed.path.display(),
+                        repo_path.display()
+                    );
+                }
+            }
+        }
         Ok(())
     }
+}
+
+fn normal_components(p: &Path) -> Vec<std::path::Component<'_>> {
+    p.components()
+        .filter(|c| !matches!(c, std::path::Component::CurDir))
+        .collect()
+}
+
+fn is_strictly_inside(child: &Path, dir: &Path) -> bool {
+    let child_parts = normal_components(child);
+    let dir_parts = normal_components(dir);
+    child_parts.len() > dir_parts.len() && child_parts.starts_with(&dir_parts)
 }

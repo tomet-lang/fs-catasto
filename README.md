@@ -18,8 +18,9 @@ catasto upstream add NAME GIT [--rev R] [--root DIR] [--force] # name a place fi
 catasto add DEST [--force] --upstream NAME [PATH] [--keep-symlink] # take a file: declare it, fetch it, lock it
 catasto add DEST [--force] --git URL [--rev R] [PATH] [--keep-symlink] #   ... from a repository written out
 catasto add DEST [--force] --local PATH                   #   ... from a file on disk
-catasto list [--json]                           # every declared file, its source and its state
-catasto remove DEST [--delete]                  # stop managing a file
+catasto add DEST [--force] --repo URL [--branch B] [--submodule] #   ... or clone a repository worktree
+catasto list [--json]                           # every declared entry, its source and its state
+catasto remove DEST [--delete]                  # stop managing a file or repository
 catasto upstream remove NAME                    # drop a name nothing uses
 catasto upstream list
 catasto check [path]                            # report drift between catasto.ctmt, catasto.lock, and the files
@@ -46,11 +47,11 @@ That writes `catasto.ctmt` and `catasto.lock`, and the file itself. Commit the t
 
 The commands edit `catasto.ctmt` without rewriting it: comments, order and layout stay, a new entry goes after the last, and the result is read again before it is saved, so an edit that would leave a manifest that does not load is refused. You can also write the file by hand, as shown under Files.
 
-`catasto list` shows `name:path` for a file taken from a named place, and `git URL@REV:path` or `local PATH` for the others, with `ok` or the way it has drifted, and the commit it was locked at. `--json` is the same for tools.
+`catasto list` shows `name:path` for a file taken from a named place, `git URL@REV:path` or `local PATH` for the other file entries, and `repo URL` (or `repo URL@BRANCH`) for repositories, with `ok` or the way it has drifted, and the commit it was locked at. `--json` is the same for tools.
 
-`catasto sync --only FILE` reads one file again. With `--update` it moves that file to where its `rev` points now and nothing else, which is how to take one new vocabulary without taking all of them. `catasto sync --dry-run` previews what `sync` would write: it displays moved git sources and a unified diff for each changed file without altering files or the lock, ending with a summary line (`would change N of M file(s)` or `nothing would change`).
+`catasto sync --only FILE` reads one entry again. With `--update` it moves a file to where its `rev` points now, or fast-forwards a repo worktree, and nothing else, which is how to take one new vocabulary without taking all of them. `catasto sync --dry-run` previews what `sync` would write: it displays moved git sources and a unified diff for each changed file without altering files, repositories, `.gitmodules`, or the lock, ending with a summary line (`would change N of M file(s)` or `nothing would change`, plus repo counts when repositories are declared).
 
-`check` exits with 1 when it finds drift (content, executable mode, or file kind), and never touches the network. It names the command that puts each file right. `catasto diff [path]` shows the unified diff of what `catasto sync` would write against what is on disk, reading git sources at their locked commit (and fetching them if needed). It exits 0 when nothing differs and 1 when something does. Files that are neither declared nor locked are unmanaged and never reported.
+`check` exits with 1 when it finds drift (content, executable mode, file kind, repo commit or remote, or `.gitmodules`), and never touches the network. It names the command that puts each entry right. `catasto diff [path]` shows the unified diff of what `catasto sync` would write against what is on disk, reading git sources at their locked commit (and fetching them if needed). It exits 0 when nothing differs and 1 when something does. Files that are neither declared nor locked are unmanaged and never reported.
 
 The names are exact: `catasto.ctmt` and `catasto.lock`, and `init` takes no other. A workspace that has `Catasto.ctmt` or `CATASTO.lock` instead is told to rename it, rather than being read as one with nothing declared or locked, which is what a case-sensitive filesystem would otherwise make of it.
 
@@ -66,11 +67,12 @@ The names are exact: `catasto.ctmt` and `catasto.lock`, and `init` takes no othe
 
 The key is a path relative to the workspace and must stay inside it. Quote a path that is not a bare word, which is any path with a `/` or a space in it. Each path may be declared once, and its value is a bare constructor call or a tuple `(call, executable: bool)`.
 
-A source is one of three constructors:
+A source is one of four constructors:
 
 - `catasto.local("...")` -- a file on the local filesystem, relative to the workspace root. It may point outside the workspace.
 - `catasto.git("...", rev: ..., path: "...")` -- a file in a git repository. The positional first argument is an `https://` URL or a local path (relative to the workspace root), `rev` (default `main`) is a tag, a branch, or a commit already reachable from one, and `path` is the file's location inside the repository. Quote a `rev` that reads as a number (`rev: "1.2"`). An optional `symlink: keep` preserves the symlink in the workspace rather than following it to write the target file content.
 - `catasto.upstream(name, path: "...")` -- the same, with the repository and `rev` named once in `::upstream(...)` (below).
+- `catasto.repo("...", branch: ..., submodule: ...)` -- a git repository cloned as a worktree at the declared directory path. The positional first argument is an `https://` URL or a local path (relative to the workspace root). `branch` is optional; `submodule` defaults to `false`. When `submodule: true`, `catasto` also generates and checks `.gitmodules` for declared submodules. Repo entries cannot declare `executable`, and no managed file or repo may be declared inside another repo's directory.
 
 ```text
 ::use(catasto, version: "1.0.0")
@@ -111,7 +113,7 @@ An entry may also say whether the file is executable by wrapping the constructor
 
 `executable: true` places the file with its executable bits set and `executable: false` with them cleared, whatever the source says. Left out, the source decides: a git file is executable when it is `100755` there, and a local file is never executable. The lock records the mode that results (`"mode": "executable"`, absent for a normal file), and `check` calls an entry `unlocked` when what it declares is not what the lock holds, until `catasto sync` (or `catasto lock`) is run.
 
-`catasto.lock` is generated by `catasto lock` and `catasto sync`. Commit it together with the managed files, so a fresh clone can run `catasto check` without the sources. It is JSON, keyed by path under `files`, with a `version`; nobody edits it by hand. An entry records `"mode": "executable"` when the file is placed executable (a git source's `100755`, or an entry that declares `executable: true`), absent for normal files.
+`catasto.lock` is generated by `catasto lock` and `catasto sync`. Commit it together with the managed files, so a fresh clone can run `catasto check` without the sources. It is JSON, keyed by path under `files` (and `repos` when repository entries are declared), with a `version`; nobody edits it by hand. A file entry records `"mode": "executable"` when the file is placed executable (a git source's `100755`, or an entry that declares `executable: true`), absent for normal files. A repo entry records `git`, `commit`, and optional `branch` and `submodule`.
 
 ## Git Sources
 

@@ -16,7 +16,7 @@ Upstream repository definitions declared in `::upstream(...)`. An upstream decla
 
 ==[entry]
 
-Manifest file entry declaring a managed workspace file. Each top-level entry in `catasto.ctmt` binds a workspace-relative file path to a `catasto.{upstream,git,local}(...)` constructor call, optionally paired with `executable` in a tuple `(call, executable: bool)`.
+Manifest entry declaring a managed workspace file or repository. Each top-level entry in `catasto.ctmt` binds a workspace-relative path to a `catasto.{upstream,git,local,repo}(...)` constructor call; file entries may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
 
-- `source` (catasto.upstream(...) | catasto.git(...) | catasto.local(...)): Constructor call declaring where canonical content comes from: `catasto.upstream(name, path: "...")`, `catasto.git(url, rev: ..., path: "...")`, or `catasto.local("...")`.
-- `executable` (boolean): Whether the file is placed executable (`true`) or not (`false`), whatever the source says. Left out, the source decides: a git file's `100755` or not, and a local file is never executable.
+- `source` (catasto.upstream(...) | catasto.git(...) | catasto.local(...) | catasto.repo(...)): Constructor call declaring where canonical content comes from: `catasto.upstream(name, path: "...")`, `catasto.git(url, rev: ..., path: "...")`, `catasto.local("...")`, or `catasto.repo(url, branch: ..., submodule: ...)`.
+- `executable` (boolean): Whether a managed file is placed executable (`true`) or not (`false`), whatever the source says. Left out, the source decides: a git file's `100755` or not, and a local file is never executable. Rejected on `catasto.repo(...)`.

@@ -16,7 +16,8 @@ pub use crate::edit::AddOutcome;
 use crate::edit::{self, SourceText, UpstreamText};
 use crate::lockfile::{LOCK_FILE, Lock};
 use crate::manifest::{
-    MANIFEST_FILE, Manifest, Source, Symlink, UpstreamInfo, reject_misnamed, upstreams_of,
+    MANIFEST_FILE, ManagedKind, Manifest, Source, Symlink, UpstreamInfo, reject_misnamed,
+    upstreams_of,
 };
 use crate::sync::{SyncMode, sync_only};
 
@@ -96,25 +97,42 @@ pub fn add(
     Ok(outcome)
 }
 
-/// Undeclares `dest` and forgets what the lock says about it. The file stays on
-/// disk unless `delete_file`.
+/// Undeclares `dest` and forgets what the lock says about it. The file or directory
+/// stays on disk unless `delete_file`. Updates `.gitmodules` if needed.
 pub fn remove(root: &Path, dest: &str, delete_file: bool) -> Result<()> {
     let dest = clean_dest(dest);
     edit_manifest(root, |text| edit::remove_entry(text, &dest))?;
 
-    let lock = Lock::load(root)?;
-    let kept: Vec<_> = lock
+    let previous_lock = Lock::load(root)?;
+    let kept_files: Vec<_> = previous_lock
         .locked
-        .into_iter()
+        .iter()
         .filter(|locked| locked.path != Path::new(&dest))
+        .cloned()
+        .collect();
+    let kept_repos: Vec<_> = previous_lock
+        .repos
+        .iter()
+        .filter(|repo| repo.path != Path::new(&dest))
+        .cloned()
         .collect();
     let file = root.join(LOCK_FILE);
-    std::fs::write(&file, Lock::new(kept).render()?)
+    std::fs::write(&file, Lock::new(kept_files, kept_repos).render()?)
         .with_context(|| format!("cannot write {}", file.display()))?;
 
+    let manifest = Manifest::load(root)?;
+    crate::submodule::sync_gitmodules(root, &manifest, &previous_lock)?;
+
     if delete_file {
-        match std::fs::remove_file(root.join(&dest)) {
-            Ok(()) => {}
+        let target = root.join(&dest);
+        match std::fs::symlink_metadata(&target) {
+            Ok(meta) if meta.is_dir() => {
+                std::fs::remove_dir_all(&target)
+                    .with_context(|| format!("cannot delete {dest}"))?;
+            }
+            Ok(_) => {
+                std::fs::remove_file(&target).with_context(|| format!("cannot delete {dest}"))?;
+            }
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => return Err(e).with_context(|| format!("cannot delete {dest}")),
         }
@@ -206,19 +224,33 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
     Ok(manifest
         .managed
         .iter()
-        .map(|managed| Row {
-            path: managed.path.clone(),
-            from: describe(&managed.source, &upstreams),
-            state: violations_by_path.get(&managed.path).copied(),
-            commit: lock
-                .get(&managed.path)
-                .and_then(|locked| locked.commit.clone()),
-            symlink: match managed.source {
-                Source::Git {
-                    symlink: Symlink::Keep,
-                    ..
-                } => Some(Symlink::Keep),
-                _ => None,
+        .map(|managed| match &managed.kind {
+            ManagedKind::File { source, .. } => Row {
+                path: managed.path.clone(),
+                from: describe(source, &upstreams),
+                state: violations_by_path.get(&managed.path).copied(),
+                commit: lock
+                    .get(&managed.path)
+                    .and_then(|locked| locked.commit.clone()),
+                symlink: match source {
+                    Source::Git {
+                        symlink: Symlink::Keep,
+                        ..
+                    } => Some(Symlink::Keep),
+                    _ => None,
+                },
+            },
+            ManagedKind::Repo(repo) => Row {
+                path: managed.path.clone(),
+                from: match &repo.branch {
+                    Some(branch) => format!("repo {}@{branch}", repo.git),
+                    None => format!("repo {}", repo.git),
+                },
+                state: violations_by_path.get(&managed.path).copied(),
+                commit: lock
+                    .get_repo(&managed.path)
+                    .and_then(|locked| locked.commit.clone()),
+                symlink: None,
             },
         })
         .collect())

@@ -694,4 +694,60 @@ fn executable_bit_cli_contract() {
     assert!(w.run(&["check"]).status.success());
 }
 
+#[test]
+fn add_repo_and_remove_repo_with_submodule_updates_gitmodules_and_list() {
+    let w = World::new();
+    w.ok(&["init"]);
 
+    // Rejects invalid combinations
+    let err = w.fails(&["add", "tools/sisho", "--repo", w.url(), "extra"]);
+    assert!(err.contains("--repo clones the entire repository"), "{err}");
+    let err = w.fails(&["add", "tools/sisho", "--repo", w.url(), "--keep-symlink"]);
+    assert!(err.contains("--repo has no --keep-symlink"), "{err}");
+
+    // Add repo with --branch and --submodule
+    let out = w.ok(&[
+        "add",
+        "tools/sisho",
+        "--repo",
+        w.url(),
+        "--branch",
+        "main",
+        "--submodule",
+    ]);
+    assert!(out.starts_with("added tools/sisho, locked at "), "{out}");
+    assert!(w.vault.join("tools/sisho/.git").exists());
+    assert!(w.exists(".gitmodules"));
+    let gitmodules = w.read(".gitmodules");
+    assert!(gitmodules.contains("[submodule \"tools/sisho\"]"), "{gitmodules}");
+    assert!(gitmodules.contains("branch = main"), "{gitmodules}");
+
+    let manifest = w.read("catasto.ctmt");
+    assert!(
+        manifest.contains("catasto.repo(")
+            && manifest.contains("branch: main")
+            && manifest.contains("submodule: true"),
+        "{manifest}"
+    );
+
+    // List (plain and --json)
+    let listed = w.ok(&["list"]);
+    assert!(listed.contains("tools/sisho"), "{listed}");
+    assert!(listed.contains("@main"), "{listed}");
+    assert!(listed.contains("ok"), "{listed}");
+
+    let listed_json = w.ok(&["list", "--json"]);
+    let json: serde_json::Value = serde_json::from_str(&listed_json).unwrap();
+    assert_eq!(json[0]["path"], "tools/sisho");
+    assert_eq!(json[0]["state"], "ok");
+
+    // Check passes
+    assert!(w.run(&["check"]).status.success());
+
+    // Remove with --delete deletes directory and cleans up .gitmodules
+    let removed = w.ok(&["remove", "tools/sisho", "--delete"]);
+    assert!(removed.contains("deleted the directory"), "{removed}");
+    assert!(!w.vault.join("tools/sisho").exists());
+    assert!(!w.exists(".gitmodules"));
+    assert!(w.run(&["check"]).status.success());
+}

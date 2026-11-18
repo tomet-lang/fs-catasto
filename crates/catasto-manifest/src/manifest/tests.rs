@@ -29,7 +29,7 @@ fn canonical_vocabulary_parses_with_zero_problems() {
     );
     assert_eq!(
         vocab.constructors.keys().collect::<Vec<_>>(),
-        ["git", "local", "upstream"]
+        ["git", "local", "repo", "upstream"]
     );
 }
 
@@ -47,13 +47,17 @@ fn parses_managed_entries_in_the_order_written() {
         vec![
             Managed {
                 path: "b/writ.vocabulary.tmt".into(),
-                source: path_source("../vocabularies/writ.vocabulary.tmt"),
-                executable: None,
+                kind: ManagedKind::File {
+                    source: path_source("../vocabularies/writ.vocabulary.tmt"),
+                    executable: None,
+                },
             },
             Managed {
                 path: "a/rust.vocabulary.tmt".into(),
-                source: path_source("../vocabularies/rust.vocabulary.tmt"),
-                executable: None,
+                kind: ManagedKind::File {
+                    source: path_source("../vocabularies/rust.vocabulary.tmt"),
+                    executable: None,
+                },
             },
         ]
     );
@@ -68,7 +72,7 @@ fn comments_and_unquoted_values_are_fine() {
     ))
     .unwrap();
 
-    assert_eq!(manifest.managed[0].source, path_source("../v/a.tmt"));
+    assert_eq!(manifest.managed[0].source(), Some(&path_source("../v/a.tmt")));
 }
 
 #[test]
@@ -211,8 +215,8 @@ fn two_entries_share_an_upstream_and_keep_their_order() {
     assert_eq!(paths, [PathBuf::from("b.tmt"), PathBuf::from("a.tmt")]);
     for managed in &manifest.managed {
         assert!(matches!(
-            &managed.source,
-            Source::Git { git, rev, .. } if git == "https://example.com/v.git" && rev == "main"
+            managed.source(),
+            Some(Source::Git { git, rev, .. }) if git == "https://example.com/v.git" && rev == "main"
         ));
     }
 }
@@ -246,8 +250,8 @@ fn a_local_source_and_a_written_out_git_source_need_no_upstream() {
          \"b.tmt\": catasto.git(\"https://example.com/o.git\", rev: v1, path: \"b.tmt\")\n"
     ))
     .unwrap();
-    assert_eq!(manifest.managed[0].source, path_source("../a.tmt"));
-    assert!(matches!(manifest.managed[1].source, Source::Git { .. }));
+    assert_eq!(manifest.managed[0].source(), Some(&path_source("../a.tmt")));
+    assert!(matches!(manifest.managed[1].source(), Some(Source::Git { .. })));
 }
 
 #[test]
@@ -387,7 +391,7 @@ fn an_entry_may_declare_its_executable_mode() {
     ))
     .unwrap();
 
-    let declared: Vec<Option<bool>> = manifest.managed.iter().map(|m| m.executable).collect();
+    let declared: Vec<Option<bool>> = manifest.managed.iter().map(|m| m.executable()).collect();
     assert_eq!(declared, vec![Some(true), Some(false), None]);
 }
 
@@ -440,13 +444,13 @@ fn parses_a_git_source() {
     .unwrap();
 
     assert_eq!(
-        manifest.managed[0].source,
-        Source::Git {
+        manifest.managed[0].source(),
+        Some(&Source::Git {
             git: "https://example.com/v.git".into(),
             rev: "v1".into(),
             path: "dir/w.tmt".into(),
             symlink: Symlink::Follow,
-        }
+        })
     );
 }
 
@@ -461,31 +465,31 @@ fn parses_symlink_keep_and_follow_in_git_source_and_upstream() {
     .unwrap();
 
     assert_eq!(
-        manifest.managed[0].source,
-        Source::Git {
+        manifest.managed[0].source(),
+        Some(&Source::Git {
             git: "https://example.com/v.git".into(),
             rev: "v1".into(),
             path: "a".into(),
             symlink: Symlink::Keep,
-        }
+        })
     );
     assert_eq!(
-        manifest.managed[1].source,
-        Source::Git {
+        manifest.managed[1].source(),
+        Some(&Source::Git {
             git: "https://example.com/v.git".into(),
             rev: "main".into(),
             path: "b".into(),
             symlink: Symlink::Keep,
-        }
+        })
     );
     assert_eq!(
-        manifest.managed[2].source,
-        Source::Git {
+        manifest.managed[2].source(),
+        Some(&Source::Git {
             git: "https://example.com/v.git".into(),
             rev: "main".into(),
             path: "c".into(),
             symlink: Symlink::Follow,
-        }
+        })
     );
 }
 
@@ -641,9 +645,112 @@ fn upstream_with_symlink_keep_resolves_identically_to_full_form() {
     ))
     .unwrap();
 
-    assert_eq!(manifest.managed[0].source, manifest.managed[1].source);
+    assert_eq!(manifest.managed[0].source(), manifest.managed[1].source());
     assert_eq!(
-        serde_json::to_string(&manifest.managed[0].source).unwrap(),
-        serde_json::to_string(&manifest.managed[1].source).unwrap()
+        serde_json::to_string(manifest.managed[0].source().unwrap()).unwrap(),
+        serde_json::to_string(manifest.managed[1].source().unwrap()).unwrap()
+    );
+}
+
+#[test]
+fn parses_repo_entries_with_and_without_branch_and_submodule() {
+    let manifest = Manifest::parse(&format!(
+        "{USE}\
+         \"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: main, submodule: true)\n\
+         \"vendor/lib\": catasto.repo(\"../lib\")\n"
+    ))
+    .unwrap();
+
+    assert!(manifest.managed[0].is_repo());
+    assert!(!manifest.managed[0].is_file());
+    assert_eq!(manifest.managed[0].source(), None);
+    assert_eq!(
+        manifest.managed[0].repo(),
+        Some(&Repo {
+            git: "https://example.com/sisho.git".into(),
+            branch: Some("main".into()),
+            submodule: true,
+        })
+    );
+    assert_eq!(
+        manifest.managed[1].repo(),
+        Some(&Repo {
+            git: "../lib".into(),
+            branch: None,
+            submodule: false,
+        })
+    );
+}
+
+#[test]
+fn rejects_executable_on_repo_entry() {
+    for flag in ["true", "false"] {
+        let err = Manifest::parse(&format!(
+            "{USE}\"tools/sisho\": (catasto.repo(\"https://example.com/sisho.git\"), executable: {flag})\n"
+        ))
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("catasto.repo(...) cannot declare executable"),
+            "{err}"
+        );
+    }
+}
+
+#[test]
+fn rejects_invalid_repo_url_and_branch() {
+    let err = Manifest::parse(&format!(
+        "{USE}\"tools/sisho\": catasto.repo(\"git@github.com:org/repo.git\")\n"
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("ssh"), "{err}");
+
+    let err = Manifest::parse(&format!(
+        "{USE}\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: 1.2)\n"
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("write it in quotes"), "{err}");
+
+    for bad_branch in ["\"\"", "\"-flag\""] {
+        let err = Manifest::parse(&format!(
+            "{USE}\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: {bad_branch})\n"
+        ))
+        .unwrap_err();
+        assert!(err.to_string().contains("invalid branch name"), "{err}");
+    }
+}
+
+#[test]
+fn rejects_entries_inside_a_declared_repo() {
+    let err = Manifest::parse(&format!(
+        "{USE}\
+         \"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\")\n\
+         \"tools/sisho/README.md\": catasto.local(\"../README.md\")\n"
+    ))
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("cannot be inside declared repo"),
+        "{err}"
+    );
+
+    // Order independent: file declared before repo is also rejected.
+    let err = Manifest::parse(&format!(
+        "{USE}\
+         \"tools/sisho/sub/a\": catasto.local(\"../a\")\n\
+         \"./tools/sisho\": catasto.repo(\"https://example.com/sisho.git\")\n"
+    ))
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("cannot be inside declared repo"),
+        "{err}"
+    );
+
+    // Sibling prefix like tools/sisho-extra is NOT inside tools/sisho.
+    assert!(
+        Manifest::parse(&format!(
+            "{USE}\
+             \"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\")\n\
+             \"tools/sisho-extra/file\": catasto.local(\"../a\")\n"
+        ))
+        .is_ok()
     );
 }

@@ -43,7 +43,8 @@ Examples:
   catasto add .envrc --upstream commonfiles
   catasto add docs/terms.tmt --upstream shared terms.tmt
   catasto add schema/writ.tmt --git https://example.com/v.git --rev v1 writ/writ.tmt
-  catasto add notes/a.tmt --local ../shared/a.tmt")]
+  catasto add notes/a.tmt --local ../shared/a.tmt
+  catasto add tools/sisho --repo https://github.com/tomet-lang/sisho.git --branch main --submodule")]
     Add(AddArgs),
     /// Stop managing a file: undeclare it and forget what the lock says.
     ///
@@ -148,14 +149,14 @@ Examples:
 #[command(group(
     clap::ArgGroup::new("kind")
         .required(true)
-        .args(["upstream", "git", "local"])
+        .args(["upstream", "git", "local", "repo"])
 ))]
 pub struct AddArgs {
-    /// Where the file goes, relative to the workspace root.
+    /// Where the file or repository goes, relative to the workspace root.
     pub dest: String,
     /// Where the file is in the place it comes from: a path inside the
     /// upstream, inside the repository, or on disk with --local. Defaults to
-    /// DEST (except with --local, which requires the path).
+    /// DEST (except with --local, which requires the path, and --repo, which takes none).
     pub from: Option<String>,
     /// Take it from a place named in `::upstream(...)`.
     #[arg(long, value_name = "NAME")]
@@ -166,9 +167,18 @@ pub struct AddArgs {
     /// Take it from a file on disk, relative to the workspace root.
     #[arg(long)]
     pub local: bool,
+    /// Clone a git repository into DEST (`https://` or a local path).
+    #[arg(long, value_name = "URL")]
+    pub repo: Option<String>,
     /// The tag, branch or commit to read, with --git.
     #[arg(long, default_value = "main", requires = "git")]
     pub rev: String,
+    /// Branch to check out and track, with --repo.
+    #[arg(long, value_name = "BRANCH", requires = "repo")]
+    pub branch: Option<String>,
+    /// Register the repository in `.gitmodules`, with --repo.
+    #[arg(long, requires = "repo")]
+    pub submodule: bool,
     /// Place an upstream symlink as a symlink rather than following it.
     #[arg(long)]
     pub keep_symlink: bool,

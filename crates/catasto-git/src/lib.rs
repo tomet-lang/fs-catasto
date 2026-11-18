@@ -14,6 +14,10 @@ pub mod testing;
 mod tree;
 mod url;
 
+pub use cmd::{
+    checkout_commit, clone_repo, current_branch, fast_forward_branch, fetch_worktree, head_commit,
+    remote_url,
+};
 pub use url::{UrlKind, classify, resolve_url};
 
 /// Environment variable that overrides the cache directory.

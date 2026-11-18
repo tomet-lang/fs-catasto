@@ -36,11 +36,23 @@ fn sync_single(
     }
     let lock = catasto_core::sync_only(path, mode, None, only)?;
     if only.is_empty() {
-        println!("synced {} file(s)", lock.locked.len());
+        println!("{}", format_sync_summary(lock.locked.len(), lock.repos.len()));
     } else {
-        println!("synced {} of {} file(s)", only.len(), lock.locked.len());
+        println!(
+            "synced {} of {} file(s)",
+            only.len(),
+            lock.locked.len() + lock.repos.len()
+        );
     }
     Ok(ExitCode::SUCCESS)
+}
+
+fn format_sync_summary(files: usize, repos: usize) -> String {
+    match (files, repos) {
+        (f, 0) => format!("synced {f} file(s)"),
+        (0, r) => format!("synced {r} repo(s)"),
+        (f, r) => format!("synced {f} file(s), {r} repo(s)"),
+    }
 }
 
 fn sync_all(
@@ -89,14 +101,14 @@ fn sync_all(
                     succeeded += 1;
                     if only.is_empty() {
                         println!(
-                            "[{num}/{total}] {ws_display} ... synced {} file(s)",
-                            lock.locked.len()
+                            "[{num}/{total}] {ws_display} ... {}",
+                            format_sync_summary(lock.locked.len(), lock.repos.len())
                         );
                     } else {
                         println!(
                             "[{num}/{total}] {ws_display} ... synced {} of {} file(s)",
                             only.len(),
-                            lock.locked.len()
+                            lock.locked.len() + lock.repos.len()
                         );
                     }
                 }

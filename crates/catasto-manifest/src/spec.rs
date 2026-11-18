@@ -28,25 +28,25 @@ pub struct UpstreamSpec {
     pub root: Option<PathBuf>,
 }
 
-/// Manifest file entry declaring a managed workspace file.
+/// Manifest entry declaring a managed workspace file or repository.
 ///
-/// Each top-level entry in `catasto.ctmt` binds a workspace-relative file path
-/// to a `catasto.{upstream,git,local}(...)` constructor call, optionally paired
-/// with `executable` in a tuple `(call, executable: bool)`.
+/// Each top-level entry in `catasto.ctmt` binds a workspace-relative path
+/// to a `catasto.{upstream,git,local,repo}(...)` constructor call; file entries
+/// may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
 #[derive(Debug, Clone, Default, PartialEq, Config)]
 #[config(group = "entry")]
 pub struct ManifestEntrySpec {
     /// Constructor call declaring where canonical content comes from:
     /// `catasto.upstream(name, path: "...")`, `catasto.git(url, rev: ..., path: "...")`,
-    /// or `catasto.local("...")`.
+    /// `catasto.local("...")`, or `catasto.repo(url, branch: ..., submodule: ...)`.
     #[config(
         key = "source",
-        type = "catasto.upstream(...) | catasto.git(...) | catasto.local(...)"
+        type = "catasto.upstream(...) | catasto.git(...) | catasto.local(...) | catasto.repo(...)"
     )]
     pub source: String,
 
-    /// Whether the file is placed executable (`true`) or not (`false`), whatever the source says. Left out, the
-    /// source decides: a git file's `100755` or not, and a local file is never executable.
+    /// Whether a managed file is placed executable (`true`) or not (`false`), whatever the source says. Left out, the
+    /// source decides: a git file's `100755` or not, and a local file is never executable. Rejected on `catasto.repo(...)`.
     #[config(key = "executable", type = "boolean")]
     pub executable: Option<bool>,
 }

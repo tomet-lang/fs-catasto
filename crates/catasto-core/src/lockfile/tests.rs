@@ -277,3 +277,81 @@ fn lock_preserves_existing_mode() {
     let rendered = std::fs::read_to_string(dir.path().join(LOCK_FILE)).unwrap();
     assert!(rendered.contains("\"mode\": \"executable\""), "{rendered}");
 }
+
+#[test]
+fn lock_records_repo_entries_in_repos_section() {
+    let manifest = "\
+::use(catasto, version: \"1.0.0\")
+
+\"tools/sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\", branch: main, submodule: true)
+";
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("catasto.ctmt"), manifest).unwrap();
+
+    let locked = lock(dir.path()).unwrap();
+    assert_eq!(locked.locked.len(), 0);
+    assert_eq!(locked.repos.len(), 1);
+    assert_eq!(
+        locked.repos[0],
+        LockedRepo {
+            path: "tools/sisho".into(),
+            git: "https://github.com/tomet-lang/sisho.git".into(),
+            branch: Some("main".into()),
+            submodule: true,
+            commit: None,
+        }
+    );
+
+    let text = std::fs::read_to_string(dir.path().join(LOCK_FILE)).unwrap();
+    assert!(text.contains("\"repos\": {"), "{text}");
+    assert!(
+        text.contains("\"git\": \"https://github.com/tomet-lang/sisho.git\""),
+        "{text}"
+    );
+    assert!(text.contains("\"branch\": \"main\""), "{text}");
+    assert!(text.contains("\"submodule\": true"), "{text}");
+
+    let loaded = Lock::load(dir.path()).unwrap();
+    assert_eq!(loaded, locked);
+}
+
+#[test]
+fn repo_lock_preserves_existing_commit() {
+    let manifest = "\
+::use(catasto, version: \"1.0.0\")
+
+\"sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\")
+";
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("catasto.ctmt"), manifest).unwrap();
+    let initial_lock = r#"{
+  "version": 1,
+  "repos": {
+    "sisho": {
+      "git": "https://github.com/tomet-lang/sisho.git",
+      "commit": "0123456789abcdef0123456789abcdef01234567"
+    }
+  }
+}
+"#;
+    std::fs::write(dir.path().join(LOCK_FILE), initial_lock).unwrap();
+
+    let updated = lock(dir.path()).unwrap();
+    assert_eq!(
+        updated.repos[0].commit.as_deref(),
+        Some("0123456789abcdef0123456789abcdef01234567")
+    );
+}
+
+#[test]
+fn lock_without_repos_omits_repos_key() {
+    let lock = Lock::from_files(vec![Locked {
+        path: "a.tmt".into(),
+        source: Source::Path("src/a.tmt".into()),
+        sha256: "abc".into(),
+        commit: None,
+        mode: None,
+    }]);
+    let rendered = lock.render().unwrap();
+    assert!(!rendered.contains("\"repos\""), "{rendered}");
+}

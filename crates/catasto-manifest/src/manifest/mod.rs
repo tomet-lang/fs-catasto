@@ -40,7 +40,7 @@ mod types;
 mod upstream;
 pub mod url;
 
-pub use types::{Managed, Manifest, Source, Symlink};
+pub use types::{Managed, ManagedKind, Manifest, Repo, Source, Symlink};
 pub use upstream::{UpstreamInfo, upstreams_of};
 pub use url::{UrlKind, classify};
 

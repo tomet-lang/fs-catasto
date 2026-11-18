@@ -1,7 +1,7 @@
 use std::path::PathBuf;
 
 use super::*;
-use crate::check::check;
+use crate::check::{ViolationKind, check};
 use catasto_git::testing::TestRepo;
 
 const MANIFEST: &str = "\
@@ -852,6 +852,167 @@ fn lock_records_the_declared_mode_without_the_network() {
     assert_eq!(
         lock.get(Path::new("vocab/writ.tmt")).unwrap().mode,
         Some(LockMode::Executable)
+    );
+    assert!(check(&vault).unwrap().is_ok());
+}
+
+#[test]
+fn sync_clones_repo_entry_creates_gitmodules_and_locks_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    let upstream_repo = TestRepo::new();
+    let head = upstream_repo.commit("README.md", "hello from repo");
+
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "::use(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.repo({:?}, branch: main, submodule: true)\n",
+            upstream_repo.url()
+        ),
+    )
+    .unwrap();
+
+    let lock = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+    // Directory cloned
+    let cloned_dir = vault.join("tools/sisho");
+    assert!(cloned_dir.is_dir());
+    assert!(cloned_dir.join(".git").exists());
+    assert_eq!(
+        std::fs::read_to_string(cloned_dir.join("README.md")).unwrap(),
+        "hello from repo"
+    );
+
+    // .gitmodules generated
+    let gitmodules = std::fs::read_to_string(vault.join(".gitmodules")).unwrap();
+    assert!(gitmodules.contains("[submodule \"tools/sisho\"]"));
+    assert!(gitmodules.contains("path = tools/sisho"));
+    assert!(gitmodules.contains("branch = main"));
+    assert!(gitmodules.contains("ignore = dirty"));
+
+    // Lockfile records repos
+    assert_eq!(lock.repos.len(), 1);
+    let locked_repo = &lock.repos[0];
+    assert_eq!(locked_repo.path, Path::new("tools/sisho"));
+    assert_eq!(locked_repo.git, upstream_repo.url());
+    assert_eq!(locked_repo.branch.as_deref(), Some("main"));
+    assert!(locked_repo.submodule);
+    assert_eq!(locked_repo.commit.as_deref(), Some(head.as_str()));
+
+    // check passes cleanly
+    let report = check(&vault).unwrap();
+    assert!(report.is_ok(), "violations: {:?}", report.violations);
+
+    // Drift: modify .gitmodules
+    std::fs::write(vault.join(".gitmodules"), "tampered").unwrap();
+    let report = check(&vault).unwrap();
+    assert_eq!(report.violations.len(), 1);
+    assert_eq!(report.violations[0].path, Path::new(".gitmodules"));
+    assert_eq!(report.violations[0].kind, ViolationKind::Modified);
+
+    // Restore .gitmodules via sync
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+    assert!(check(&vault).unwrap().is_ok());
+
+    // Drift: missing repo directory
+    std::fs::remove_dir_all(&cloned_dir).unwrap();
+    let report = check(&vault).unwrap();
+    assert_eq!(report.violations.len(), 1);
+    assert_eq!(report.violations[0].path, Path::new("tools/sisho"));
+    assert_eq!(report.violations[0].kind, ViolationKind::Missing);
+
+    // Sync restores the clone
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+    assert!(cloned_dir.join("README.md").exists());
+    assert!(check(&vault).unwrap().is_ok());
+}
+
+#[test]
+fn sync_dry_run_does_not_clone_repo_or_write_gitmodules() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    let upstream_repo = TestRepo::new();
+    upstream_repo.commit("README.md", "hello");
+
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "::use(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.repo({:?}, branch: main, submodule: true)\n",
+            upstream_repo.url()
+        ),
+    )
+    .unwrap();
+
+    let SyncOutcome::DryRun(report) = sync_with_options(
+        &vault,
+        &SyncOptions {
+            mode: SyncMode::Locked,
+            cache_dir: Some(&cache),
+            only: &[],
+            dry_run: true,
+        },
+    )
+    .unwrap() else {
+        panic!("expected DryRun");
+    };
+
+    assert!(report.output.contains("would clone repo tools/sisho"), "{}", report.output);
+    assert!(report.output.contains("would create .gitmodules"), "{}", report.output);
+    assert!(!vault.join("tools/sisho").exists());
+    assert!(!vault.join(".gitmodules").exists());
+    assert!(!vault.join("catasto.lock").exists());
+}
+
+#[test]
+fn sync_update_fast_forwards_relative_repo_and_updates_commit() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    let upstream_repo = TestRepo::new();
+    let c1 = upstream_repo.commit("README.md", "v1");
+    let repo_name = Path::new(&upstream_repo.url())
+        .file_name()
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .to_owned();
+
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "::use(catasto, version: \"1.0.0\")\n\n\"vendor/lib\": catasto.repo(\"../../{repo_name}\", branch: main)\n"
+        ),
+    )
+    .unwrap();
+
+    let lock1 = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+    assert_eq!(lock1.repos[0].commit.as_deref(), Some(c1.as_str()));
+    assert!(check(&vault).unwrap().is_ok());
+
+    let c2 = upstream_repo.commit("README.md", "v2");
+
+    // Locked sync keeps c1
+    let lock_locked = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+    assert_eq!(lock_locked.repos[0].commit.as_deref(), Some(c1.as_str()));
+    assert_eq!(
+        std::fs::read_to_string(vault.join("vendor/lib/README.md")).unwrap(),
+        "v1"
+    );
+
+    // Update sync fast-forwards to c2
+    let lock_updated = sync_with(&vault, SyncMode::Update, Some(&cache)).unwrap();
+    assert_eq!(lock_updated.repos[0].commit.as_deref(), Some(c2.as_str()));
+    assert_eq!(
+        std::fs::read_to_string(vault.join("vendor/lib/README.md")).unwrap(),
+        "v2"
     );
     assert!(check(&vault).unwrap().is_ok());
 }

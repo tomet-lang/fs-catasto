@@ -1,4 +1,4 @@
-//! Re-fetching managed files from their sources.
+//! Re-fetching managed files and repositories from their sources.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 
 use crate::lockfile::{Lock, LockMode, write_lock_selected_with_hashes};
-use crate::manifest::{Managed, Manifest, Source};
+use crate::manifest::{Managed, ManagedKind, Manifest, Source};
 use catasto_git::{Content, Fetched, GitCache, resolve_url};
 
 /// How `sync` treats git sources that the lock already pins.
@@ -19,9 +19,26 @@ pub enum SyncMode {
     Update,
 }
 
-/// Copies every managed file from its source, then rewrites `catasto.lock`.
+/// Options controlling a [`sync_with_options`] invocation.
+#[derive(Debug, Clone)]
+pub struct SyncOptions<'a> {
+    pub mode: SyncMode,
+    pub cache_dir: Option<&'a Path>,
+    pub only: &'a [PathBuf],
+    pub dry_run: bool,
+}
+
+/// Result of [`sync_with_options`].
+#[derive(Debug, Clone)]
+pub enum SyncOutcome {
+    Applied(Lock),
+    DryRun(DryRunReport),
+}
+
+/// Copies every managed file and clones every managed repository from its source,
+/// then rewrites `catasto.lock`.
 ///
-/// Every source is read before anything is written, so a missing source leaves
+/// Every file source is read before anything is written, so a missing source leaves
 /// the workspace untouched. Git sources are cached under the default cache
 /// directory; see [`GitCache::default_dir`].
 pub fn sync(root: &Path, mode: SyncMode) -> Result<Lock> {
@@ -85,7 +102,10 @@ pub fn plan_sync(
         if !selected(&managed.path) {
             continue;
         }
-        let (content, commit, executable) = match &managed.source {
+        let ManagedKind::File { source, .. } = &managed.kind else {
+            continue;
+        };
+        let (content, commit, executable) = match source {
             Source::Git { .. } => {
                 let file = fetched_git[index]
                     .take()
@@ -103,7 +123,7 @@ pub fn plan_sync(
             destination: root.join(&managed.path),
             content,
             commit,
-            source: managed.source.clone(),
+            source: source.clone(),
             executable: managed.is_executable(executable),
         });
     }
@@ -115,17 +135,37 @@ pub fn plan_sync(
     })
 }
 
-/// Like [`sync_with`], for the files in `only` (paths as the manifest writes
-/// them); an empty `only` is every file. The other files, and what the lock
-/// says about them, stay as they are: `catasto sync --update --only a` moves
-/// `a` and nothing else.
+/// Like [`sync_with`], for the entries in `only` (paths as the manifest writes
+/// them); an empty `only` is every entry.
 pub fn sync_only(
     root: &Path,
     mode: SyncMode,
     cache_dir: Option<&Path>,
     only: &[PathBuf],
 ) -> Result<Lock> {
-    let plan = plan_sync(root, mode, cache_dir, only)?;
+    match sync_with_options(
+        root,
+        &SyncOptions {
+            mode,
+            cache_dir,
+            only,
+            dry_run: false,
+        },
+    )? {
+        SyncOutcome::Applied(lock) => Ok(lock),
+        SyncOutcome::DryRun(_) => unreachable!("dry_run was false"),
+    }
+}
+
+/// Runs `sync` (when `dry_run` is false) or previews its changes without modifying
+/// files, cloning repositories, or touching `.gitmodules` / `catasto.lock`.
+pub fn sync_with_options(root: &Path, options: &SyncOptions<'_>) -> Result<SyncOutcome> {
+    if options.dry_run {
+        let report = run_dry_run(root, options.mode, options.cache_dir, options.only)?;
+        return Ok(SyncOutcome::DryRun(report));
+    }
+
+    let plan = plan_sync(root, options.mode, options.cache_dir, options.only)?;
     let mut commits = HashMap::new();
     let mut modes = HashMap::new();
     let mut hashes = HashMap::new();
@@ -151,8 +191,69 @@ pub fn sync_only(
     }
 
     write_all(fetched)?;
-    let selected = |path: &Path| only.is_empty() || only.iter().any(|p| p == path);
-    write_lock_selected_with_hashes(
+    let selected = |path: &Path| options.only.is_empty() || options.only.iter().any(|p| p == path);
+
+    for managed in &plan.manifest.managed {
+        if !selected(&managed.path) {
+            continue;
+        }
+        let ManagedKind::Repo(repo) = &managed.kind else {
+            continue;
+        };
+        let dest = root.join(&managed.path);
+        let resolved_url = resolve_url(root, &repo.git)?;
+        let commit = if !dest.exists() {
+            let cloned = catasto_git::clone_repo(&resolved_url, &dest, repo.branch.as_deref())?;
+            if options.mode == SyncMode::Locked
+                && let Some(pinned) = plan
+                    .lock
+                    .get_repo(&managed.path)
+                    .filter(|locked| {
+                        locked.git == repo.git
+                            && locked.branch == repo.branch
+                            && locked.submodule == repo.submodule
+                    })
+                    .and_then(|locked| locked.commit.as_deref())
+                && pinned != cloned
+            {
+                catasto_git::checkout_commit(&dest, pinned)?;
+                pinned.to_owned()
+            } else {
+                cloned
+            }
+        } else {
+            if !dest.join(".git").exists() {
+                bail!(
+                    "destination {} exists and is not a git repository",
+                    managed.path.display()
+                );
+            }
+            let actual_url = catasto_git::remote_url(&dest)
+                .with_context(|| format!("cannot inspect remote of {}", managed.path.display()))?;
+            if actual_url != repo.git && actual_url != resolved_url {
+                bail!(
+                    "repository at {} has remote {actual_url}, expected {}",
+                    managed.path.display(),
+                    repo.git
+                );
+            }
+            match options.mode {
+                SyncMode::Update => {
+                    catasto_git::fetch_worktree(&dest)?;
+                    match &repo.branch {
+                        Some(branch) => catasto_git::fast_forward_branch(&dest, branch)?,
+                        None => catasto_git::head_commit(&dest)?,
+                    }
+                }
+                SyncMode::Locked => catasto_git::head_commit(&dest)?,
+            }
+        };
+        commits.insert(managed.path.clone(), commit);
+    }
+
+    crate::submodule::sync_gitmodules(root, &plan.manifest, &plan.lock)?;
+
+    let lock = write_lock_selected_with_hashes(
         root,
         plan.manifest,
         &commits,
@@ -160,7 +261,8 @@ pub fn sync_only(
         &plan.lock,
         &selected,
         &hashes,
-    )
+    )?;
+    Ok(SyncOutcome::Applied(lock))
 }
 
 /// What `sync --dry-run` would do.
@@ -168,9 +270,9 @@ pub fn sync_only(
 pub struct DryRunReport {
     /// Rendered output to print to stdout.
     pub output: String,
-    /// Number of files that would be changed.
+    /// Number of entries that would be changed.
     pub changed_files: usize,
-    /// Total number of files selected / checked.
+    /// Total number of entries selected / checked.
     pub total_files: usize,
     /// Moved git sources (`(label, rev, from, to)`).
     pub moved_sources: Vec<MovedSource>,
@@ -186,8 +288,28 @@ pub struct MovedSource {
 }
 
 /// Previews the changes that `sync` with `mode` would apply, without modifying
-/// any workspace files, the lock, or the manifest.
+/// any workspace files, cloning repositories, or touching `.gitmodules`, the lock, or the manifest.
 pub fn sync_dry_run(
+    root: &Path,
+    mode: SyncMode,
+    cache_dir: Option<&Path>,
+    only: &[PathBuf],
+) -> Result<DryRunReport> {
+    match sync_with_options(
+        root,
+        &SyncOptions {
+            mode,
+            cache_dir,
+            only,
+            dry_run: true,
+        },
+    )? {
+        SyncOutcome::DryRun(report) => Ok(report),
+        SyncOutcome::Applied(_) => unreachable!("dry_run was true"),
+    }
+}
+
+fn run_dry_run(
     root: &Path,
     mode: SyncMode,
     cache_dir: Option<&Path>,
@@ -211,22 +333,22 @@ pub fn sync_dry_run(
         let old_commit = plan.lock.get(&file.path).and_then(|l| l.commit.as_deref());
         let new_commit = file.commit.as_deref();
 
-        if let (Some(old), Some(new)) = (old_commit, new_commit) {
-            if old != new {
-                let label = upstreams
-                    .iter()
-                    .find(|u| &u.git == git && &u.rev == rev)
-                    .map(|u| u.name.clone())
-                    .unwrap_or_else(|| git.clone());
+        if let (Some(old), Some(new)) = (old_commit, new_commit)
+            && old != new
+        {
+            let label = upstreams
+                .iter()
+                .find(|u| &u.git == git && &u.rev == rev)
+                .map(|u| u.name.clone())
+                .unwrap_or_else(|| git.clone());
 
-                if seen_groups.insert((label.clone(), rev.clone())) {
-                    moved_sources.push(MovedSource {
-                        label,
-                        rev: rev.clone(),
-                        from: old[..old.len().min(7)].to_owned(),
-                        to: new[..new.len().min(7)].to_owned(),
-                    });
-                }
+            if seen_groups.insert((label.clone(), rev.clone())) {
+                moved_sources.push(MovedSource {
+                    label,
+                    rev: rev.clone(),
+                    from: old[..old.len().min(7)].to_owned(),
+                    to: new[..new.len().min(7)].to_owned(),
+                });
             }
         }
     }
@@ -239,13 +361,50 @@ pub fn sync_dry_run(
         ));
     }
 
-    let total_files = plan.files.len();
+    let mut total_files = plan.files.len();
     let mut changed_files = 0;
     for file in &plan.files {
         if let Some(hunk) = crate::diff::diff_file(file)? {
             output.push_str(&hunk);
             changed_files += 1;
         }
+    }
+
+    let selected = |path: &Path| only.is_empty() || only.iter().any(|p| p == path);
+    for managed in &plan.manifest.managed {
+        if !selected(&managed.path) {
+            continue;
+        }
+        let ManagedKind::Repo(repo) = &managed.kind else {
+            continue;
+        };
+        total_files += 1;
+        let dest = root.join(&managed.path);
+        if !dest.exists() || !dest.join(".git").exists() {
+            output.push_str(&format!(
+                "would clone repo {} ({})\n",
+                managed.path.display(),
+                repo.git
+            ));
+            changed_files += 1;
+        } else if mode == SyncMode::Update {
+            output.push_str(&format!(
+                "would update repo {} ({})\n",
+                managed.path.display(),
+                repo.git
+            ));
+            changed_files += 1;
+        }
+    }
+
+    if let Some(drift) = crate::submodule::check_gitmodules(root, &plan.manifest, &plan.lock)? {
+        let action = match drift {
+            crate::submodule::GitmodulesDrift::Missing => "would create .gitmodules\n",
+            crate::submodule::GitmodulesDrift::Modified => "would update .gitmodules\n",
+            crate::submodule::GitmodulesDrift::Orphaned => "would remove .gitmodules\n",
+        };
+        output.push_str(action);
+        changed_files += 1;
     }
 
     if changed_files == 0 {
@@ -264,8 +423,8 @@ pub fn sync_dry_run(
     })
 }
 
-/// Reads every git source, one result per entry of the manifest (`None` for
-/// the entries that are not git sources).
+/// Reads every git file source, one result per entry of the manifest (`None` for
+/// entries that are not git file sources).
 ///
 /// A git URL has one bare clone in the cache, which two readers must not
 /// update at once, so the entries are grouped by URL: different URLs are read
@@ -283,7 +442,11 @@ fn fetch_git(
 ) -> Result<Vec<Option<Result<Fetched>>>> {
     let mut by_url: Vec<(String, Vec<usize>)> = Vec::new();
     for (index, managed) in manifest.managed.iter().enumerate() {
-        let Source::Git { git, .. } = &managed.source else {
+        let ManagedKind::File {
+            source: Source::Git { git, .. },
+            ..
+        } = &managed.kind
+        else {
             continue;
         };
         if !selected(&managed.path) {
@@ -345,17 +508,21 @@ fn fetch_entry(
     lock: &Lock,
     managed: &Managed,
 ) -> Result<Fetched> {
-    let Source::Git {
-        rev, path, symlink, ..
-    } = &managed.source
+    let ManagedKind::File {
+        source:
+            source @ Source::Git {
+                rev, path, symlink, ..
+            },
+        ..
+    } = &managed.kind
     else {
-        unreachable!("only git sources are grouped by URL");
+        unreachable!("only git file sources are grouped by URL");
     };
     let pinned = match mode {
         SyncMode::Update => None,
         SyncMode::Locked => lock
             .get(&managed.path)
-            .filter(|locked| locked.source == managed.source)
+            .filter(|locked| &locked.source == source)
             .and_then(|locked| locked.commit.as_deref()),
     };
     cache

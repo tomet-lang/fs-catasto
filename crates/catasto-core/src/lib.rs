@@ -4,16 +4,16 @@
 //! `catasto` defines and verifies directory rules, naming conventions, media
 //! manifests, and content lockfiles across a workspace.
 //!
-//! A workspace declares the files it manages in `catasto.ctmt`. [`lock`] records
-//! their SHA-256 in `catasto.lock`, [`check`] reports drift, and [`sync`]
-//! re-fetches the files from their sources: local paths, or files in git
-//! repositories pinned to a commit.
+//! A workspace declares the files and repositories it manages in `catasto.ctmt`.
+//! [`lock`] records their SHA-256 and commits in `catasto.lock`, [`check`] reports
+//! drift, and [`sync`] re-fetches them from their sources.
 
 mod check;
 mod diff;
 pub mod discovery;
 mod lockfile;
 mod manage;
+pub mod submodule;
 mod sync;
 
 pub use catasto_manifest::edit;
@@ -24,10 +24,12 @@ pub use check::{CheckReport, Violation, ViolationKind, check};
 pub use diff::diff;
 pub use discovery::discover_workspaces;
 pub use edit::{AddOutcome, AlreadyDeclared, DeclaredKind, SourceText, UpstreamText};
-pub use lockfile::{LOCK_FILE, Lock, LockMode, Locked, lock};
+pub use lockfile::{LOCK_FILE, Lock, LockMode, Locked, LockedRepo, lock};
 pub use manage::{Row, add, init, list, remove, upstream_add, upstream_list, upstream_remove};
-pub use manifest::{MANIFEST_FILE, Managed, Manifest, Source, UpstreamInfo, upstreams_of};
+pub use manifest::{
+    MANIFEST_FILE, Managed, ManagedKind, Manifest, Repo, Source, UpstreamInfo, upstreams_of,
+};
 pub use sync::{
-    DryRunReport, MovedSource, PlannedFile, SyncMode, SyncPlan, plan_sync, sync, sync_dry_run,
-    sync_only, sync_with,
+    DryRunReport, MovedSource, PlannedFile, SyncMode, SyncOptions, SyncOutcome, SyncPlan,
+    plan_sync, sync, sync_dry_run, sync_only, sync_with, sync_with_options,
 };

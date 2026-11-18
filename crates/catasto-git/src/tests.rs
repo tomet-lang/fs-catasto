@@ -644,3 +644,27 @@ fn reports_mode_for_followed_link_to_executable() {
     assert_eq!(fetched_keep.content, Content::Link("target.sh".to_owned()));
 }
 
+#[test]
+fn worktree_helpers_clone_inspect_fetch_and_checkout() {
+    let repo = TestRepo::new();
+    let c1 = repo.commit("a.txt", "v1");
+
+    let dir = tempfile::tempdir().unwrap();
+    let dest = dir.path().join("cloned");
+
+    let head = clone_repo(&repo.url(), &dest, Some("main")).unwrap();
+    assert_eq!(head, c1);
+    assert_eq!(head_commit(&dest).unwrap(), c1);
+    assert_eq!(remote_url(&dest).unwrap(), repo.url());
+    assert_eq!(current_branch(&dest).unwrap().as_deref(), Some("main"));
+
+    let c2 = repo.commit("a.txt", "v2");
+    fetch_worktree(&dest).unwrap();
+    let updated = fast_forward_branch(&dest, "main").unwrap();
+    assert_eq!(updated, c2);
+    assert_eq!(std::fs::read_to_string(dest.join("a.txt")).unwrap(), "v2");
+
+    checkout_commit(&dest, &c1).unwrap();
+    assert_eq!(head_commit(&dest).unwrap(), c1);
+    assert_eq!(current_branch(&dest).unwrap(), None);
+}

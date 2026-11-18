@@ -541,3 +541,31 @@ fn add_or_replace_upstream_oneline_block() {
     assert_eq!(outcome, AddOutcome::Unchanged);
     assert_eq!(unchanged, replaced);
 }
+
+#[test]
+fn adds_and_replaces_repo_entry() {
+    let repo = SourceText::Repo {
+        git: "https://example.com/sisho.git".into(),
+        branch: Some("main".into()),
+        submodule: true,
+    };
+    let text = add_entry("", "tools/sisho", &repo).unwrap();
+    assert_eq!(
+        text,
+        "::use(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: main, submodule: true)\n"
+    );
+    assert!(Manifest::parse(&text).is_ok());
+
+    let plain_repo = SourceText::Repo {
+        git: "https://example.com/sisho.git".into(),
+        branch: None,
+        submodule: false,
+    };
+    let (replaced, outcome) = add_or_replace_entry(&text, "tools/sisho", &plain_repo, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(
+        replaced,
+        "::use(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\")\n"
+    );
+    assert!(Manifest::parse(&replaced).is_ok());
+}

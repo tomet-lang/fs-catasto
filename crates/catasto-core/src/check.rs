@@ -7,15 +7,15 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 
 use crate::lockfile::Lock;
-use crate::manifest::{Managed, Manifest, Source, Symlink};
+use crate::manifest::{Managed, ManagedKind, Manifest, Repo, Source, Symlink};
 use catasto_digest::{sha256_file, sha256_link};
 
-/// How a managed file has drifted.
+/// How a managed entry has drifted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ViolationKind {
-    /// The file differs from its locked SHA-256.
+    /// The file or repository differs from what was locked or declared.
     Modified,
-    /// The file does not exist.
+    /// The file, directory, or `.gitmodules` does not exist.
     Missing,
     /// The source differs from the locked SHA-256.
     Stale,
@@ -54,7 +54,7 @@ impl fmt::Display for ViolationKind {
     }
 }
 
-/// One drifted file.
+/// One drifted entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Violation {
     /// Location inside the workspace, relative to the root.
@@ -74,7 +74,7 @@ impl fmt::Display for Violation {
 pub struct CheckReport {
     /// Root directory that was checked.
     pub root: PathBuf,
-    /// Detected drift, manifest order first, then orphans.
+    /// Detected drift, manifest order first, then orphans, then `.gitmodules`.
     pub violations: Vec<Violation>,
 }
 
@@ -85,9 +85,9 @@ impl CheckReport {
     }
 }
 
-/// Checks the managed files under `root` against `catasto.ctmt` and `catasto.lock`.
+/// Checks the managed files and repositories under `root` against `catasto.ctmt` and `catasto.lock`.
 ///
-/// Files that are not declared and not locked are unmanaged and never reported.
+/// Entries that are not declared and not locked are unmanaged and never reported.
 /// A local source is consulted only when it is readable, so a vendored
 /// workspace checks cleanly without its sources around. A git source is never
 /// consulted: `check` does not touch the network.
@@ -119,12 +119,41 @@ pub fn check(root: &Path) -> Result<CheckReport> {
     let mut violations: Vec<Violation> = entry_violations?.into_iter().flatten().collect();
 
     for locked in &lock.locked {
-        if !manifest.managed.iter().any(|m| m.path == locked.path) {
+        if !manifest
+            .managed
+            .iter()
+            .any(|m| m.is_file() && m.path == locked.path)
+        {
             violations.push(Violation {
                 path: locked.path.clone(),
                 kind: ViolationKind::Orphaned,
             });
         }
+    }
+
+    for locked_repo in &lock.repos {
+        if !manifest
+            .managed
+            .iter()
+            .any(|m| m.is_repo() && m.path == locked_repo.path)
+        {
+            violations.push(Violation {
+                path: locked_repo.path.clone(),
+                kind: ViolationKind::Orphaned,
+            });
+        }
+    }
+
+    if let Some(drift) = crate::submodule::check_gitmodules(root, &manifest, &lock)? {
+        let kind = match drift {
+            crate::submodule::GitmodulesDrift::Missing => ViolationKind::Missing,
+            crate::submodule::GitmodulesDrift::Modified => ViolationKind::Modified,
+            crate::submodule::GitmodulesDrift::Orphaned => ViolationKind::Orphaned,
+        };
+        violations.push(Violation {
+            path: PathBuf::from(crate::submodule::GITMODULES_FILE),
+            kind,
+        });
     }
 
     Ok(CheckReport {
@@ -135,18 +164,33 @@ pub fn check(root: &Path) -> Result<CheckReport> {
 
 fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<ViolationKind>> {
     let _token = jobserver_gate::acquire();
-    let Some(locked) = lock.get(&managed.path).filter(|locked| {
-        locked.source == managed.source
-            && matches!(managed.source, Source::Git { .. }) == locked.commit.is_some()
+    match &managed.kind {
+        ManagedKind::File { source, executable } => {
+            check_file(root, lock, &managed.path, source, *executable)
+        }
+        ManagedKind::Repo(repo) => check_repo(root, lock, &managed.path, repo),
+    }
+}
+
+fn check_file(
+    root: &Path,
+    lock: &Lock,
+    path: &Path,
+    source: &Source,
+    executable: Option<bool>,
+) -> Result<Vec<ViolationKind>> {
+    let Some(locked) = lock.get(path).filter(|locked| {
+        &locked.source == source
+            && matches!(source, Source::Git { .. }) == locked.commit.is_some()
             // A declared executable mode that the lock does not hold is a declaration changed since the lock.
-            && managed.executable.is_none_or(|declared| {
+            && executable.is_none_or(|declared| {
                 declared == (locked.mode == Some(crate::lockfile::LockMode::Executable))
             })
     }) else {
         return Ok(vec![ViolationKind::Unlocked]);
     };
 
-    let file = root.join(&managed.path);
+    let file = root.join(path);
     let meta = match std::fs::symlink_metadata(&file) {
         Ok(m) => Some(m),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
@@ -154,7 +198,7 @@ fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<Violat
     };
 
     let is_keep = matches!(
-        &managed.source,
+        source,
         Source::Git {
             symlink: Symlink::Keep,
             ..
@@ -193,14 +237,37 @@ fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<Violat
         }
     }
 
-    let readable_source = managed.source.local_path(root).filter(|s| s.is_file());
-    if let Some(source) = readable_source {
-        if sha256_file(&source)? != locked.sha256 {
+    let readable_source = source.local_path(root).filter(|s| s.is_file());
+    if let Some(source_file) = readable_source {
+        if sha256_file(&source_file)? != locked.sha256 {
             kinds.push(ViolationKind::Stale);
         }
     }
 
     Ok(kinds)
+}
+
+fn check_repo(root: &Path, lock: &Lock, path: &Path, repo: &Repo) -> Result<Vec<ViolationKind>> {
+    let Some(_locked) = lock.get_repo(path).filter(|locked| {
+        locked.git == repo.git
+            && locked.branch == repo.branch
+            && locked.submodule == repo.submodule
+    }) else {
+        return Ok(vec![ViolationKind::Unlocked]);
+    };
+
+    let dir = root.join(path);
+    if !dir.exists() || !dir.join(".git").exists() {
+        return Ok(vec![ViolationKind::Missing]);
+    }
+
+    let resolved_url = catasto_git::resolve_url(root, &repo.git)?;
+    match catasto_git::remote_url(&dir) {
+        Ok(actual_url) if actual_url == repo.git || actual_url == resolved_url => {}
+        Ok(_) | Err(_) => return Ok(vec![ViolationKind::Modified]),
+    }
+
+    Ok(Vec::new())
 }
 
 #[cfg(test)]

@@ -63,4 +63,24 @@
       )
     )
   )
+  repo: (
+    about: | A Git repository cloned as a directory or submodule in the workspace.
+    args: (
+      url: (
+        type: string
+        positional: true
+        required: true
+        about: | Repository URL (`https://` URL or workspace-relative path).
+      )
+      branch: (
+        type: string
+        about: | Branch to check out and track.
+      )
+      submodule: (
+        type: bool
+        default: false
+        about: | Whether to register the repository in `.gitmodules`.
+      )
+    )
+  )
 )
