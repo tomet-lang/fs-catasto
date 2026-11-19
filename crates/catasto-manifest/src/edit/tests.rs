@@ -577,3 +577,91 @@ fn adds_and_replaces_repo_entry() {
     );
     assert!(Manifest::parse(&replaced).is_ok());
 }
+
+#[test]
+fn edits_preserve_zone_declarations_intact() {
+    let base = "\
+// Workspace manifest
+::use(catasto, version: \"1.0.0\")
+::zone(
+  \"crates/<?kebab(crate)>/src\": (
+    // keep lib.rs
+    require: (\"lib.rs\")
+    allow: (\"<?snake>.rs\", \"mod.rs\")
+    deny: (\"<?>.bak\")
+    ignore: (\"generated\")
+  )
+)
+
+\"a.tmt\": catasto.local(\"../a.tmt\")
+";
+
+    let zone_block = "\
+::zone(
+  \"crates/<?kebab(crate)>/src\": (
+    // keep lib.rs
+    require: (\"lib.rs\")
+    allow: (\"<?snake>.rs\", \"mod.rs\")
+    deny: (\"<?>.bak\")
+    ignore: (\"generated\")
+  )
+)";
+
+    // 1. add_entry preserves ::zone
+    let added = add_entry(
+        base,
+        "b.tmt",
+        &SourceText::Local {
+            path: "../b.tmt".into(),
+        },
+    )
+    .unwrap();
+    assert!(added.contains(zone_block), "{added}");
+    assert_eq!(Manifest::parse(&added).unwrap().zones.len(), 1);
+
+    // 2. add_upstream and add_or_replace_upstream preserve ::zone
+    let with_upstream = add_upstream(
+        &added,
+        "shared",
+        &UpstreamText {
+            git: "https://example.com/s.git".into(),
+            rev: "main".into(),
+            root: None,
+        },
+    )
+    .unwrap();
+    assert!(with_upstream.contains(zone_block), "{with_upstream}");
+    assert_eq!(Manifest::parse(&with_upstream).unwrap().zones.len(), 1);
+
+    // 3. remove_entry preserves ::zone
+    let removed_entry = remove_entry(&with_upstream, "a.tmt").unwrap();
+    assert!(removed_entry.contains(zone_block), "{removed_entry}");
+    assert_eq!(Manifest::parse(&removed_entry).unwrap().zones.len(), 1);
+
+    // 4. remove_upstream preserves ::zone
+    let removed_upstream = remove_upstream(&removed_entry, "shared").unwrap();
+    assert!(removed_upstream.contains(zone_block), "{removed_upstream}");
+    assert_eq!(Manifest::parse(&removed_upstream).unwrap().zones.len(), 1);
+
+    // 5. Adding first entry to a zone-only manifest inserts ::use and keeps ::zone
+    let zone_only = "::zone(\".\": (require: \"README.md\"))\n";
+    let first_entry = add_entry(
+        zone_only,
+        "a.tmt",
+        &SourceText::Local {
+            path: "../a.tmt".into(),
+        },
+    )
+    .unwrap();
+    assert!(
+        first_entry.contains("::use(catasto, version: \"1.0.0\")"),
+        "{first_entry}"
+    );
+    assert!(
+        first_entry.contains("::zone(\".\": (require: \"README.md\"))"),
+        "{first_entry}"
+    );
+    let parsed = Manifest::parse(&first_entry).unwrap();
+    assert_eq!(parsed.zones.len(), 1);
+    assert_eq!(parsed.managed.len(), 1);
+}

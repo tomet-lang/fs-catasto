@@ -762,3 +762,224 @@ fn rejects_entries_inside_a_declared_repo() {
         .is_ok()
     );
 }
+
+#[test]
+fn parses_zone_declarations_with_single_and_tuple_patterns() {
+    let manifest = Manifest::parse(&format!(
+        "{USE}\
+         ::zone(\n\
+           \".\": (\n\
+             require: \"Cargo.toml\"\n\
+             ignore: (\".git\", \".gitignore\", \"target\")\n\
+           )\n\
+           \"crates/<?kebab(crate)>/src\": (\n\
+             require: (\"lib.rs\")\n\
+             allow: (\"<?snake>.rs\", \"mod.rs\")\n\
+             deny: (\"<?>.bak\")\n\
+             ignore: \"generated\"\n\
+           )\n\
+         )\n"
+    ))
+    .unwrap();
+
+    assert_eq!(manifest.zones.len(), 2);
+
+    let root = &manifest.zones[0];
+    assert_eq!(root.target.source, ".");
+    assert!(root.target.is_match("."));
+    assert!(!root.target.is_match("crates"));
+    assert!(!root.recursive);
+    assert_eq!(root.entries.require.len(), 1);
+    assert!(root.entries.require[0].is_match("Cargo.toml"));
+    assert!(root.entries.allow.is_none());
+    assert!(root.entries.deny.is_empty());
+    assert!(root.files.is_empty());
+    assert!(root.dirs.is_empty());
+    assert_eq!(root.ignore.len(), 3);
+    assert!(root.ignore[1].is_match(".gitignore"));
+
+    let src = &manifest.zones[1];
+    assert_eq!(src.target.source, "crates/<?kebab(crate)>/src");
+    assert!(src.target.is_match("crates/catasto-core/src"));
+    assert!(!src.target.is_match("crates/BadName/src"));
+    assert!(!src.target.is_match("crates/a/b/src"));
+    assert!(!src.recursive);
+    assert!(src.entries.require[0].is_match("lib.rs"));
+    let allow = src.entries.allow.as_ref().unwrap();
+    assert_eq!(allow.len(), 2);
+    assert!(allow[0].is_match("check_zone.rs"));
+    assert!(!allow[0].is_match("BadFile.rs"));
+    assert!(allow[1].is_match("mod.rs"));
+    assert!(src.entries.deny[0].is_match("old.bak"));
+    assert!(!src.entries.deny[0].is_match("a/b.bak"));
+    assert!(src.ignore[0].is_match("generated"));
+}
+
+#[test]
+fn allows_multiple_zone_declarations_and_zone_only_manifest() {
+    let manifest = Manifest::parse(
+        "::zone(\".\": (require: \"README.md\"))\n\
+         ::zone(\"docs\": (allow: (\"<?kebab>.md\")))\n",
+    )
+    .unwrap();
+    assert_eq!(manifest.zones.len(), 2);
+    assert_eq!(manifest.zones[0].target.source, ".");
+    assert_eq!(manifest.zones[1].target.source, "docs");
+    assert!(manifest.managed.is_empty());
+}
+
+#[test]
+fn zone_supports_empty_allow_tuple_to_forbid_all_non_ignored_entries() {
+    let manifest = Manifest::parse(&format!(
+        "{USE}::zone(\"empty\": (allow: (), ignore: (\".keep\")))\n"
+    ))
+    .unwrap();
+    assert_eq!(manifest.zones[0].entries.allow.as_ref().unwrap().len(), 0);
+    assert_eq!(manifest.zones[0].ignore.len(), 1);
+}
+
+#[test]
+fn zone_rejects_braces_prose_and_unnamed_entries() {
+    for bad in [
+        "::zone(){ \"src\": (require: \"lib.rs\") }\n",
+        "::zone(\"src\": (require: \"lib.rs\")){ extra: true }\n",
+        "::zone(\"src\": (require: \"lib.rs\"))[prose]\n",
+        "::zone\n",
+        "::zone(\"src\")\n",
+        "::zone(\"src\": (require: \"lib.rs\"), \"extra\")\n",
+    ] {
+        assert!(
+            Manifest::parse(&format!("{USE}{bad}")).is_err(),
+            "accepted: {bad}"
+        );
+    }
+}
+
+#[test]
+fn zone_rejects_duplicate_target_keys_across_declarations() {
+    let err = Manifest::parse(&format!(
+        "{USE}\
+         ::zone(\"crates/<?kebab>/src\": (require: \"lib.rs\"))\n\
+         ::zone(\"crates/<?kebab>/src\": (deny: \"<?>.bak\"))\n"
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("declared twice"), "{err}");
+
+    let err = Manifest::parse(&format!(
+        "{USE}::zone(\"./src\": (require: \"lib.rs\"), \"src\": (deny: \"<?>.bak\"))\n"
+    ))
+    .unwrap_err();
+    assert!(err.to_string().contains("declared twice"), "{err}");
+}
+
+#[test]
+fn zone_rejects_empty_absolute_and_escaping_target_paths() {
+    let empty_err = Manifest::parse(&format!("{USE}::zone(\"\": (require: \"a\"))\n")).unwrap_err();
+    assert!(
+        empty_err.to_string().contains("must not be empty"),
+        "unexpected error for empty target: {empty_err}"
+    );
+
+    for bad in [
+        "\"/etc\"",
+        "\"/\"",
+        "\"..\"",
+        "\"../outside\"",
+        "\"crates/../outside\"",
+        "\"crates//src\"",
+        "\"crates/./src\"",
+    ] {
+        let err = Manifest::parse(&format!("{USE}::zone({bad}: (require: \"a\"))\n")).unwrap_err();
+        assert!(
+            err.to_string().contains("zone target path"),
+            "unexpected error for {bad}: {err}"
+        );
+    }
+}
+
+#[test]
+fn zone_rejects_unknown_or_duplicate_spec_keys_and_invalid_patterns() {
+    for bad in [
+        "::zone(\"src\": \"lib.rs\")\n",
+        "::zone(\"src\": (\"lib.rs\"))\n",
+        "::zone(\"src\": (unknown: \"lib.rs\"))\n",
+        "::zone(\"src\": (require: \"a\", require: \"b\"))\n",
+        "::zone(\"src\": (require: 123))\n",
+        "::zone(\"src\": (require: (123)))\n",
+        "::zone(\"src\": (require: (named: \"a\")))\n",
+        "::zone(\"src\": (require: \"\"))\n",
+        "::zone(\"src\": (require: (\"\")))\n",
+        "::zone(\"src\": (require: \"<?unknown_matcher>\"))\n",
+        "::zone(\"<?unknown_matcher>\": (require: \"a\"))\n",
+        "::zone(\"src\": (recursive: \"true\"))\n",
+        "::zone(\"src\": (recursive: 1))\n",
+        "::zone(\"src\": (recursive: true, recursive: false))\n",
+        "::zone(\"src\": (files: \"a.rs\"))\n",
+        "::zone(\"src\": (files: (\"a.rs\")))\n",
+        "::zone(\"src\": (files: (ignore: \"a.rs\")))\n",
+        "::zone(\"src\": (files: (recursive: true)))\n",
+        "::zone(\"src\": (files: (unknown: \"a.rs\")))\n",
+        "::zone(\"src\": (files: (allow: \"a.rs\", allow: \"b.rs\")))\n",
+        "::zone(\"src\": (dirs: \"sub\"))\n",
+        "::zone(\"src\": (dirs: (\"sub\")))\n",
+        "::zone(\"src\": (dirs: (ignore: \"sub\")))\n",
+        "::zone(\"src\": (dirs: (files: (allow: \"a\"))))\n",
+        "::zone(\"src\": (dirs: (unknown: \"sub\")))\n",
+        "::zone(\"src\": (dirs: (require: \"a\", require: \"b\")))\n",
+    ] {
+        assert!(
+            Manifest::parse(&format!("{USE}{bad}")).is_err(),
+            "accepted: {bad}"
+        );
+    }
+}
+
+#[test]
+fn parses_zone_recursive_files_and_dirs() {
+    let manifest = Manifest::parse(&format!(
+        "{USE}\
+         ::zone(\n\
+           \"nix\": (\n\
+             recursive: true\n\
+             files: (\n\
+               require: \"default.nix\"\n\
+               allow: (\"<?kebab>.nix\")\n\
+               deny: (\"<?>.tmp\")\n\
+             )\n\
+             dirs: (\n\
+               allow: (\"<?kebab>\")\n\
+               deny: (\"secret\")\n\
+             )\n\
+             ignore: (\"result\")\n\
+           )\n\
+           \"docs\": (\n\
+             recursive: false\n\
+             dirs: (allow: ())\n\
+           )\n\
+         )\n"
+    ))
+    .unwrap();
+
+    assert_eq!(manifest.zones.len(), 2);
+
+    let nix = &manifest.zones[0];
+    assert!(nix.recursive);
+    assert!(nix.entries.is_empty());
+    assert_eq!(nix.files.require.len(), 1);
+    assert!(nix.files.require[0].is_match("default.nix"));
+    assert_eq!(nix.files.allow.as_ref().unwrap().len(), 1);
+    assert!(nix.files.allow.as_ref().unwrap()[0].is_match("catasto.nix"));
+    assert_eq!(nix.files.deny.len(), 1);
+    assert!(nix.files.deny[0].is_match("scratch.tmp"));
+    assert!(nix.dirs.require.is_empty());
+    assert_eq!(nix.dirs.allow.as_ref().unwrap().len(), 1);
+    assert!(nix.dirs.allow.as_ref().unwrap()[0].is_match("pkgs"));
+    assert_eq!(nix.dirs.deny.len(), 1);
+    assert!(nix.dirs.deny[0].is_match("secret"));
+    assert_eq!(nix.ignore.len(), 1);
+
+    let docs = &manifest.zones[1];
+    assert!(!docs.recursive);
+    assert!(docs.files.is_empty());
+    assert_eq!(docs.dirs.allow.as_ref().unwrap().len(), 0);
+}

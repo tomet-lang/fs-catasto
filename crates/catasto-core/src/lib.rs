@@ -27,7 +27,8 @@ pub use edit::{AddOutcome, AlreadyDeclared, DeclaredKind, SourceText, UpstreamTe
 pub use lockfile::{LOCK_FILE, Lock, LockMode, Locked, LockedRepo, lock};
 pub use manage::{Row, add, init, list, remove, upstream_add, upstream_list, upstream_remove};
 pub use manifest::{
-    MANIFEST_FILE, Managed, ManagedKind, Manifest, Repo, Source, UpstreamInfo, upstreams_of,
+    EntryRules, MANIFEST_FILE, Managed, ManagedKind, Manifest, Repo, Source, UpstreamInfo, Zone,
+    ZonePattern, upstreams_of,
 };
 pub use sync::{
     DryRunReport, MovedSource, PlannedFile, SyncMode, SyncOptions, SyncOutcome, SyncPlan,

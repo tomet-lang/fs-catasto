@@ -170,7 +170,7 @@ fn list_single(root: &Path, json: bool) -> Result<ExitCode> {
                 let mut map = serde_json::json!({
                     "path": row.path,
                     "from": row.from,
-                    "state": row.state.map_or("ok", |state| state.label()),
+                    "state": row.state.as_ref().map_or("ok", |state| state.label()),
                     "commit": row.commit,
                 });
                 if let Some(symlink) = row.symlink {
@@ -220,7 +220,7 @@ fn list_all(root: &Path, json: bool) -> Result<ExitCode> {
                             let mut map = serde_json::json!({
                                 "path": row.path,
                                 "from": row.from,
-                                "state": row.state.map_or("ok", |state| state.label()),
+                                "state": row.state.as_ref().map_or("ok", |state| state.label()),
                                 "commit": row.commit,
                             });
                             if let Some(symlink) = row.symlink {
@@ -288,7 +288,7 @@ fn print_rows(rows: &[catasto_core::Row]) {
             "{:path_width$}  {:from_width$}  {:8}  {}",
             row.path.display(),
             row.from,
-            row.state.map_or("ok", |state| state.label()),
+            row.state.as_ref().map_or("ok", |state| state.label()),
             row.commit.as_deref().map(short).unwrap_or_default(),
         );
     }
@@ -303,7 +303,7 @@ fn print_rows_indented(rows: &[catasto_core::Row]) {
             "  {:path_width$}  {:from_width$}  {:8}  {}",
             row.path.display(),
             row.from,
-            row.state.map_or("ok", |state| state.label()),
+            row.state.as_ref().map_or("ok", |state| state.label()),
             row.commit.as_deref().map(short).unwrap_or_default(),
         );
     }

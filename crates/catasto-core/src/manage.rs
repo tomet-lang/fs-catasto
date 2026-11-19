@@ -216,9 +216,11 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
 
     let mut violations_by_path = HashMap::new();
     for violation in &report.violations {
-        violations_by_path
-            .entry(&violation.path)
-            .or_insert(violation.kind);
+        if !violation.kind.is_zone() {
+            violations_by_path
+                .entry(&violation.path)
+                .or_insert_with(|| violation.kind.clone());
+        }
     }
 
     Ok(manifest
@@ -228,7 +230,7 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
             ManagedKind::File { source, .. } => Row {
                 path: managed.path.clone(),
                 from: describe(source, &upstreams),
-                state: violations_by_path.get(&managed.path).copied(),
+                state: violations_by_path.get(&managed.path).cloned(),
                 commit: lock
                     .get(&managed.path)
                     .and_then(|locked| locked.commit.clone()),
@@ -246,7 +248,7 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
                     Some(branch) => format!("repo {}@{branch}", repo.git),
                     None => format!("repo {}", repo.git),
                 },
-                state: violations_by_path.get(&managed.path).copied(),
+                state: violations_by_path.get(&managed.path).cloned(),
                 commit: lock
                     .get_repo(&managed.path)
                     .and_then(|locked| locked.commit.clone()),

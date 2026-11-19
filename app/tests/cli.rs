@@ -359,3 +359,91 @@ fn e2e_git_symlink_keep() {
         serde_json::from_str(&String::from_utf8_lossy(&listed_json.stdout)).unwrap();
     assert_eq!(json[0]["symlink"], "keep");
 }
+
+#[test]
+fn check_evaluates_zone_rules_for_human_and_json_output() {
+    let tmp = tempfile::tempdir().unwrap();
+    let ws = tmp.path();
+
+    std::fs::write(
+        ws.join("catasto.ctmt"),
+        "\
+::use(catasto, version: \"1.0.0\")
+::zone(
+  \"crates/<?kebab(crate)>/src\": (
+    require: (\"lib.rs\")
+    allow: (\"<?snake>.rs\", \"mod.rs\")
+    deny: (\"<?>.bak\")
+    ignore: (\"generated\")
+  )
+)
+",
+    )
+    .unwrap();
+
+    let src = ws.join("crates/my-pkg/src");
+    std::fs::create_dir_all(src.join("generated")).unwrap();
+    std::fs::write(src.join("BadName.rs"), "").unwrap();
+    std::fs::write(src.join("temp.bak"), "").unwrap();
+    std::fs::write(src.join("generated/ignored.bak"), "").unwrap();
+
+    let checked = Command::new(env!("CARGO_BIN_EXE_catasto"))
+        .args(["check"])
+        .arg(ws)
+        .output()
+        .unwrap();
+    assert_eq!(checked.status.code(), Some(1));
+    let stderr = String::from_utf8_lossy(&checked.stderr);
+    assert!(
+        stderr.contains("crates/my-pkg/src: zone `crates/<?kebab(crate)>/src`: missing required entry matching `lib.rs`"),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains(
+            "crates/my-pkg/src/BadName.rs: zone `crates/<?kebab(crate)>/src`: entry is not allowed"
+        ),
+        "{stderr}"
+    );
+    assert!(
+        stderr.contains("crates/my-pkg/src/temp.bak: zone `crates/<?kebab(crate)>/src`: entry matches denied pattern `<?>.bak`"),
+        "{stderr}"
+    );
+
+    let checked_json = Command::new(env!("CARGO_BIN_EXE_catasto"))
+        .args(["check", "--json"])
+        .arg(ws)
+        .output()
+        .unwrap();
+    assert_eq!(checked_json.status.code(), Some(1));
+    let json: serde_json::Value =
+        serde_json::from_str(&String::from_utf8_lossy(&checked_json.stdout)).unwrap();
+    assert_eq!(json["ok"], false);
+    let kinds: Vec<&str> = json["violations"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v["kind"].as_str().unwrap())
+        .collect();
+    assert_eq!(
+        kinds,
+        vec!["zone-require", "zone-allow", "zone-allow", "zone-deny"]
+    );
+
+    // Fix all violations and verify exit code 0.
+    std::fs::remove_file(src.join("BadName.rs")).unwrap();
+    std::fs::remove_file(src.join("temp.bak")).unwrap();
+    std::fs::write(src.join("lib.rs"), "").unwrap();
+    std::fs::write(src.join("helper_mod.rs"), "").unwrap();
+
+    let clean = Command::new(env!("CARGO_BIN_EXE_catasto"))
+        .args(["check"])
+        .arg(ws)
+        .output()
+        .unwrap();
+    assert_eq!(
+        clean.status.code(),
+        Some(0),
+        "stderr: {}",
+        String::from_utf8_lossy(&clean.stderr)
+    );
+}

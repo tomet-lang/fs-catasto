@@ -8,6 +8,7 @@ use tomet_scalar::Scalar;
 use tomet_type::Version;
 
 use super::types::{check_git, require_rev, require_text};
+use super::zone::{Zone, parse_zone_decls};
 use super::{is_inside_workspace, vocabulary};
 
 /// What `::upstream` names: a git repository at a `rev`, and the directory
@@ -20,11 +21,12 @@ pub(super) struct Upstream {
     pub(super) root: Option<PathBuf>,
 }
 
-/// Header state parsed from `::use(catasto, ...)` and `::upstream(...)`.
+/// Header state parsed from `::use(catasto, ...)`, `::upstream(...)`, and `::zone(...)`.
 #[derive(Default)]
 pub(super) struct Header {
     pub(super) has_use: bool,
     pub(super) upstreams: Upstreams,
+    pub(super) zones: Vec<Zone>,
 }
 
 /// The places an entry's `catasto.upstream(...)` can name.
@@ -54,19 +56,24 @@ impl Header {
 
         let mut has_use = false;
         let mut upstream_decls = Vec::new();
+        let mut zone_decls = Vec::new();
 
-        for (ast_decl, sem_decl) in header.iter().zip(sem_decls.iter()) {
+        for ast_decl in header {
             if ast_decl.name.is_bare_named("use") {
-                validate_use_decl(sem_decl)?;
+                let sem_decl = SemDeclaration::from_ast(ast_decl)
+                    .ok_or_else(|| anyhow!("malformed `::use` declaration"))?;
+                validate_use_decl(&sem_decl)?;
                 if has_use {
                     bail!("`::use(catasto)` is declared twice");
                 }
                 has_use = true;
             } else if ast_decl.name.is_bare_named("upstream") {
                 upstream_decls.push(ast_decl);
+            } else if ast_decl.name.is_bare_named("zone") {
+                zone_decls.push(ast_decl);
             } else {
                 bail!(
-                    "unknown declaration `::{}`; catasto reads `::use` and `::upstream`",
+                    "unknown declaration `::{}`; catasto reads `::use`, `::upstream`, and `::zone`",
                     ast_decl.name
                 );
             }
@@ -104,9 +111,12 @@ impl Header {
             }
         }
 
+        let zones = parse_zone_decls(&zone_decls)?;
+
         Ok(Self {
             has_use,
             upstreams: Upstreams { named },
+            zones,
         })
     }
 }

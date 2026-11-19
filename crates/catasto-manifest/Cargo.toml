@@ -12,11 +12,14 @@ cotomet           = { workspace = true }
 tomet-ast         = { workspace = true }
 tomet-ast-parser  = { workspace = true }
 tomet-declaration = { workspace = true }
+tomet-hole        = { workspace = true }
 tomet-scalar      = { workspace = true }
 tomet-semantics   = { workspace = true }
 tomet-spec        = { workspace = true }
 tomet-type        = { workspace = true }
-#--- Crates.io ---
+# ---
+hole-engine       = { workspace = true }
+# --- Crates.io ---
 serde      = { workspace = true }
 serde_json = { workspace = true }
 anyhow     = { workspace = true }

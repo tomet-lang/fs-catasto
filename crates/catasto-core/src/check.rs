@@ -10,8 +10,8 @@ use crate::lockfile::Lock;
 use crate::manifest::{Managed, ManagedKind, Manifest, Repo, Source, Symlink};
 use catasto_digest::{sha256_file, sha256_link};
 
-/// How a managed entry has drifted.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// How a managed entry or directory zone has drifted or failed validation.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ViolationKind {
     /// The file or repository differs from what was locked or declared.
     Modified,
@@ -23,34 +23,67 @@ pub enum ViolationKind {
     Unlocked,
     /// Locked, but no longer declared.
     Orphaned,
+    /// A directory matching a `::zone(...)` target is missing a `require` pattern.
+    ZoneMissingRequired { zone: String, pattern: String },
+    /// An entry in a `::zone(...)` directory did not match any `allow` pattern.
+    ZoneDisallowed { zone: String },
+    /// An entry in a `::zone(...)` directory matched a `deny` pattern.
+    ZoneDenied { zone: String, pattern: String },
 }
 
 impl ViolationKind {
-    /// The one word for it, as `catasto list` shows it.
-    pub fn label(self) -> &'static str {
+    /// The one word for it, as `catasto list` and `catasto check --json` show it.
+    pub fn label(&self) -> &'static str {
         match self {
             Self::Modified => "modified",
             Self::Missing => "missing",
             Self::Stale => "stale",
             Self::Unlocked => "unlocked",
             Self::Orphaned => "orphaned",
+            Self::ZoneMissingRequired { .. } => "zone-require",
+            Self::ZoneDisallowed { .. } => "zone-allow",
+            Self::ZoneDenied { .. } => "zone-deny",
         }
+    }
+
+    /// Returns `true` if this violation originates from a `::zone(...)` rule.
+    pub fn is_zone(&self) -> bool {
+        matches!(
+            self,
+            Self::ZoneMissingRequired { .. }
+                | Self::ZoneDisallowed { .. }
+                | Self::ZoneDenied { .. }
+        )
     }
 }
 
 impl fmt::Display for ViolationKind {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Modified => {
-                "modified: differs from the locked sha256 (`catasto sync` restores it; `catasto lock` keeps it, for a local source)"
+        match self {
+            Self::Modified => f.write_str(
+                "modified: differs from the locked sha256 (`catasto sync` restores it; `catasto lock` keeps it, for a local source)",
+            ),
+            Self::Missing => {
+                f.write_str("missing: managed file does not exist (run `catasto sync`)")
             }
-            Self::Missing => "missing: managed file does not exist (run `catasto sync`)",
-            Self::Stale => "stale: source has changed since it was locked (run `catasto sync`)",
-            Self::Unlocked => "unlocked: not in catasto.lock (run `catasto sync`)",
-            Self::Orphaned => {
-                "orphaned: in catasto.lock but not declared in catasto.ctmt (run `catasto sync`)"
+            Self::Stale => {
+                f.write_str("stale: source has changed since it was locked (run `catasto sync`)")
             }
-        })
+            Self::Unlocked => f.write_str("unlocked: not in catasto.lock (run `catasto sync`)"),
+            Self::Orphaned => f.write_str(
+                "orphaned: in catasto.lock but not declared in catasto.ctmt (run `catasto sync`)",
+            ),
+            Self::ZoneMissingRequired { zone, pattern } => write!(
+                f,
+                "zone `{zone}`: missing required entry matching `{pattern}`"
+            ),
+            Self::ZoneDisallowed { zone } => {
+                write!(f, "zone `{zone}`: entry is not allowed by `allow` patterns")
+            }
+            Self::ZoneDenied { zone, pattern } => {
+                write!(f, "zone `{zone}`: entry matches denied pattern `{pattern}`")
+            }
+        }
     }
 }
 
@@ -155,6 +188,8 @@ pub fn check(root: &Path) -> Result<CheckReport> {
             kind,
         });
     }
+
+    violations.extend(zone::check_zones(root, &manifest.zones)?);
 
     Ok(CheckReport {
         root: root.to_path_buf(),
@@ -270,3 +305,4 @@ fn check_repo(root: &Path, lock: &Lock, path: &Path, repo: &Repo) -> Result<Vec<
 
 #[cfg(test)]
 mod tests;
+mod zone;

@@ -441,3 +441,495 @@ fn check_repo_detects_unlocked_missing_and_modified_remote() {
     let rep = check(&vault).unwrap();
     assert!(rep.is_ok(), "{:?}", rep.violations);
 }
+
+#[test]
+fn zone_clean_workspace_skips_git_and_respects_ignore() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::use(catasto, version: \"1.0.0\")
+::zone(
+  \".\": (
+    require: (\"Cargo.toml\")
+    allow: (\"catasto.ctmt\", \"Cargo.toml\", \"crates\", \"target\")
+    ignore: (\"target\")
+  )
+  \"crates/<?kebab(crate)>/src\": (
+    require: (\"lib.rs\")
+    allow: (\"<?snake>.rs\", \"mod.rs\")
+    deny: (\"<?>.bak\")
+    ignore: (\"generated\")
+  )
+)
+",
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(root.join(".git/objects")).unwrap();
+    std::fs::write(root.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
+    std::fs::create_dir_all(root.join("target/debug")).unwrap();
+    std::fs::write(root.join("target/debug/bad.bak"), "ignored").unwrap();
+
+    let src = root.join("crates/my-crate/src");
+    std::fs::create_dir_all(src.join("generated")).unwrap();
+    std::fs::write(src.join("lib.rs"), "").unwrap();
+    std::fs::write(src.join("mod.rs"), "").unwrap();
+    std::fs::write(src.join("helper_fn.rs"), "").unwrap();
+    std::fs::write(src.join("generated/NotSnake.bak"), "ignored").unwrap();
+
+    // Non-kebab crate directory is not matched by the zone target pattern.
+    let non_kebab_src = root.join("crates/not_kebab/src");
+    std::fs::create_dir_all(&non_kebab_src).unwrap();
+    std::fs::write(non_kebab_src.join("Anything.bak"), "ignored").unwrap();
+
+    let rep = check(root).unwrap();
+    assert!(rep.is_ok(), "unexpected violations: {:?}", rep.violations);
+}
+
+#[test]
+fn zone_detects_require_allow_and_deny_violations() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::zone(
+  \".\": (
+    require: (\"README.md\")
+  )
+  \"crates/<?kebab(crate)>/src\": (
+    require: (\"lib.rs\")
+    allow: (\"<?snake>.rs\", \"mod.rs\")
+    deny: (\"<?>.bak\")
+    ignore: (\"generated\")
+  )
+)
+",
+    )
+    .unwrap();
+
+    let src = root.join("crates/alpha-pkg/src");
+    std::fs::create_dir_all(&src).unwrap();
+    std::fs::write(src.join("BadName.rs"), "").unwrap();
+    std::fs::write(src.join("old.bak"), "").unwrap();
+
+    let rep = check(root).unwrap();
+    assert!(!rep.is_ok());
+
+    assert_eq!(
+        rep.violations,
+        vec![
+            Violation {
+                path: PathBuf::from("."),
+                kind: ViolationKind::ZoneMissingRequired {
+                    zone: ".".into(),
+                    pattern: "README.md".into(),
+                },
+            },
+            Violation {
+                path: PathBuf::from("crates/alpha-pkg/src"),
+                kind: ViolationKind::ZoneMissingRequired {
+                    zone: "crates/<?kebab(crate)>/src".into(),
+                    pattern: "lib.rs".into(),
+                },
+            },
+            Violation {
+                path: PathBuf::from("crates/alpha-pkg/src/BadName.rs"),
+                kind: ViolationKind::ZoneDisallowed {
+                    zone: "crates/<?kebab(crate)>/src".into(),
+                },
+            },
+            Violation {
+                path: PathBuf::from("crates/alpha-pkg/src/old.bak"),
+                kind: ViolationKind::ZoneDisallowed {
+                    zone: "crates/<?kebab(crate)>/src".into(),
+                },
+            },
+            Violation {
+                path: PathBuf::from("crates/alpha-pkg/src/old.bak"),
+                kind: ViolationKind::ZoneDenied {
+                    zone: "crates/<?kebab(crate)>/src".into(),
+                    pattern: "<?>.bak".into(),
+                },
+            },
+        ]
+    );
+}
+
+#[test]
+fn zone_empty_allow_and_ignored_required_entry() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::zone(
+  \"empty\": (allow: (), ignore: (\".keep\"))
+  \"req\": (require: (\"must.txt\"), ignore: (\"must.txt\"))
+)
+",
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(root.join("empty")).unwrap();
+    std::fs::write(root.join("empty/.keep"), "").unwrap();
+    std::fs::write(root.join("empty/stray.txt"), "").unwrap();
+
+    std::fs::create_dir_all(root.join("req")).unwrap();
+    // Ignored entry does not satisfy `require`.
+    std::fs::write(root.join("req/must.txt"), "").unwrap();
+
+    let rep = check(root).unwrap();
+    assert_eq!(
+        rep.violations,
+        vec![
+            Violation {
+                path: PathBuf::from("empty/stray.txt"),
+                kind: ViolationKind::ZoneDisallowed {
+                    zone: "empty".into(),
+                },
+            },
+            Violation {
+                path: PathBuf::from("req"),
+                kind: ViolationKind::ZoneMissingRequired {
+                    zone: "req".into(),
+                    pattern: "must.txt".into(),
+                },
+            },
+        ]
+    );
+
+    std::fs::remove_file(root.join("empty/stray.txt")).unwrap();
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "::zone(\"empty\": (allow: (), ignore: (\".keep\")))\n",
+    )
+    .unwrap();
+    assert!(check(root).unwrap().is_ok());
+}
+
+#[test]
+fn zone_multiple_matching_zones_and_zero_matching_dirs() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::zone(
+  \"crates/<?kebab>/src\": (require: \"lib.rs\")
+  \"crates/foo/src\": (deny: \"secret.txt\")
+  \"nonexistent/<?kebab>\": (require: \"README.md\")
+)
+",
+    )
+    .unwrap();
+
+    let foo_src = root.join("crates/foo/src");
+    std::fs::create_dir_all(&foo_src).unwrap();
+    std::fs::write(foo_src.join("lib.rs"), "").unwrap();
+    std::fs::write(foo_src.join("secret.txt"), "").unwrap();
+
+    let rep = check(root).unwrap();
+    assert_eq!(
+        rep.violations,
+        vec![Violation {
+            path: PathBuf::from("crates/foo/src/secret.txt"),
+            kind: ViolationKind::ZoneDenied {
+                zone: "crates/foo/src".into(),
+                pattern: "secret.txt".into(),
+            },
+        }]
+    );
+}
+
+#[test]
+#[cfg(unix)]
+fn zone_does_not_recurse_into_symlinked_directories() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let external = tempfile::tempdir().unwrap();
+    std::fs::write(external.path().join("bad.bak"), "").unwrap();
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "::zone(\"sub/<?seg>\": (deny: \"<?>.bak\"))\n",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("sub")).unwrap();
+    std::os::unix::fs::symlink(external.path(), root.join("sub/link")).unwrap();
+
+    let rep = check(root).unwrap();
+    assert!(rep.is_ok(), "{:?}", rep.violations);
+}
+
+#[test]
+fn zone_violations_do_not_corrupt_managed_list_status() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(vault.join("notes")).unwrap();
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("a.txt"), "hello").unwrap();
+    std::fs::write(vault.join("notes/a.txt"), "hello").unwrap();
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        "\
+::use(catasto, version: \"1.0.0\")
+::zone(\"notes\": (deny: \"a.txt\"))
+
+\"notes/a.txt\": catasto.local(\"../src/a.txt\")
+",
+    )
+    .unwrap();
+    lock(&vault).unwrap();
+
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert!(rep.violations[0].kind.is_zone());
+
+    let rows = crate::manage::list(&vault).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].state, None);
+}
+
+#[test]
+fn zone_recursive_propagates_without_double_evaluation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::zone(
+  \"nix\": (
+    recursive: true
+    files: (allow: (\"<?kebab>.nix\"))
+    dirs: (allow: (\"<?kebab>\"))
+  )
+  \"flat\": (
+    files: (allow: (\"<?kebab>.txt\"))
+  )
+  \"multi/<?tree>\": (
+    recursive: true
+    deny: (\"<?>.tmp\")
+  )
+)
+",
+    )
+    .unwrap();
+
+    // Valid nested recursive tree + invalid entries in nested subdir
+    std::fs::create_dir_all(root.join("nix/pkgs/sub")).unwrap();
+    std::fs::write(root.join("nix/default.nix"), "").unwrap();
+    std::fs::write(root.join("nix/pkgs/catasto.nix"), "").unwrap();
+    std::fs::write(root.join("nix/pkgs/sub/BadFile.nix"), "").unwrap();
+
+    // Non-recursive zone does not propagate into `flat/nested`
+    std::fs::create_dir_all(root.join("flat/nested")).unwrap();
+    std::fs::write(root.join("flat/ok.txt"), "").unwrap();
+    std::fs::write(root.join("flat/nested/BadName.bin"), "").unwrap();
+
+    // Both inherited and target-matched on `multi/a/b`: evaluated only once
+    std::fs::create_dir_all(root.join("multi/a/b")).unwrap();
+    std::fs::write(root.join("multi/a/b/scratch.tmp"), "").unwrap();
+
+    let rep = check(root).unwrap();
+    assert_eq!(
+        rep.violations,
+        vec![
+            Violation {
+                path: PathBuf::from("multi/a/b/scratch.tmp"),
+                kind: ViolationKind::ZoneDenied {
+                    zone: "multi/<?tree>".into(),
+                    pattern: "<?>.tmp".into(),
+                },
+            },
+            Violation {
+                path: PathBuf::from("nix/pkgs/sub/BadFile.nix"),
+                kind: ViolationKind::ZoneDisallowed { zone: "nix".into() },
+            },
+        ]
+    );
+}
+
+#[test]
+fn zone_files_and_dirs_apply_by_entry_kind() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::zone(
+  \"docs\": (
+    deny: (\"secret\")
+    files: (
+      require: (\"index.md\")
+      allow: (\"<?kebab>.md\")
+      deny: (\"draft.md\")
+    )
+    dirs: (
+      require: (\"assets\")
+      allow: (\"<?snake>\")
+      deny: (\"tmp_dir\")
+    )
+  )
+)
+",
+    )
+    .unwrap();
+
+    let docs = root.join("docs");
+    // A directory named `index.md` does NOT satisfy `files.require`, and a file named `assets`
+    // does NOT satisfy `dirs.require`.
+    std::fs::create_dir_all(docs.join("index.md")).unwrap();
+    std::fs::create_dir_all(docs.join("tmp_dir")).unwrap();
+    std::fs::create_dir_all(docs.join("BadDir")).unwrap();
+    std::fs::write(docs.join("assets"), "").unwrap();
+    std::fs::write(docs.join("draft.md"), "").unwrap();
+    std::fs::write(docs.join("secret"), "").unwrap();
+
+    let rep = check(root).unwrap();
+    assert_eq!(
+        rep.violations,
+        vec![
+            // Top-level deny hits `secret`
+            Violation {
+                path: PathBuf::from("docs/secret"),
+                kind: ViolationKind::ZoneDenied {
+                    zone: "docs".into(),
+                    pattern: "secret".into(),
+                },
+            },
+            // `files.require` not satisfied by dir `index.md`
+            Violation {
+                path: PathBuf::from("docs"),
+                kind: ViolationKind::ZoneMissingRequired {
+                    zone: "docs".into(),
+                    pattern: "index.md".into(),
+                },
+            },
+            // `files.allow` rejects `assets`, `secret`
+            Violation {
+                path: PathBuf::from("docs/assets"),
+                kind: ViolationKind::ZoneDisallowed {
+                    zone: "docs".into(),
+                },
+            },
+            Violation {
+                path: PathBuf::from("docs/secret"),
+                kind: ViolationKind::ZoneDisallowed {
+                    zone: "docs".into(),
+                },
+            },
+            // `files.deny` rejects `draft.md`
+            Violation {
+                path: PathBuf::from("docs/draft.md"),
+                kind: ViolationKind::ZoneDenied {
+                    zone: "docs".into(),
+                    pattern: "draft.md".into(),
+                },
+            },
+            // `dirs.require` not satisfied by file `assets`
+            Violation {
+                path: PathBuf::from("docs"),
+                kind: ViolationKind::ZoneMissingRequired {
+                    zone: "docs".into(),
+                    pattern: "assets".into(),
+                },
+            },
+            // `dirs.allow` rejects `BadDir`, `index.md`
+            Violation {
+                path: PathBuf::from("docs/BadDir"),
+                kind: ViolationKind::ZoneDisallowed {
+                    zone: "docs".into(),
+                },
+            },
+            Violation {
+                path: PathBuf::from("docs/index.md"),
+                kind: ViolationKind::ZoneDisallowed {
+                    zone: "docs".into(),
+                },
+            },
+            // `dirs.deny` rejects `tmp_dir`
+            Violation {
+                path: PathBuf::from("docs/tmp_dir"),
+                kind: ViolationKind::ZoneDenied {
+                    zone: "docs".into(),
+                    pattern: "tmp_dir".into(),
+                },
+            },
+        ]
+    );
+}
+
+#[test]
+fn zone_ignore_stops_recursive_inheritance_per_zone() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::zone(
+  \"solo\": (
+    recursive: true
+    allow: (\"<?kebab>.txt\", \"ok\")
+    ignore: (\"vendor\")
+  )
+  \"shared\": (
+    recursive: true
+    files: (allow: (\"<?kebab>.txt\"))
+    ignore: (\"vendor\")
+  )
+  \"shared/ok\": (
+    dirs: (allow: (\"vendor\"))
+  )
+  \"shared/ok/vendor\": (
+    files: (allow: (\"<?snake>.bin\"))
+  )
+)
+",
+    )
+    .unwrap();
+
+    // `solo/vendor` and its descendants are completely skipped by `solo`
+    std::fs::create_dir_all(root.join("solo/vendor/deep")).unwrap();
+    std::fs::write(root.join("solo/vendor/Bad.bin"), "").unwrap();
+    std::fs::write(root.join("solo/vendor/deep/Bad.bin"), "").unwrap();
+    std::fs::create_dir_all(root.join("solo/ok")).unwrap();
+    std::fs::write(root.join("solo/ok/valid.txt"), "").unwrap();
+
+    // `shared/vendor` is ignored by `shared` (the only active zone on `shared`), so traversal
+    // skips `shared/vendor` altogether.
+    std::fs::create_dir_all(root.join("shared/vendor")).unwrap();
+    std::fs::write(root.join("shared/vendor/ANYTHING.bin"), "").unwrap();
+
+    // At `shared/ok`, both `shared` (inherited, ignores `vendor`) and `shared/ok` (does not ignore
+    // `vendor`) are active. Descending into `shared/ok/vendor` must NOT inherit `shared`, while
+    // still evaluating the `shared/ok/vendor` zone itself.
+    std::fs::create_dir_all(root.join("shared/ok/vendor")).unwrap();
+    std::fs::write(root.join("shared/ok/vendor/good_data.bin"), "").unwrap();
+
+    let rep = check(root).unwrap();
+    assert!(rep.is_ok(), "unexpected violations: {:?}", rep.violations);
+
+    std::fs::write(root.join("shared/ok/vendor/Bad.bin"), "").unwrap();
+    let rep = check(root).unwrap();
+    assert_eq!(
+        rep.violations,
+        vec![Violation {
+            path: PathBuf::from("shared/ok/vendor/Bad.bin"),
+            kind: ViolationKind::ZoneDisallowed {
+                zone: "shared/ok/vendor".into(),
+            },
+        }]
+    );
+}

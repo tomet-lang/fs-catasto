@@ -3,6 +3,25 @@
   vocabularies: catasto.git("https://github.com/tomet-lang/vocabularies.git", rev: main, root: vocabularies)
   commonfiles:  catasto.git("https://github.com/tomet-lang/commonfiles.git", rev: main, root: base)
 )
+::zone(
+  // --- Tomet ---
+  "tmtroot/schema/blueprints": (allow: ("<?kebab>.blueprint.tmt"))
+  "tmtroot/dev/dropped": (allow: ("<?int>-<?kebab>.adr.tmt"))
+  // --- Crates ---
+  "crates/<?kebab>": (
+    require: ("Cargo.toml", "src")
+    allow:   ("Cargo.toml", "src")
+  )
+  "crates/<?kebab>/src": (
+    files: (allow: ("<?snake>.rs"))
+    dirs: (allow: ("<?snake>"))
+  )
+  // --- Nix ---
+  "nix": (
+    recursive: true
+    files: (allow: ("<?kebab>.nix"))
+    dirs: (allow: ("<?kebab>"))
+))
 
 // --- Vocabularies ---
 "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": catasto.upstream(vocabularies, path: "rust/rust@1.0.0.vocabulary.tmt")

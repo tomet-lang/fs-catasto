@@ -12,13 +12,16 @@ use tomet_scalar::Scalar;
 use tomet_semantics::Constructed;
 
 use super::upstream::Header;
+use super::zone::Zone;
 use super::{MANIFEST_FILE, is_inside_workspace, reject_misnamed, vocabulary};
 
-/// The set of files catasto manages in a workspace.
+/// The set of files and directory zones catasto manages in a workspace.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Manifest {
     /// Declared files, in the order they were written.
     pub managed: Vec<Managed>,
+    /// Declared directory zone rules (`::zone(...)`), in the order they were written.
+    pub zones: Vec<Zone>,
 }
 
 /// A Git repository cloned as a directory or submodule in the workspace.
@@ -576,7 +579,10 @@ impl Manifest {
             });
         }
 
-        let manifest = Self { managed };
+        let manifest = Self {
+            managed,
+            zones: header.zones,
+        };
         manifest.validate()?;
         Ok(manifest)
     }

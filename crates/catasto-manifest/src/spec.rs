@@ -51,9 +51,50 @@ pub struct ManifestEntrySpec {
     pub executable: Option<bool>,
 }
 
+/// Directory schema rules declared in `::zone(...)`.
+///
+/// A zone maps a workspace-relative directory path pattern (using `<?...>` holes, or `"."` for
+/// the workspace root) to constraints on child entries of each matching directory (and, when
+/// `recursive: true`, its non-ignored subdirectories).
+#[derive(Debug, Clone, Default, PartialEq, Config)]
+#[config(group = "zone")]
+pub struct ZoneSpec {
+    /// Entry patterns that must each be matched by at least one non-ignored child entry.
+    #[config(key = "require", type = "pattern | (pattern, ...)")]
+    pub require: Vec<String>,
+
+    /// Entry patterns forming an allowlist; when present, every non-ignored child entry must match at least one.
+    #[config(key = "allow", type = "pattern | (pattern, ...)")]
+    pub allow: Vec<String>,
+
+    /// Entry patterns that no non-ignored child entry may match.
+    #[config(key = "deny", type = "pattern | (pattern, ...)")]
+    pub deny: Vec<String>,
+
+    /// Entry patterns excluded from `require`, `allow`, `deny`, and recursive traversal.
+    #[config(key = "ignore", type = "pattern | (pattern, ...)")]
+    pub ignore: Vec<String>,
+
+    /// Whether this zone recursively applies to non-ignored subdirectories.
+    #[config(key = "recursive", default = "false", type = "boolean")]
+    pub recursive: bool,
+
+    /// Nested constraints (`require`, `allow`, `deny`) applied only to non-directory entries.
+    #[config(key = "files", type = "(require: ..., allow: ..., deny: ...)")]
+    pub files: Option<String>,
+
+    /// Nested constraints (`require`, `allow`, `deny`) applied only to directory entries.
+    #[config(key = "dirs", type = "(require: ..., allow: ..., deny: ...)")]
+    pub dirs: Option<String>,
+}
+
 /// Returns all configuration and declaration specification groups for `catasto.ctmt`.
 pub fn all_manifest_specs() -> Vec<ConfigGroupSpec> {
-    vec![UpstreamSpec::spec(), ManifestEntrySpec::spec()]
+    vec![
+        UpstreamSpec::spec(),
+        ZoneSpec::spec(),
+        ManifestEntrySpec::spec(),
+    ]
 }
 
 #[cfg(test)]
@@ -64,9 +105,10 @@ mod tests {
     #[test]
     fn manifest_specs_render_valid_tmt() {
         let specs = all_manifest_specs();
-        assert_eq!(specs.len(), 2);
+        assert_eq!(specs.len(), 3);
         assert_eq!(specs[0].name, "upstream");
-        assert_eq!(specs[1].name, "entry");
+        assert_eq!(specs[1].name, "zone");
+        assert_eq!(specs[2].name, "entry");
 
         let rendered = tomet_spec::config::render(
             &specs,
@@ -77,8 +119,13 @@ mod tests {
         );
 
         assert!(rendered.contains("==[ upstream ]") || rendered.contains("==[upstream]"));
+        assert!(rendered.contains("==[ zone ]") || rendered.contains("==[zone]"));
         assert!(rendered.contains("==[ entry ]") || rendered.contains("==[entry]"));
         assert!(rendered.contains("`url`"));
+        assert!(rendered.contains("`require`"));
+        assert!(rendered.contains("`recursive`"));
+        assert!(rendered.contains("`files`"));
+        assert!(rendered.contains("`dirs`"));
         assert!(rendered.contains("`source`"));
         assert!(rendered.contains("`executable`"));
     }

@@ -39,10 +39,12 @@ mod tests;
 mod types;
 mod upstream;
 pub mod url;
+mod zone;
 
 pub use types::{Managed, ManagedKind, Manifest, Repo, Source, Symlink};
 pub use upstream::{UpstreamInfo, upstreams_of};
 pub use url::{UrlKind, classify};
+pub use zone::{EntryRules, Zone, ZonePattern};
 
 /// File name of the manifest, relative to the workspace root.
 pub const MANIFEST_FILE: &str = "catasto.ctmt";
