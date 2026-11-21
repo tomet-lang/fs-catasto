@@ -1,5 +1,5 @@
 ::kind(vocabulary)
-::vocabulary(writ, version: "1.0.0")
+::vocabulary(writ, version: "0.1.0")
 ::element(
   rule: (
     display: block

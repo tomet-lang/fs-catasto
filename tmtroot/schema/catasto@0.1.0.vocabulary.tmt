@@ -1,5 +1,5 @@
 ::kind(vocabulary)
-::vocabulary(catasto, version: "1.0.0")
+::vocabulary(catasto, version: "0.1.0")
 ::attribute(
   upstream: (
     about: | Git repositories, each named once (`name: catasto.git(url, rev: main, path: dir)`), that entries take files or directories from with `catasto.upstream(name, path: ...)`.

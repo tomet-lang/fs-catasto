@@ -8,6 +8,9 @@ description            = "Manifest syntax, schema models, and AST/CST editing fo
 publish                = false
 
 [dependencies]
+# ---
+hole-engine = { workspace = true }
+# --- Tomet ---
 cotomet           = { workspace = true }
 tomet-ast         = { workspace = true }
 tomet-ast-parser  = { workspace = true }
@@ -17,8 +20,6 @@ tomet-scalar      = { workspace = true }
 tomet-semantics   = { workspace = true }
 tomet-spec        = { workspace = true }
 tomet-type        = { workspace = true }
-# ---
-hole-engine = { workspace = true }
 # --- Crates.io ---
 anyhow     = { workspace = true }
 serde      = { workspace = true }

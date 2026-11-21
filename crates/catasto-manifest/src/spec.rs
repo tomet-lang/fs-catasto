@@ -110,7 +110,7 @@ pub fn all_manifest_specs() -> Vec<ConfigGroupSpec> {
     ]
 }
 
-/// Returns the cotomet blueprint schema (`catasto@1.0.0.blueprint.ctmt`) for `catasto.ctmt`.
+/// Returns the cotomet blueprint schema (`catasto@0.1.0.blueprint.ctmt`) for `catasto.ctmt`.
 ///
 /// Reflects the exact header attributes (`::upstream`, `::zone`) and body entry shapes
 /// accepted by [`crate::Manifest::parse`]:
@@ -257,7 +257,7 @@ mod tests {
         );
 
         let valid_tuple = tomet_ast_parser::parse_data_file(
-            r#"::kind(catasto, version: "1.0.0")
+            r#"::kind(catasto, version: "0.1.0")
 "a": (catasto.git("https://example.com/a.git"), symlink: keep)
 "b": (catasto.git("https://example.com/b.git"), submodule: true)
 "#,
@@ -274,7 +274,7 @@ mod tests {
         );
 
         let invalid_symlink = tomet_ast_parser::parse_data_file(
-            r#"::kind(catasto, version: "1.0.0")
+            r#"::kind(catasto, version: "0.1.0")
 "a": (catasto.git("https://example.com/a.git"), symlink: invalid)
 "#,
         )

@@ -34,7 +34,7 @@ const SKELETON: &str = "\
 //
 // which leaves, below this comment,
 //
-//   ::kind(catasto, version: \"1.0.0\")
+//   ::kind(catasto, version: \"0.1.0\")
 //   ::upstream(
 //     shared: catasto.git(\"https://example.com/shared.git\", rev: main)
 //   )

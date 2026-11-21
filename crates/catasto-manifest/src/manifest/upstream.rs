@@ -73,7 +73,7 @@ impl Header {
                 has_kind = true;
             } else if ast_decl.name.is_bare_named("use") {
                 bail!(
-                    "a manifest is a catasto document: write `::kind(catasto, version: \"1.0.0\")`, not `::use`"
+                    "a manifest is a catasto document: write `::kind(catasto, version: \"0.1.0\")`, not `::use`"
                 );
             } else {
                 match catasto_attribute(&ast_decl.name) {
@@ -111,7 +111,7 @@ impl Header {
             }
             if !args.is_empty() && !has_kind {
                 bail!(
-                    "`catasto` constructors require `::kind(catasto, version: \"1.0.0\")` at the top of the manifest"
+                    "`catasto` constructors require `::kind(catasto, version: \"0.1.0\")` at the top of the manifest"
                 );
             }
             for (name, value) in args.named() {
@@ -161,13 +161,13 @@ fn attribute_list() -> String {
 
 fn validate_kind_decl(sem_decl: &SemDeclaration) -> Result<()> {
     let Some(view) = sem_decl.args_view() else {
-        bail!("`::kind` requires a name, e.g. `::kind(catasto, version: \"1.0.0\")`");
+        bail!("`::kind` requires a name, e.g. `::kind(catasto, version: \"0.1.0\")`");
     };
     let Some(kind_val) = view.get("kind") else {
-        bail!("`::kind` requires a name, e.g. `::kind(catasto, version: \"1.0.0\")`");
+        bail!("`::kind` requires a name, e.g. `::kind(catasto, version: \"0.1.0\")`");
     };
     let Some(Scalar::Text(kind)) = kind_val.as_scalar() else {
-        bail!("`::kind` name must be a string, e.g. `::kind(catasto, version: \"1.0.0\")`");
+        bail!("`::kind` name must be a string, e.g. `::kind(catasto, version: \"0.1.0\")`");
     };
     if kind != "catasto" {
         bail!("a manifest is of kind `catasto`, not `{kind}`: write `::kind(catasto, ...)`");
@@ -179,13 +179,13 @@ fn validate_kind_decl(sem_decl: &SemDeclaration) -> Result<()> {
             .ok_or_else(|| anyhow!("`::kind(catasto)` version must be a version string"))?;
         let version = Version::parse(version_text.trim())
             .ok_or_else(|| anyhow!("invalid `::kind(catasto)` version `{version_text}`"))?;
-        if version.major() != 1
-            || version.minor() != 0
+        if version.major() != 0
+            || version.minor() != 1
             || version.patch() != 0
             || version.is_prerelease()
         {
             bail!(
-                "unsupported catasto vocabulary version `{version_text}`; this catasto supports `1.0.0`"
+                "unsupported catasto vocabulary version `{version_text}`; this catasto supports `0.1.0`"
             );
         }
     }

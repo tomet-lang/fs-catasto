@@ -113,13 +113,13 @@ The format version this catasto reads and writes.
 
 The hand-written `catasto.ctmt` declaration.
 
-A manifest is a catasto document: it declares `::kind(catasto, version: "1.0.0")`,
+A manifest is a catasto document: it declares `::kind(catasto, version: "0.1.0")`,
 then the attributes of the `catasto` vocabulary it needs (shared Git repositories in
 `::upstream(...)`, directory rules in `::zone(...)`), and maps workspace-relative paths
 to constructor calls from the same vocabulary:
 
 ```text
-`` ::kind(catasto, version: "1.0.0")
+`` ::kind(catasto, version: "0.1.0")
 `` ::upstream(
 ``   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, path: vocabularies)
 `` )
@@ -166,7 +166,7 @@ Classifies a `git` value from `catasto.ctmt`.
 
 ====[fn vocabulary]
 
-Returns the parsed canonical `catasto@1.0.0` vocabulary.
+Returns the parsed canonical `catasto@0.1.0` vocabulary.
 
 ====[fn reject_misnamed]
 
@@ -190,7 +190,7 @@ File name of the manifest, relative to the workspace root.
 
 ====[const VOCABULARY_TMT]
 
-Canonical `catasto@1.0.0` vocabulary source.
+Canonical `catasto@0.1.0` vocabulary source.
 
 ==[Module spec]
 
@@ -233,7 +233,7 @@ Returns all configuration and declaration specification groups for `catasto.ctmt
 
 ====[fn blueprint_spec]
 
-Returns the cotomet blueprint schema (`catasto@1.0.0.blueprint.ctmt`) for `catasto.ctmt`.
+Returns the cotomet blueprint schema (`catasto@0.1.0.blueprint.ctmt`) for `catasto.ctmt`.
 
 Reflects the exact header attributes (`::upstream`, `::zone`) and body entry shapes
 accepted by \[`crate::Manifest::parse`\]:

@@ -22,7 +22,7 @@ pub enum SpecTarget {
     /// Alias for manifest specification.
     #[value(alias = "config")]
     Config,
-    /// Cotomet blueprint schema (`catasto@1.0.0.blueprint.ctmt`) derived from catasto-manifest.
+    /// Cotomet blueprint schema (`catasto@0.1.0.blueprint.ctmt`) derived from catasto-manifest.
     Blueprint,
 }
 
@@ -49,7 +49,7 @@ pub fn spec_cmd(
         ),
         SpecTarget::Blueprint => (
             blueprint::render(&config_for_output(out)),
-            "catasto@1.0.0.blueprint.ctmt",
+            "catasto@0.1.0.blueprint.ctmt",
             "blueprint",
         ),
     };

@@ -103,7 +103,7 @@ mod tests {
     use super::*;
     use catasto_manifest::LockedSubmodule;
 
-    const USE: &str = "::kind(catasto, version: \"1.0.0\")\n\n";
+    const USE: &str = "::kind(catasto, version: \"0.1.0\")\n\n";
 
     #[test]
     fn renders_gitmodules_for_submodule_entries() {

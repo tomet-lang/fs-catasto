@@ -4,8 +4,8 @@ use tomet_semantics::{Vocabulary, entry_problems_in};
 
 use super::*;
 
-const KIND: &str = "::kind(catasto, version: \"1.0.0\")\n";
-const VOCABULARIES: &str = "::kind(catasto, version: \"1.0.0\")\n\
+const KIND: &str = "::kind(catasto, version: \"0.1.0\")\n";
+const VOCABULARIES: &str = "::kind(catasto, version: \"0.1.0\")\n\
      ::upstream(\n  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main)\n)\n";
 
 fn path_source(path: &str) -> Source {
@@ -107,14 +107,12 @@ fn a_manifest_with_only_comments_or_kind_is_empty() {
 fn kind_declaration_supports_compatible_version_forms() {
     for decl in [
         "::kind(catasto)",
-        "::kind(catasto, version: \"1.0.0\")",
-        "::kind(catasto, \"1.0.0\")",
-        "::kind(catasto, 1.0.0)",
-        "::kind(catasto, version: \"1.0\")",
-        "::kind(catasto, version: 1.0)",
-        "::kind(catasto, version: \"1\")",
-        "::kind(catasto, version: 1)",
-        "::kind(catasto, 1)",
+        "::kind(catasto, version: \"0.1.0\")",
+        "::kind(catasto, \"0.1.0\")",
+        "::kind(catasto, 0.1.0)",
+        "::kind(catasto, version: \"0.1\")",
+        "::kind(catasto, version: 0.1)",
+        "::kind(catasto, 0.1)",
     ] {
         let text = format!("{decl}\n\"a.tmt\": catasto.local(\"s\")\n");
         assert!(Manifest::parse(&text).is_ok(), "failed for {decl}");
@@ -124,11 +122,14 @@ fn kind_declaration_supports_compatible_version_forms() {
 #[test]
 fn kind_declaration_rejects_incompatible_versions_and_other_kinds() {
     for bad in [
+        "::kind(catasto, version: \"1.0.0\")",
         "::kind(catasto, version: \"2.0.0\")",
-        "::kind(catasto, version: \"0.9.0\")",
-        "::kind(catasto, version: \"1.1.0\")",
-        "::kind(catasto, version: \"1.0.1\")",
-        "::kind(catasto, version: \"1.0.0-alpha\")",
+        "::kind(catasto, version: \"0.2.0\")",
+        "::kind(catasto, version: \"0.0.1\")",
+        "::kind(catasto, version: \"0.1.1\")",
+        "::kind(catasto, version: \"0.1.0-alpha\")",
+        "::kind(catasto, version: \"0\")",
+        "::kind(catasto, version: \"1\")",
         "::kind(catasto, version: bad)",
         "::kind(other)",
         "::kind()",
@@ -153,10 +154,10 @@ fn constructors_require_kind_catasto_in_header() {
 
 #[test]
 fn use_catasto_is_refused_with_the_kind_to_write() {
-    let err = Manifest::parse("::use(catasto, version: \"1.0.0\")\n").unwrap_err();
+    let err = Manifest::parse("::use(catasto, version: \"0.1.0\")\n").unwrap_err();
     assert!(
         err.to_string()
-            .contains("write `::kind(catasto, version: \"1.0.0\")`"),
+            .contains("write `::kind(catasto, version: \"0.1.0\")`"),
         "{err}"
     );
 }
@@ -168,7 +169,7 @@ fn an_attribute_reads_the_same_with_its_namespace() {
     ))
     .unwrap();
     let qualified = Manifest::parse(
-        "::kind(catasto, version: \"1.0.0\")\n\
+        "::kind(catasto, version: \"0.1.0\")\n\
          ::catasto.upstream(\n  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main)\n)\n\n\
          \"a.tmt\": catasto.upstream(vocabularies, path: \"x/a.tmt\")\n",
     )

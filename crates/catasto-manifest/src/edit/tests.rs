@@ -3,7 +3,7 @@ use crate::Manifest;
 
 const VOCAB: &str = "\
 // The files catasto manages in this workspace.
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::upstream(
   vocabularies: catasto.git(\"https://example.com/v.git\", rev: main, path: vocabularies)
 )
@@ -57,7 +57,7 @@ fn the_first_entry_inserts_kind_and_goes_below_a_blank_line() {
     .unwrap();
     assert_eq!(
         text,
-        "// nothing yet\n\n::kind(catasto, version: \"1.0.0\")\n\n\"a.tmt\": catasto.local(\"../a.tmt\")\n"
+        "// nothing yet\n\n::kind(catasto, version: \"0.1.0\")\n\n\"a.tmt\": catasto.local(\"../a.tmt\")\n"
     );
     assert!(Manifest::parse(&text).is_ok());
 }
@@ -74,7 +74,7 @@ fn adding_to_empty_manifest_inserts_kind_and_entry() {
     .unwrap();
     assert_eq!(
         text,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"a.tmt\": catasto.local(\"../a.tmt\")\n"
+        "::kind(catasto, version: \"0.1.0\")\n\n\"a.tmt\": catasto.local(\"../a.tmt\")\n"
     );
     assert!(Manifest::parse(&text).is_ok());
 }
@@ -97,10 +97,10 @@ fn a_removed_entry_takes_its_comment_lines_and_nothing_else() {
 
 #[test]
 fn the_comment_that_opens_the_file_is_not_an_entrys() {
-    let text = "// about this file\n::kind(catasto, version: \"1.0.0\")\n\n\"a.tmt\": catasto.local(\"x\")\n";
+    let text = "// about this file\n::kind(catasto, version: \"0.1.0\")\n\n\"a.tmt\": catasto.local(\"x\")\n";
     assert_eq!(
         remove_entry(text, "a.tmt").unwrap(),
-        "// about this file\n::kind(catasto, version: \"1.0.0\")\n\n"
+        "// about this file\n::kind(catasto, version: \"0.1.0\")\n\n"
     );
 }
 
@@ -112,14 +112,14 @@ fn removing_what_is_not_there_says_so() {
 
 #[test]
 fn a_value_with_parens_and_strings_inside_is_read_whole() {
-    let text = "::kind(catasto, version: \"1.0.0\")\n\n\"a\": (\n  catasto.git(\"https://x/).git\", rev: main, path: \"p // q\"), // trailing\n  executable: true\n)\n\"b\": catasto.local(\"y\")\n";
+    let text = "::kind(catasto, version: \"0.1.0\")\n\n\"a\": (\n  catasto.git(\"https://x/).git\", rev: main, path: \"p // q\"), // trailing\n  executable: true\n)\n\"b\": catasto.local(\"y\")\n";
     let layout = scan(text).unwrap();
     assert_eq!(layout.entries.len(), 2);
     assert_eq!(layout.entries[1].key, "b");
     let after = remove_entry(text, "a").unwrap();
     assert_eq!(
         after,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"b\": catasto.local(\"y\")\n"
+        "::kind(catasto, version: \"0.1.0\")\n\n\"b\": catasto.local(\"y\")\n"
     );
 }
 
@@ -146,7 +146,7 @@ fn an_upstream_goes_above_the_closing_paren_of_a_block_on_lines_of_its_own() {
 
 #[test]
 fn a_block_on_one_line_is_written_out_when_it_gains_a_place() {
-    let one = "::kind(catasto, version: \"1.0.0\")\n::upstream(a: catasto.git(\"https://x/a.git\", rev: main))\n\n\"f\": catasto.upstream(a, path: \"p\")\n";
+    let one = "::kind(catasto, version: \"0.1.0\")\n::upstream(a: catasto.git(\"https://x/a.git\", rev: main))\n\n\"f\": catasto.upstream(a, path: \"p\")\n";
     let text = add_upstream(
         one,
         "b",
@@ -159,7 +159,7 @@ fn a_block_on_one_line_is_written_out_when_it_gains_a_place() {
     .unwrap();
     assert!(
         text.starts_with(
-            "::kind(catasto, version: \"1.0.0\")\n::upstream(\n  a: catasto.git(\"https://x/a.git\", rev: main)\n  b: catasto.git(\"https://x/b.git\", rev: main, path: dir/sub)\n)\n"
+            "::kind(catasto, version: \"0.1.0\")\n::upstream(\n  a: catasto.git(\"https://x/a.git\", rev: main)\n  b: catasto.git(\"https://x/b.git\", rev: main, path: dir/sub)\n)\n"
         ),
         "{text}"
     );
@@ -180,7 +180,7 @@ fn the_first_upstream_creates_the_declaration_and_kind_above_the_entries() {
     .unwrap();
     assert!(
         text.starts_with(
-            "// header\n\n::kind(catasto, version: \"1.0.0\")\n::upstream(\n  v: catasto.git(\"https://x/v.git\", rev: main)\n)\n\n\"f\""
+            "// header\n\n::kind(catasto, version: \"0.1.0\")\n::upstream(\n  v: catasto.git(\"https://x/v.git\", rev: main)\n)\n\n\"f\""
         ),
         "{text}"
     );
@@ -201,7 +201,7 @@ fn a_rev_that_reads_as_a_number_is_quoted() {
     .unwrap();
     assert!(text.contains("rev: \"1.2\""), "{text}");
     assert!(
-        text.contains("::kind(catasto, version: \"1.0.0\")"),
+        text.contains("::kind(catasto, version: \"0.1.0\")"),
         "{text}"
     );
     assert!(Manifest::parse(&text).is_ok());
@@ -223,13 +223,13 @@ fn an_upstream_is_removed_and_the_declaration_goes_with_the_last() {
     assert_eq!(one, VOCAB);
 
     let none = remove_upstream(
-        "::kind(catasto, version: \"1.0.0\")\n::upstream(\n  a: catasto.git(\"https://x/a.git\", rev: main)\n)\n\n\"f\": catasto.local(\"x\")\n",
+        "::kind(catasto, version: \"0.1.0\")\n::upstream(\n  a: catasto.git(\"https://x/a.git\", rev: main)\n)\n\n\"f\": catasto.local(\"x\")\n",
         "a",
     )
     .unwrap();
     assert_eq!(
         none,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"f\": catasto.local(\"x\")\n"
+        "::kind(catasto, version: \"0.1.0\")\n\n\"f\": catasto.local(\"x\")\n"
     );
 }
 
@@ -241,7 +241,7 @@ fn who_uses_an_upstream_is_found_in_the_entries() {
     );
     assert!(upstream_is_used(VOCAB, "other").unwrap().is_empty());
 
-    let mixed = "::kind(catasto, version: \"1.0.0\")\n\
+    let mixed = "::kind(catasto, version: \"0.1.0\")\n\
                  ::upstream(a: catasto.git(\"https://x/a.git\", rev: main))\n\
                  // catasto.upstream(a, path: \"ignored-comment\")\n\
                  \"p1\": (catasto.upstream(upstream: \"a\", path: \"one\"), executable: true)\n\
@@ -371,7 +371,7 @@ fn entry_text_with_and_without_keep_symlink_and_optional_path() {
 fn add_or_replace_entry_keeps_position_comment_and_executable_in_tuple() {
     let manifest = "\
 // A comment before the entries
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::upstream(
   vocabularies: catasto.git(\"https://example.com/v.git\", rev: main)
 )
@@ -414,7 +414,7 @@ fn add_or_replace_entry_keeps_position_comment_and_executable_in_tuple() {
         replaced_text,
         "\
 // A comment before the entries
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::upstream(
   vocabularies: catasto.git(\"https://example.com/v.git\", rev: main)
 )
@@ -456,7 +456,7 @@ fn add_or_replace_entry_keeps_position_comment_and_executable_in_tuple() {
 #[test]
 fn add_or_replace_upstream_multiline_block() {
     let manifest = "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::upstream(
   // comment above first
   first: catasto.git(\"https://example.com/first.git\", rev: v1)
@@ -494,7 +494,7 @@ fn add_or_replace_upstream_multiline_block() {
     assert_eq!(
         replaced_middle,
         "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::upstream(
   // comment above first
   first: catasto.git(\"https://example.com/first.git\", rev: v1)
@@ -527,7 +527,7 @@ fn add_or_replace_upstream_multiline_block() {
     assert_eq!(
         replaced_first,
         "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::upstream(
   // comment above first
   first: catasto.git(\"https://example.com/new-first.git\", rev: main)
@@ -554,7 +554,7 @@ fn add_or_replace_upstream_multiline_block() {
     assert_eq!(
         replaced_last,
         "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::upstream(
   // comment above first
   first: catasto.git(\"https://example.com/new-first.git\", rev: main)
@@ -572,7 +572,7 @@ fn add_or_replace_upstream_multiline_block() {
 
 #[test]
 fn add_or_replace_upstream_oneline_block() {
-    let manifest = "::kind(catasto, version: \"1.0.0\")\n::upstream(a: catasto.git(\"https://x/a.git\", rev: main), b: catasto.git(\"https://x/b.git\", rev: main))\n";
+    let manifest = "::kind(catasto, version: \"0.1.0\")\n::upstream(a: catasto.git(\"https://x/a.git\", rev: main), b: catasto.git(\"https://x/b.git\", rev: main))\n";
     let new_b = UpstreamText {
         git: "https://x/b2.git".into(),
         rev: "v2".into(),
@@ -584,7 +584,7 @@ fn add_or_replace_upstream_oneline_block() {
     assert_eq!(
         replaced,
         "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::upstream(
   a: catasto.git(\"https://x/a.git\", rev: main)
   b: catasto.git(\"https://x/b2.git\", rev: v2)
@@ -610,7 +610,7 @@ fn adds_and_replaces_submodule_entry() {
     let text = add_entry("", "tools/sisho", &sub).unwrap();
     assert_eq!(
         text,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", rev: main, path: \"crates/sisho\"), submodule: true)\n"
+        "::kind(catasto, version: \"0.1.0\")\n\n\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", rev: main, path: \"crates/sisho\"), submodule: true)\n"
     );
     assert!(Manifest::parse(&text).is_ok());
 
@@ -626,7 +626,7 @@ fn adds_and_replaces_submodule_entry() {
     assert_eq!(outcome, AddOutcome::Replaced);
     assert_eq!(
         replaced,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", rev: v1)\n"
+        "::kind(catasto, version: \"0.1.0\")\n\n\"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", rev: v1)\n"
     );
     assert!(Manifest::parse(&replaced).is_ok());
 
@@ -643,7 +643,7 @@ fn adds_and_replaces_submodule_entry() {
     assert_eq!(outcome, AddOutcome::Replaced);
     assert_eq!(
         with_link,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", rev: v1, path: \"link\"), symlink: keep)\n"
+        "::kind(catasto, version: \"0.1.0\")\n\n\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", rev: v1, path: \"link\"), symlink: keep)\n"
     );
     assert!(Manifest::parse(&with_link).is_ok());
 
@@ -657,7 +657,7 @@ fn adds_and_replaces_submodule_entry() {
 fn edits_preserve_zone_declarations_intact() {
     let base = "\
 // Workspace manifest
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::zone(
   \"crates/<?kebab(crate)>/src\": (
     // keep lib.rs
@@ -729,7 +729,7 @@ fn edits_preserve_zone_declarations_intact() {
     )
     .unwrap();
     assert!(
-        first_entry.contains("::kind(catasto, version: \"1.0.0\")"),
+        first_entry.contains("::kind(catasto, version: \"0.1.0\")"),
         "{first_entry}"
     );
     assert!(

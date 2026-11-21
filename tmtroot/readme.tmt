@@ -45,7 +45,7 @@ Every command works on the current directory; `-C DIR` (`--workspace DIR`) says 
 ```bash
 `` catasto init
 `` catasto upstream add vocabularies https://github.com/tomet-lang/vocabularies.git --path vocabularies
-`` catasto add tmtroot/schema/writ@1.0.0.vocabulary.tmt --upstream vocabularies writ/writ@1.0.0.vocabulary.tmt
+`` catasto add tmtroot/schema/writ@0.1.0.vocabulary.tmt --upstream vocabularies writ/writ@0.1.0.vocabulary.tmt
 `` catasto check
 ```
 
@@ -65,10 +65,10 @@ The names are exact: `catasto.ctmt` and `catasto.lock`, and `init` takes no othe
 
 ==[ Files ]
 
-`catasto.ctmt` is written by hand, in cotomet, the data language of the Tomet ecosystem. It declares `::kind(catasto, version: "1.0.0")` at the top and maps each managed path to a constructor call from the `catasto` vocabulary saying where its content comes from.
+`catasto.ctmt` is written by hand, in cotomet, the data language of the Tomet ecosystem. It declares `::kind(catasto, version: "0.1.0")` at the top and maps each managed path to a constructor call from the `catasto` vocabulary saying where its content comes from.
 
 ```text
-`` ::kind(catasto, version: "1.0.0")
+`` ::kind(catasto, version: "0.1.0")
 ``
 `` "docs/shared/terms.tmt": catasto.local("../shared/terms.tmt")
 ```
@@ -82,32 +82,32 @@ A source is one of three constructors:
 -| `catasto.upstream(name, path: "...")` -- a file or directory from an upstream repository named once in `::upstream(...)` (below); `path` is relative to the upstream's `path` (or the repository root if the upstream omits `path`), and omitting `path` takes the upstream's location as a whole.
 
 ```text
-`` ::kind(catasto, version: "1.0.0")
+`` ::kind(catasto, version: "0.1.0")
 ``
-`` "tmtroot/schema/rust@1.0.0.vocabulary.tmt": catasto.git(
+`` "tmtroot/schema/rust@0.1.0.vocabulary.tmt": catasto.git(
 ``   "https://github.com/tomet-lang/vocabularies.git",
 ``   rev: main,
-``   path: "vocabularies/rust/rust@1.0.0.vocabulary.tmt"
+``   path: "vocabularies/rust/rust@0.1.0.vocabulary.tmt"
 `` )
 ```
 
 ==[ Upstreams ]
 
-Files that come from the same place name it once. `::upstream(...)` goes at the top of `catasto.ctmt`, alongside `::kind(catasto, version: "1.0.0")` and before the first path, mapping each name to a `catasto.git(...)` constructor with `rev` and optionally a `path`:
+Files that come from the same place name it once. `::upstream(...)` goes at the top of `catasto.ctmt`, alongside `::kind(catasto, version: "0.1.0")` and before the first path, mapping each name to a `catasto.git(...)` constructor with `rev` and optionally a `path`:
 
 ```text
-`` ::kind(catasto, version: "1.0.0")
+`` ::kind(catasto, version: "0.1.0")
 `` ::upstream(
 ``   vocabularies: catasto.git("https://github.com/tomet-lang/vocabularies.git", rev: main, path: vocabularies)
 `` )
 ``
-`` "tmtroot/schema/rust@1.0.0.vocabulary.tmt": catasto.upstream(
+`` "tmtroot/schema/rust@0.1.0.vocabulary.tmt": catasto.upstream(
 ``   vocabularies,
-``   path: "rust/rust@1.0.0.vocabulary.tmt"
+``   path: "rust/rust@0.1.0.vocabulary.tmt"
 `` )
 ```
 
-In `catasto.git(...)`, `path` is always relative to the repository root, whether it appears in `::upstream(...)` or directly in an entry. In `catasto.upstream(name, path: ...)`, `path` is relative to the `path` declared by that upstream (or the repository root when the upstream omits `path`): above, `rust/rust@1.0.0.vocabulary.tmt` resolves to `vocabularies/rust/rust@1.0.0.vocabulary.tmt`, and omitting `path` in `catasto.upstream(vocabularies)` refers to the `vocabularies` directory as a whole. An upstream's location is a boundary: `path` must be relative and cannot climb out of it with `..`.
+In `catasto.git(...)`, `path` is always relative to the repository root, whether it appears in `::upstream(...)` or directly in an entry. In `catasto.upstream(name, path: ...)`, `path` is relative to the `path` declared by that upstream (or the repository root when the upstream omits `path`): above, `rust/rust@0.1.0.vocabulary.tmt` resolves to `vocabularies/rust/rust@0.1.0.vocabulary.tmt`, and omitting `path` in `catasto.upstream(vocabularies)` refers to the `vocabularies` directory as a whole. An upstream's location is a boundary: `path` must be relative and cannot climb out of it with `..`.
 
 An upstream is resolved into the full `git`, `rev` and `path` while the file is loaded, so `catasto.lock` records the same `git`, `rev`, `commit` and `sha256` as when they are written out, and moving an entry between the two forms does not make it stale. The `git` URL, `rev`, and `path` of an upstream are checked where it is declared. An entry uses `catasto.upstream(...)` or `catasto.git(...)`, not both. The declarations catasto reads are `::kind(catasto, ...)` and the attributes of the `catasto` vocabulary, `::upstream` and `::zone`.
 `catasto upstream add --force NAME GIT [--rev R] [--path DIR]` replaces the definition of an existing upstream name, leaving entries and comments where they are. It edits the manifest only, without touching the lock or files; run `catasto sync` afterward to take affected files from the new place.

@@ -5,12 +5,12 @@
   generated_by: @comment[ Generated from $(1). Edit that, then `tomet export .`. ]
 )
 ::vocabulary(
-  catasto: @file(tmtroot/schema/catasto@1.0.0.vocabulary.tmt)
-  rust:    @file(tmtroot/schema/rust@1.0.0.vocabulary.tmt)
-  writ:    @file(tmtroot/schema/writ@1.0.0.vocabulary.tmt)
+  @file(tmtroot/schema/catasto@0.1.0.vocabulary.tmt)
+  @file(tmtroot/schema/rust@0.1.0.vocabulary.tmt)
+  @file(tmtroot/schema/writ@0.1.0.vocabulary.tmt)
 )
 ::blueprint(
-  catasto: @file(tmtroot/schema/catasto@1.0.0.blueprint.ctmt)
+  catasto: @file(tmtroot/schema/catasto@0.1.0.blueprint.ctmt)
   crate:   @file(tmtroot/schema/crate.blueprint.tmt)
   writ:    @file(tmtroot/schema/writ.blueprint.tmt)
 )

@@ -463,7 +463,7 @@ fn parse_entry(
 ) -> Result<(ManagedKind, Option<UpstreamRef>)> {
     if !header.has_kind {
         bail!(
-            "`catasto` constructors require `::kind(catasto, version: \"1.0.0\")` at the top of the manifest"
+            "`catasto` constructors require `::kind(catasto, version: \"0.1.0\")` at the top of the manifest"
         );
     }
     let constructed = vocabulary()

@@ -2,7 +2,7 @@ use super::*;
 use crate::lockfile::lock;
 
 const MANIFEST: &str = "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 
 \"vocab/writ.tmt\": catasto.local(\"../vocabularies/writ.tmt\")
 ";
@@ -144,7 +144,7 @@ fn git_vault(commit: Option<&str>) -> tempfile::TempDir {
     std::fs::write(dir.path().join("w.tmt"), "abc").unwrap();
     std::fs::write(
         dir.path().join("catasto.ctmt"),
-        format!("::kind(catasto, version: \"1.0.0\")\n\n\"w.tmt\": {GIT_SOURCE}\n"),
+        format!("::kind(catasto, version: \"0.1.0\")\n\n\"w.tmt\": {GIT_SOURCE}\n"),
     )
     .unwrap();
     let commit = commit
@@ -211,7 +211,7 @@ fn check_symlink_keep_and_default_table() {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("catasto.ctmt"),
-            format!("::kind(catasto, version: \"1.0.0\")\n\n\"link\": {manifest_src}\n"),
+            format!("::kind(catasto, version: \"0.1.0\")\n\n\"link\": {manifest_src}\n"),
         )
         .unwrap();
         std::fs::write(
@@ -312,7 +312,7 @@ fn check_detects_executable_bit_drift_in_both_directions() {
     use std::os::unix::fs::PermissionsExt;
 
     let manifest = "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 
 \"normal.txt\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"normal.txt\")
 \"tool.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"tool.sh\")
@@ -370,7 +370,7 @@ fn old_lock_without_mode_is_clean_when_destination_is_normal_file() {
     use std::os::unix::fs::PermissionsExt;
 
     // An old lock for tool.sh has no mode field
-    let manifest = "::kind(catasto, version: \"1.0.0\")\n\n\"tool.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"tool.sh\")\n";
+    let manifest = "::kind(catasto, version: \"0.1.0\")\n\n\"tool.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"tool.sh\")\n";
     let hash = catasto_digest::sha256_hex(b"#!/bin/sh\n");
     let lock_text = format!(
         "{{\n  \"version\": 1,\n  \"files\": {{\n    \
@@ -408,7 +408,7 @@ fn check_submodule_detects_unlocked_missing_modified_remote_and_sparse_drift() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"deps/tool\": (catasto.git({:?}, rev: main, path: \"sub/dir\"), submodule: true)\n",
+            "::kind(catasto, version: \"0.1.0\")\n\n\"deps/tool\": (catasto.git({:?}, rev: main, path: \"sub/dir\"), submodule: true)\n",
             upstream.url()
         ),
     )
@@ -482,7 +482,7 @@ fn check_directory_detects_modified_added_deleted_and_exec_drift() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"dir\": (catasto.git({:?}, rev: main, path: \"dir\"), symlink: keep)\n",
+            "::kind(catasto, version: \"0.1.0\")\n\n\"dir\": (catasto.git({:?}, rev: main, path: \"dir\"), symlink: keep)\n",
             repo.url()
         ),
     )
@@ -555,7 +555,7 @@ fn zone_clean_workspace_skips_git_and_respects_ignore() {
     std::fs::write(
         root.join("catasto.ctmt"),
         "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::zone(
   \".\": (
     require: (\"Cargo.toml\")
@@ -789,7 +789,7 @@ fn zone_violations_do_not_corrupt_managed_list_status() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::zone(\"notes\": (deny: \"a.txt\"))
 
 \"notes/a.txt\": catasto.local(\"../src/a.txt\")
@@ -1062,7 +1062,7 @@ fn zone_gitignored_files_and_empty_dirs_do_not_violate_while_untracked_do() {
     std::fs::write(
         root.join("catasto.ctmt"),
         "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::zone(
   \".\": (
     allow: (\".gitignore\", \"catasto.ctmt\", \"crates\")
@@ -1240,7 +1240,7 @@ fn zone_in_non_git_workspace_errors_on_check_but_list_succeeds() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         "\
-::kind(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"0.1.0\")
 ::zone(\"notes\": (require: \"a.txt\"))
 
 \"notes/a.txt\": catasto.local(\"../src/a.txt\")

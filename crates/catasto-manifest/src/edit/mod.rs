@@ -406,7 +406,7 @@ fn ensure_kind_catasto(text: &str) -> Result<String> {
         return Ok(text.to_owned());
     }
     let at = layout.first_item_start(text);
-    let mut block = String::from("::kind(catasto, version: \"1.0.0\")\n");
+    let mut block = String::from("::kind(catasto, version: \"0.1.0\")\n");
     if at == text.len() {
         let gap = match text {
             "" => "",

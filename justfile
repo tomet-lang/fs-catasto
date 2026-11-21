@@ -43,7 +43,7 @@ bench count="400" size_kib="512":
     work="$(mktemp -d)"
     trap 'rm -rf "$work"' EXIT
     mkdir -p "$work/src" "$work/ws"
-    printf '::use(catasto, version: "1.0.0")\n\n' > "$work/ws/catasto.ctmt"
+    printf '::use(catasto, version: "0.1.0")\n\n' > "$work/ws/catasto.ctmt"
     for i in $(seq 1 {{count}}); do
         head -c $(({{size_kib}} * 1024)) /dev/urandom > "$work/src/f$i.bin"
         printf '"f%s.bin": catasto.local("../src/f%s.bin")\n' "$i" "$i" >> "$work/ws/catasto.ctmt"
@@ -72,12 +72,12 @@ clean:
 docs:
     cargo build -p catasto-cli
     ./target/debug/catasto spec --all --out tmtroot/generated
-    ./target/debug/catasto spec blueprint --out tmtroot/schema/catasto@1.0.0.blueprint.ctmt
+    ./target/debug/catasto spec blueprint --out tmtroot/schema/catasto@0.1.0.blueprint.ctmt
     sisho fix .
 
 # Check that all documents parse, format cleanly, and match export targets.
 docs-check:
     cargo build -p catasto-cli
     ./target/debug/catasto spec --all --check --out tmtroot/generated
-    ./target/debug/catasto spec blueprint --check --out tmtroot/schema/catasto@1.0.0.blueprint.ctmt
+    ./target/debug/catasto spec blueprint --check --out tmtroot/schema/catasto@0.1.0.blueprint.ctmt
     sisho check .

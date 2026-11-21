@@ -2,7 +2,7 @@
 
 use tomet_spec::PrinterConfig;
 
-/// Renders the complete formatted `catasto@1.0.0.blueprint.ctmt` schema string.
+/// Renders the complete formatted `catasto@0.1.0.blueprint.ctmt` schema string.
 pub fn render(config: &PrinterConfig) -> String {
     let spec = catasto_manifest::blueprint_spec();
     tomet_spec::blueprint::render(&spec, config)
@@ -60,7 +60,7 @@ mod tests {
         );
 
         // 2. Empty manifest (only ::kind) is valid.
-        let empty = tomet_ast_parser::parse_data_file("::kind(catasto, version: \"1.0.0\")\n")
+        let empty = tomet_ast_parser::parse_data_file("::kind(catasto, version: \"0.1.0\")\n")
             .expect("empty manifest parses");
         let empty_bindings = Bindings::for_document(&empty, [vocab.clone()]);
         let empty_errs = validate_ctmt_against_blueprint(&empty, &bp_ast, &empty_bindings);
@@ -71,7 +71,7 @@ mod tests {
 
         // 3. All valid entry forms, including tuple with and without `executable`, and full `::zone` fields.
         let full = tomet_ast_parser::parse_data_file(
-            r#"::kind(catasto, version: "1.0.0")
+            r#"::kind(catasto, version: "0.1.0")
 ::upstream(
   common: catasto.git("https://example.com/common.git", rev: main, path: base)
 )
@@ -106,7 +106,7 @@ mod tests {
 
         // 4. Invalid entries are rejected.
         let invalid = tomet_ast_parser::parse_data_file(
-            r#"::kind(catasto, version: "1.0.0")
+            r#"::kind(catasto, version: "0.1.0")
 ::upstream(common: "not-a-git-call")
 ::zone(
   "src": (

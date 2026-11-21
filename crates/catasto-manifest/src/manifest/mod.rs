@@ -1,12 +1,12 @@
 //! The hand-written `catasto.ctmt` declaration.
 //!
-//! A manifest is a catasto document: it declares `::kind(catasto, version: "1.0.0")`,
+//! A manifest is a catasto document: it declares `::kind(catasto, version: "0.1.0")`,
 //! then the attributes of the `catasto` vocabulary it needs (shared Git repositories in
 //! `::upstream(...)`, directory rules in `::zone(...)`), and maps workspace-relative paths
 //! to constructor calls from the same vocabulary:
 //!
 //! ```text
-//! ::kind(catasto, version: "1.0.0")
+//! ::kind(catasto, version: "0.1.0")
 //! ::upstream(
 //!   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, path: vocabularies)
 //! )
@@ -52,17 +52,17 @@ pub use zone::{EntryRules, Zone, ZonePattern};
 /// File name of the manifest, relative to the workspace root.
 pub const MANIFEST_FILE: &str = "catasto.ctmt";
 
-/// Canonical `catasto@1.0.0` vocabulary source.
+/// Canonical `catasto@0.1.0` vocabulary source.
 pub const VOCABULARY_TMT: &str =
-    include_str!("../../../../tmtroot/schema/catasto@1.0.0.vocabulary.tmt");
+    include_str!("../../../../tmtroot/schema/catasto@0.1.0.vocabulary.tmt");
 
 static VOCABULARY: LazyLock<Vocabulary> = LazyLock::new(|| {
     let doc = tomet_ast_parser::parse_file(VOCABULARY_TMT)
-        .expect("embedded catasto@1.0.0.vocabulary.tmt must parse");
-    Vocabulary::from_file(&doc).expect("embedded catasto@1.0.0.vocabulary.tmt must be a vocabulary")
+        .expect("embedded catasto@0.1.0.vocabulary.tmt must parse");
+    Vocabulary::from_file(&doc).expect("embedded catasto@0.1.0.vocabulary.tmt must be a vocabulary")
 });
 
-/// Returns the parsed canonical `catasto@1.0.0` vocabulary.
+/// Returns the parsed canonical `catasto@0.1.0` vocabulary.
 pub fn vocabulary() -> &'static Vocabulary {
     &VOCABULARY
 }

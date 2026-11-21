@@ -6,6 +6,7 @@
 - ssh対応
 - 全レポにレポ毎でcheckできるようにする。
 - remoteを勝手に変えたら脆弱性になるのではないか？
+- Oneshot Copy
 
 =[ Filesystem Schema ]
 
