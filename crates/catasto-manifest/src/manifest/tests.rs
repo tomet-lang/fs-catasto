@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 
-use tomet_semantics::{Vocabulary, constructor_problems_in};
+use tomet_semantics::{Vocabulary, entry_problems_in};
 
 use super::*;
 
-const USE: &str = "::use(catasto, version: \"1.0.0\")\n";
-const VOCABULARIES: &str = "::use(catasto, version: \"1.0.0\")\n\
+const KIND: &str = "::kind(catasto, version: \"1.0.0\")\n";
+const VOCABULARIES: &str = "::kind(catasto, version: \"1.0.0\")\n\
      ::upstream(\n  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main)\n)\n";
 
 fn path_source(path: &str) -> Source {
@@ -17,15 +17,11 @@ fn canonical_vocabulary_parses_with_zero_problems() {
     let doc = tomet_ast_parser::parse_file(VOCABULARY_TMT).unwrap();
     let vocab = Vocabulary::from_file(&doc).expect("canonical catasto vocabulary");
     assert_eq!(vocab.namespace, "catasto");
-    assert!(
-        vocab.param_problems().is_empty(),
-        "param problems: {:?}",
-        vocab.param_problems()
-    );
-    let ctor_problems = constructor_problems_in(&doc);
-    assert!(
-        ctor_problems.is_empty(),
-        "constructor problems: {ctor_problems:?}"
+    let problems = entry_problems_in(&doc);
+    assert!(problems.is_empty(), "entry problems: {problems:?}");
+    assert_eq!(
+        vocab.attributes.keys().collect::<Vec<_>>(),
+        ["upstream", "zone"]
     );
     assert_eq!(
         vocab.constructors.keys().collect::<Vec<_>>(),
@@ -36,7 +32,7 @@ fn canonical_vocabulary_parses_with_zero_problems() {
 #[test]
 fn parses_managed_entries_in_the_order_written() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          \"b/writ.vocabulary.tmt\": catasto.local(\"../vocabularies/writ.vocabulary.tmt\")\n\
          \"a/rust.vocabulary.tmt\": catasto.local(\"../vocabularies/rust.vocabulary.tmt\")\n"
     ))
@@ -66,7 +62,7 @@ fn parses_managed_entries_in_the_order_written() {
 #[test]
 fn comments_and_unquoted_values_are_fine() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          // shared vocabularies\n\
          \"a.tmt\": catasto.local(../v/a.tmt) // the writ one\n"
     ))
@@ -80,7 +76,7 @@ fn comments_and_unquoted_values_are_fine() {
 
 #[test]
 fn a_key_that_needs_no_quotes_may_be_bare() {
-    let manifest = Manifest::parse(&format!("{USE}a.tmt: catasto.local(s)\n")).unwrap();
+    let manifest = Manifest::parse(&format!("{KIND}a.tmt: catasto.local(s)\n")).unwrap();
     assert_eq!(manifest.managed[0].path, PathBuf::from("a.tmt"));
 }
 
@@ -91,30 +87,30 @@ fn empty_text_is_an_empty_manifest() {
 }
 
 #[test]
-fn a_manifest_with_only_comments_or_use_is_empty() {
+fn a_manifest_with_only_comments_or_kind_is_empty() {
     assert_eq!(
         Manifest::parse("// nothing managed yet\n").unwrap(),
         Manifest::default()
     );
-    assert_eq!(Manifest::parse(USE).unwrap(), Manifest::default());
+    assert_eq!(Manifest::parse(KIND).unwrap(), Manifest::default());
     assert_eq!(
-        Manifest::parse("::use(catasto)\n").unwrap(),
+        Manifest::parse("::kind(catasto)\n").unwrap(),
         Manifest::default()
     );
 }
 
 #[test]
-fn use_declaration_supports_compatible_version_forms() {
+fn kind_declaration_supports_compatible_version_forms() {
     for decl in [
-        "::use(catasto)",
-        "::use(catasto, version: \"1.0.0\")",
-        "::use(catasto, \"1.0.0\")",
-        "::use(catasto, 1.0.0)",
-        "::use(catasto, version: \"1.0\")",
-        "::use(catasto, version: 1.0)",
-        "::use(catasto, version: \"1\")",
-        "::use(catasto, version: 1)",
-        "::use(catasto, 1)",
+        "::kind(catasto)",
+        "::kind(catasto, version: \"1.0.0\")",
+        "::kind(catasto, \"1.0.0\")",
+        "::kind(catasto, 1.0.0)",
+        "::kind(catasto, version: \"1.0\")",
+        "::kind(catasto, version: 1.0)",
+        "::kind(catasto, version: \"1\")",
+        "::kind(catasto, version: 1)",
+        "::kind(catasto, 1)",
     ] {
         let text = format!("{decl}\n\"a.tmt\": catasto.local(\"s\")\n");
         assert!(Manifest::parse(&text).is_ok(), "failed for {decl}");
@@ -122,16 +118,16 @@ fn use_declaration_supports_compatible_version_forms() {
 }
 
 #[test]
-fn use_declaration_rejects_incompatible_versions_and_unknown_vocabularies() {
+fn kind_declaration_rejects_incompatible_versions_and_other_kinds() {
     for bad in [
-        "::use(catasto, version: \"2.0.0\")",
-        "::use(catasto, version: \"0.9.0\")",
-        "::use(catasto, version: \"1.1.0\")",
-        "::use(catasto, version: \"1.0.1\")",
-        "::use(catasto, version: \"1.0.0-alpha\")",
-        "::use(catasto, version: bad)",
-        "::use(other)",
-        "::use()",
+        "::kind(catasto, version: \"2.0.0\")",
+        "::kind(catasto, version: \"0.9.0\")",
+        "::kind(catasto, version: \"1.1.0\")",
+        "::kind(catasto, version: \"1.0.1\")",
+        "::kind(catasto, version: \"1.0.0-alpha\")",
+        "::kind(catasto, version: bad)",
+        "::kind(other)",
+        "::kind()",
     ] {
         assert!(
             Manifest::parse(&format!("{bad}\n")).is_err(),
@@ -141,14 +137,57 @@ fn use_declaration_rejects_incompatible_versions_and_unknown_vocabularies() {
 }
 
 #[test]
-fn constructors_require_use_catasto_in_header() {
+fn constructors_require_kind_catasto_in_header() {
     let err = Manifest::parse("\"a.tmt\": catasto.local(\"s\")\n").unwrap_err();
-    assert!(err.to_string().contains("::use(catasto"), "{err}");
+    assert!(err.to_string().contains("::kind(catasto"), "{err}");
 
     let err =
         Manifest::parse("::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main))\n")
             .unwrap_err();
-    assert!(err.to_string().contains("::use(catasto"), "{err}");
+    assert!(err.to_string().contains("::kind(catasto"), "{err}");
+}
+
+#[test]
+fn use_catasto_is_refused_with_the_kind_to_write() {
+    let err = Manifest::parse("::use(catasto, version: \"1.0.0\")\n").unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("write `::kind(catasto, version: \"1.0.0\")`"),
+        "{err}"
+    );
+}
+
+#[test]
+fn an_attribute_reads_the_same_with_its_namespace() {
+    let bare = Manifest::parse(&format!(
+        "{VOCABULARIES}\n\"a.tmt\": catasto.upstream(vocabularies, path: \"x/a.tmt\")\n"
+    ))
+    .unwrap();
+    let qualified = Manifest::parse(
+        "::kind(catasto, version: \"1.0.0\")\n\
+         ::catasto.upstream(\n  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main)\n)\n\n\
+         \"a.tmt\": catasto.upstream(vocabularies, path: \"x/a.tmt\")\n",
+    )
+    .unwrap();
+    assert_eq!(bare, qualified);
+}
+
+#[test]
+fn an_unknown_declaration_names_the_attributes_of_the_vocabulary() {
+    let err = Manifest::parse(&format!("{KIND}::mirror(a: b)\n")).unwrap_err();
+    let message = err.to_string();
+    assert!(
+        message.contains("unknown declaration `::mirror`"),
+        "{message}"
+    );
+    assert!(message.contains("`::upstream` and `::zone`"), "{message}");
+
+    let err = Manifest::parse(&format!("{KIND}::other.upstream(a: b)\n")).unwrap_err();
+    assert!(
+        err.to_string()
+            .contains("unknown declaration `::other.upstream`"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -158,7 +197,7 @@ fn an_upstream_reads_as_the_entry_written_in_full() {
     ))
     .unwrap();
     let written = Manifest::parse(&format!(
-        "{USE}\"a.tmt\": catasto.git(\"https://example.com/v.git\", rev: main, path: \"x/a.tmt\")\n"
+        "{KIND}\"a.tmt\": catasto.git(\"https://example.com/v.git\", rev: main, path: \"x/a.tmt\")\n"
     ))
     .unwrap();
     assert_eq!(named, written);
@@ -167,13 +206,13 @@ fn an_upstream_reads_as_the_entry_written_in_full() {
 #[test]
 fn a_root_is_joined_in_front_of_the_path() {
     let rooted = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          ::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, root: vocabularies))\n\
          \"a.tmt\": catasto.upstream(v, path: \"rust/a.tmt\")\n"
     ))
     .unwrap();
     let written = Manifest::parse(&format!(
-        "{USE}\"a.tmt\": catasto.git(\"https://example.com/v.git\", rev: main, path: \"vocabularies/rust/a.tmt\")\n"
+        "{KIND}\"a.tmt\": catasto.git(\"https://example.com/v.git\", rev: main, path: \"vocabularies/rust/a.tmt\")\n"
     ))
     .unwrap();
     assert_eq!(rooted, written);
@@ -183,7 +222,7 @@ fn a_root_is_joined_in_front_of_the_path() {
 fn a_root_is_checked_where_it_is_declared() {
     for root in ["/etc", "../outside", "a/../b", "\"\""] {
         let err = Manifest::parse(&format!(
-            "{USE}::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, root: {root}))\n"
+            "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, root: {root}))\n"
         ))
         .unwrap_err();
         assert!(
@@ -197,7 +236,7 @@ fn a_root_is_checked_where_it_is_declared() {
 #[test]
 fn a_path_cannot_climb_out_of_the_root() {
     let err = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          ::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, root: vocabularies))\n\
          \"a.tmt\": catasto.upstream(v, path: \"../secret.tmt\")\n"
     ))
@@ -229,7 +268,7 @@ fn two_entries_share_an_upstream_and_keep_their_order() {
 #[test]
 fn multiple_upstream_declarations_are_allowed_if_names_are_unique() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          ::upstream(a: catasto.git(\"https://example.com/a.git\", rev: main))\n\
          ::upstream(b: catasto.git(\"https://example.com/b.git\", rev: v1))\n\
          \"x.tmt\": catasto.upstream(a, path: \"x.tmt\")\n\
@@ -239,7 +278,7 @@ fn multiple_upstream_declarations_are_allowed_if_names_are_unique() {
     assert_eq!(manifest.managed.len(), 2);
 
     let err = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          ::upstream(a: catasto.git(\"https://example.com/a.git\", rev: main))\n\
          ::upstream(a: catasto.git(\"https://example.com/b.git\", rev: v1))\n"
     ))
@@ -277,7 +316,7 @@ fn an_unknown_upstream_lists_the_declared_ones() {
 #[test]
 fn an_upstream_with_none_declared_says_where_to_declare() {
     let err = Manifest::parse(&format!(
-        "{USE}\"a.tmt\": catasto.upstream(v, path: \"a.tmt\")\n"
+        "{KIND}\"a.tmt\": catasto.upstream(v, path: \"a.tmt\")\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("add `::upstream(...)`"), "{err}");
@@ -309,25 +348,25 @@ fn an_upstream_call_needs_a_path() {
 #[test]
 fn an_upstream_is_checked_where_it_is_declared() {
     let err = Manifest::parse(&format!(
-        "{USE}::upstream(v: catasto.git(\"git@example.com:o/v.git\", rev: main))\n"
+        "{KIND}::upstream(v: catasto.git(\"git@example.com:o/v.git\", rev: main))\n"
     ))
     .unwrap_err();
     assert!(err.to_string().starts_with("upstream `v`: "), "{err}");
 
     let err = Manifest::parse(&format!(
-        "{USE}::upstream(v: catasto.git(\"https://example.com/v.git\", rev: 1.2))\n"
+        "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", rev: 1.2))\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("write it in quotes"), "{err}");
 
     let err = Manifest::parse(&format!(
-        "{USE}::upstream(v: catasto.git(\"https://example.com/v.git\", path: \"a\"))\n"
+        "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", path: \"a\"))\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("cannot specify `path`"), "{err}");
 
     let err = Manifest::parse(&format!(
-        "{USE}::upstream(v: catasto.git(\"https://example.com/v.git\", symlink: keep))\n"
+        "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", symlink: keep))\n"
     ))
     .unwrap_err();
     assert!(
@@ -335,7 +374,7 @@ fn an_upstream_is_checked_where_it_is_declared() {
         "{err}"
     );
 
-    let err = Manifest::parse(&format!("{USE}::upstream(v: catasto.local(\"a\"))\n")).unwrap_err();
+    let err = Manifest::parse(&format!("{KIND}::upstream(v: catasto.local(\"a\"))\n")).unwrap_err();
     assert!(
         err.to_string().contains("must use `catasto.git(...)`"),
         "{err}"
@@ -350,7 +389,7 @@ fn rejects_legacy_upstreams_and_unknown_declarations() {
     );
 
     let err = Manifest::parse(&format!(
-        "{USE}::upstreams(v: catasto.git(\"https://example.com/v.git\", rev: main))\n"
+        "{KIND}::upstreams(v: catasto.git(\"https://example.com/v.git\", rev: main))\n"
     ))
     .unwrap_err();
     assert!(
@@ -361,12 +400,13 @@ fn rejects_legacy_upstreams_and_unknown_declarations() {
 
     let err = Manifest::parse("::kind(catalog)\n").unwrap_err();
     assert!(
-        err.to_string().contains("unknown declaration `::kind`"),
+        err.to_string()
+            .contains("a manifest is of kind `catasto`, not `catalog`"),
         "{err}"
     );
 
     let err =
-        Manifest::parse(&format!("{USE}::upstream(){{ v: catasto.git(\"u\") }}\n")).unwrap_err();
+        Manifest::parse(&format!("{KIND}::upstream(){{ v: catasto.git(\"u\") }}\n")).unwrap_err();
     assert!(
         err.to_string().contains("takes entries in parentheses"),
         "{err}"
@@ -384,7 +424,7 @@ fn rejects_legacy_entry_shapes_and_unknown_tuple_fields() {
         "\"a\": (\"s\", executable: true)",
     ] {
         assert!(
-            Manifest::parse(&format!("{USE}{bad}\n")).is_err(),
+            Manifest::parse(&format!("{KIND}{bad}\n")).is_err(),
             "accepted {bad}"
         );
     }
@@ -393,7 +433,7 @@ fn rejects_legacy_entry_shapes_and_unknown_tuple_fields() {
 #[test]
 fn an_entry_may_declare_its_executable_mode() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          \"a.sh\": (catasto.local(\"s/a.sh\"), executable: true)\n\
          \"b.txt\": (catasto.local(\"s/b.txt\"), executable: false)\n\
          \"c.txt\": catasto.local(\"s/c.txt\")\n"
@@ -407,7 +447,7 @@ fn an_entry_may_declare_its_executable_mode() {
 #[test]
 fn a_declared_mode_wins_over_the_sources_and_an_absent_one_leaves_it_to_the_source() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          \"a\": (catasto.local(s), executable: true)\n\
          \"b\": (catasto.local(s), executable: false)\n\
          \"c\": catasto.local(s)\n"
@@ -426,13 +466,13 @@ fn a_declared_mode_wins_over_the_sources_and_an_absent_one_leaves_it_to_the_sour
 #[test]
 fn the_executable_mode_must_be_a_boolean() {
     let err = Manifest::parse(&format!(
-        "{USE}\"a\": (catasto.local(s), executable: yes)\n"
+        "{KIND}\"a\": (catasto.local(s), executable: yes)\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("executable"), "{err}");
     assert!(
         Manifest::parse(&format!(
-            "{USE}\"a\": (catasto.local(s), executable: \"true\")\n"
+            "{KIND}\"a\": (catasto.local(s), executable: \"true\")\n"
         ))
         .is_err()
     );
@@ -440,15 +480,15 @@ fn the_executable_mode_must_be_a_boolean() {
 
 #[test]
 fn rejects_unknown_namespace_or_constructor_and_empty_local_path() {
-    assert!(Manifest::parse(&format!("{USE}\"a\": other.local(\"s\")\n")).is_err());
-    assert!(Manifest::parse(&format!("{USE}\"a\": catasto.ftp(\"b\")\n")).is_err());
-    assert!(Manifest::parse(&format!("{USE}\"a\": catasto.local(\"\")\n")).is_err());
+    assert!(Manifest::parse(&format!("{KIND}\"a\": other.local(\"s\")\n")).is_err());
+    assert!(Manifest::parse(&format!("{KIND}\"a\": catasto.ftp(\"b\")\n")).is_err());
+    assert!(Manifest::parse(&format!("{KIND}\"a\": catasto.local(\"\")\n")).is_err());
 }
 
 #[test]
 fn parses_a_git_source() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"dir/w.tmt\")\n"
+        "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"dir/w.tmt\")\n"
     ))
     .unwrap();
 
@@ -506,7 +546,7 @@ fn parses_symlink_keep_and_follow_in_git_source_and_upstream() {
 fn rejects_invalid_symlink_values() {
     for bad in ["true", "false", "123", "\"\"", "preserve"] {
         let err = Manifest::parse(&format!(
-            "{USE}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", symlink: {bad})\n"
+            "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", symlink: {bad})\n"
         ))
         .unwrap_err();
         assert!(
@@ -519,13 +559,13 @@ fn rejects_invalid_symlink_values() {
 #[test]
 fn git_source_rejects_unknown_arguments_and_root_in_entry() {
     let err = Manifest::parse(&format!(
-        "{USE}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", symlink: keep, extra: x)\n"
+        "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", symlink: keep, extra: x)\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("has no argument `extra`"), "{err}");
 
     let err = Manifest::parse(&format!(
-        "{USE}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, root: sub, path: \"a\")\n"
+        "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, root: sub, path: \"a\")\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("cannot specify `root`"), "{err}");
@@ -533,7 +573,7 @@ fn git_source_rejects_unknown_arguments_and_root_in_entry() {
 
 #[test]
 fn a_rev_that_reads_as_a_number_must_be_quoted() {
-    let text = |rev: &str| format!("{USE}\"a\": catasto.git(\"../v\", rev: {rev}, path: \"p\")\n");
+    let text = |rev: &str| format!("{KIND}\"a\": catasto.git(\"../v\", rev: {rev}, path: \"p\")\n");
 
     let err = Manifest::parse(&text("1.2")).unwrap_err();
     assert!(err.to_string().contains("write it in quotes"), "{err}");
@@ -548,7 +588,7 @@ fn rejects_ssh_style_git_urls() {
         "ssh://git@github.com/tomet-lang/twrit.git",
         "http://example.com/v.git",
     ] {
-        let text = format!("{USE}\"a\": catasto.git(\"{url}\", rev: v, path: \"p\")\n");
+        let text = format!("{KIND}\"a\": catasto.git(\"{url}\", rev: v, path: \"p\")\n");
         assert!(Manifest::parse(&text).is_err(), "accepted {url}");
     }
 }
@@ -556,7 +596,7 @@ fn rejects_ssh_style_git_urls() {
 #[test]
 fn accepts_https_and_relative_local_git_urls() {
     for url in ["https://github.com/tomet-lang/twrit.git", "../twrit"] {
-        let text = format!("{USE}\"a\": catasto.git(\"{url}\", rev: v, path: \"p\")\n");
+        let text = format!("{KIND}\"a\": catasto.git(\"{url}\", rev: v, path: \"p\")\n");
         assert!(Manifest::parse(&text).is_ok(), "rejected {url}");
     }
 }
@@ -573,7 +613,7 @@ fn rejects_malformed_git_sources() {
         "catasto.git(\"../u\", rev: \"v\", path: \"/p\")",
         "catasto.git()",
     ] {
-        let text = format!("{USE}\"a\": {call}\n");
+        let text = format!("{KIND}\"a\": {call}\n");
         assert!(Manifest::parse(&text).is_err(), "accepted {call}");
     }
 }
@@ -581,14 +621,14 @@ fn rejects_malformed_git_sources() {
 #[test]
 fn rejects_paths_that_escape_the_workspace() {
     for bad in ["../a", "/etc/a", "a/../../b", ""] {
-        let text = format!("{USE}\"{bad}\": catasto.local(\"s\")\n");
+        let text = format!("{KIND}\"{bad}\": catasto.local(\"s\")\n");
         assert!(Manifest::parse(&text).is_err(), "accepted {bad:?}");
     }
 }
 
 #[test]
 fn rejects_duplicate_paths() {
-    let text = format!("{USE}\"a\": catasto.local(\"s\")\n\"a\": catasto.local(\"t\")\n");
+    let text = format!("{KIND}\"a\": catasto.local(\"s\")\n\"a\": catasto.local(\"t\")\n");
     let err = Manifest::parse(&text).unwrap_err();
     assert!(err.to_string().contains("duplicate key `a`"), "{err}");
 }
@@ -662,7 +702,7 @@ fn upstream_with_symlink_keep_resolves_identically_to_full_form() {
 #[test]
 fn parses_repo_entries_with_and_without_branch_and_submodule() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          \"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: main, submodule: true)\n\
          \"vendor/lib\": catasto.repo(\"../lib\")\n"
     ))
@@ -693,7 +733,7 @@ fn parses_repo_entries_with_and_without_branch_and_submodule() {
 fn rejects_executable_on_repo_entry() {
     for flag in ["true", "false"] {
         let err = Manifest::parse(&format!(
-            "{USE}\"tools/sisho\": (catasto.repo(\"https://example.com/sisho.git\"), executable: {flag})\n"
+            "{KIND}\"tools/sisho\": (catasto.repo(\"https://example.com/sisho.git\"), executable: {flag})\n"
         ))
         .unwrap_err();
         assert!(
@@ -707,20 +747,20 @@ fn rejects_executable_on_repo_entry() {
 #[test]
 fn rejects_invalid_repo_url_and_branch() {
     let err = Manifest::parse(&format!(
-        "{USE}\"tools/sisho\": catasto.repo(\"git@github.com:org/repo.git\")\n"
+        "{KIND}\"tools/sisho\": catasto.repo(\"git@github.com:org/repo.git\")\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("ssh"), "{err}");
 
     let err = Manifest::parse(&format!(
-        "{USE}\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: 1.2)\n"
+        "{KIND}\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: 1.2)\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("write it in quotes"), "{err}");
 
     for bad_branch in ["\"\"", "\"-flag\""] {
         let err = Manifest::parse(&format!(
-            "{USE}\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: {bad_branch})\n"
+            "{KIND}\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: {bad_branch})\n"
         ))
         .unwrap_err();
         assert!(err.to_string().contains("invalid branch name"), "{err}");
@@ -730,7 +770,7 @@ fn rejects_invalid_repo_url_and_branch() {
 #[test]
 fn rejects_entries_inside_a_declared_repo() {
     let err = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          \"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\")\n\
          \"tools/sisho/README.md\": catasto.local(\"../README.md\")\n"
     ))
@@ -742,7 +782,7 @@ fn rejects_entries_inside_a_declared_repo() {
 
     // Order independent: file declared before repo is also rejected.
     let err = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          \"tools/sisho/sub/a\": catasto.local(\"../a\")\n\
          \"./tools/sisho\": catasto.repo(\"https://example.com/sisho.git\")\n"
     ))
@@ -755,7 +795,7 @@ fn rejects_entries_inside_a_declared_repo() {
     // Sibling prefix like tools/sisho-extra is NOT inside tools/sisho.
     assert!(
         Manifest::parse(&format!(
-            "{USE}\
+            "{KIND}\
              \"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\")\n\
              \"tools/sisho-extra/file\": catasto.local(\"../a\")\n"
         ))
@@ -766,7 +806,7 @@ fn rejects_entries_inside_a_declared_repo() {
 #[test]
 fn parses_zone_declarations_with_single_and_tuple_patterns() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          ::zone(\n\
            \".\": (\n\
              require: \"Cargo.toml\"\n\
@@ -831,7 +871,7 @@ fn allows_multiple_zone_declarations_and_zone_only_manifest() {
 #[test]
 fn zone_supports_empty_allow_tuple_to_forbid_all_non_ignored_entries() {
     let manifest = Manifest::parse(&format!(
-        "{USE}::zone(\"empty\": (allow: (), ignore: (\".keep\")))\n"
+        "{KIND}::zone(\"empty\": (allow: (), ignore: (\".keep\")))\n"
     ))
     .unwrap();
     assert_eq!(manifest.zones[0].entries.allow.as_ref().unwrap().len(), 0);
@@ -849,7 +889,7 @@ fn zone_rejects_braces_prose_and_unnamed_entries() {
         "::zone(\"src\": (require: \"lib.rs\"), \"extra\")\n",
     ] {
         assert!(
-            Manifest::parse(&format!("{USE}{bad}")).is_err(),
+            Manifest::parse(&format!("{KIND}{bad}")).is_err(),
             "accepted: {bad}"
         );
     }
@@ -858,7 +898,7 @@ fn zone_rejects_braces_prose_and_unnamed_entries() {
 #[test]
 fn zone_rejects_duplicate_target_keys_across_declarations() {
     let err = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          ::zone(\"crates/<?kebab>/src\": (require: \"lib.rs\"))\n\
          ::zone(\"crates/<?kebab>/src\": (deny: \"<?>.bak\"))\n"
     ))
@@ -866,7 +906,7 @@ fn zone_rejects_duplicate_target_keys_across_declarations() {
     assert!(err.to_string().contains("declared twice"), "{err}");
 
     let err = Manifest::parse(&format!(
-        "{USE}::zone(\"./src\": (require: \"lib.rs\"), \"src\": (deny: \"<?>.bak\"))\n"
+        "{KIND}::zone(\"./src\": (require: \"lib.rs\"), \"src\": (deny: \"<?>.bak\"))\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("declared twice"), "{err}");
@@ -874,7 +914,8 @@ fn zone_rejects_duplicate_target_keys_across_declarations() {
 
 #[test]
 fn zone_rejects_empty_absolute_and_escaping_target_paths() {
-    let empty_err = Manifest::parse(&format!("{USE}::zone(\"\": (require: \"a\"))\n")).unwrap_err();
+    let empty_err =
+        Manifest::parse(&format!("{KIND}::zone(\"\": (require: \"a\"))\n")).unwrap_err();
     assert!(
         empty_err.to_string().contains("must not be empty"),
         "unexpected error for empty target: {empty_err}"
@@ -889,7 +930,7 @@ fn zone_rejects_empty_absolute_and_escaping_target_paths() {
         "\"crates//src\"",
         "\"crates/./src\"",
     ] {
-        let err = Manifest::parse(&format!("{USE}::zone({bad}: (require: \"a\"))\n")).unwrap_err();
+        let err = Manifest::parse(&format!("{KIND}::zone({bad}: (require: \"a\"))\n")).unwrap_err();
         assert!(
             err.to_string().contains("zone target path"),
             "unexpected error for {bad}: {err}"
@@ -928,7 +969,7 @@ fn zone_rejects_unknown_or_duplicate_spec_keys_and_invalid_patterns() {
         "::zone(\"src\": (dirs: (require: \"a\", require: \"b\")))\n",
     ] {
         assert!(
-            Manifest::parse(&format!("{USE}{bad}")).is_err(),
+            Manifest::parse(&format!("{KIND}{bad}")).is_err(),
             "accepted: {bad}"
         );
     }
@@ -937,7 +978,7 @@ fn zone_rejects_unknown_or_duplicate_spec_keys_and_invalid_patterns() {
 #[test]
 fn parses_zone_recursive_files_and_dirs() {
     let manifest = Manifest::parse(&format!(
-        "{USE}\
+        "{KIND}\
          ::zone(\n\
            \"nix\": (\n\
              recursive: true\n\

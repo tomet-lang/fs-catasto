@@ -57,10 +57,10 @@ The names are exact: `catasto.ctmt` and `catasto.lock`, and `init` takes no othe
 
 ## Files
 
-`catasto.ctmt` is written by hand, in cotomet, the data language of the Tomet ecosystem. It declares `::use(catasto, version: "1.0.0")` at the top and maps each managed path to a constructor call from the `catasto` vocabulary saying where its content comes from.
+`catasto.ctmt` is written by hand, in cotomet, the data language of the Tomet ecosystem. It declares `::kind(catasto, version: "1.0.0")` at the top and maps each managed path to a constructor call from the `catasto` vocabulary saying where its content comes from.
 
 ```text
-::use(catasto, version: "1.0.0")
+::kind(catasto, version: "1.0.0")
 
 "docs/shared/terms.tmt": catasto.local("../shared/terms.tmt")
 ```
@@ -75,7 +75,7 @@ A source is one of four constructors:
 - `catasto.repo("...", branch: ..., submodule: ...)` -- a git repository cloned as a worktree at the declared directory path. The positional first argument is an `https://` URL or a local path (relative to the workspace root). `branch` is optional; `submodule` defaults to `false`. When `submodule: true`, `catasto` also generates and checks `.gitmodules` for declared submodules. Repo entries cannot declare `executable`, and no managed file or repo may be declared inside another repo's directory.
 
 ```text
-::use(catasto, version: "1.0.0")
+::kind(catasto, version: "1.0.0")
 
 "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": catasto.git(
   "https://github.com/tomet-lang/vocabularies.git",
@@ -86,10 +86,10 @@ A source is one of four constructors:
 
 ## Upstreams
 
-Files that come from the same place name it once. `::upstream(...)` goes at the top of `catasto.ctmt`, alongside `::use(catasto, version: "1.0.0")` and before the first path, mapping each name to a `catasto.git(...)` constructor with `rev` and optionally a `root`:
+Files that come from the same place name it once. `::upstream(...)` goes at the top of `catasto.ctmt`, alongside `::kind(catasto, version: "1.0.0")` and before the first path, mapping each name to a `catasto.git(...)` constructor with `rev` and optionally a `root`:
 
 ```text
-::use(catasto, version: "1.0.0")
+::kind(catasto, version: "1.0.0")
 ::upstream(
   vocabularies: catasto.git("https://github.com/tomet-lang/vocabularies.git", rev: main, root: vocabularies)
 )
@@ -102,7 +102,7 @@ Files that come from the same place name it once. `::upstream(...)` goes at the 
 
 `root` is the directory of the repository that the `path`s of its entries start from: above, `rust/rust@1.0.0.vocabulary.tmt` is the file `vocabularies/rust/rust@1.0.0.vocabulary.tmt`. Without it they start at the top of the repository. It must be relative and stay inside the repository, and a `path` cannot climb out of it.
 
-An upstream is not a macro and the name does not leave the manifest. It is resolved into the full `git`, `rev` and `path` while the file is loaded, so `catasto.lock` records the same `git`, `rev`, `commit` and `sha256` as when they are written out, and moving an entry between the two forms does not make it stale. The `git` URL and `rev` of an upstream are checked where it is declared (and `path` and `symlink` are disallowed there). An entry uses `catasto.upstream(...)` or `catasto.git(...)`, not both. `::use` and `::upstream` are the declarations catasto reads.
+An upstream is not a macro and the name does not leave the manifest. It is resolved into the full `git`, `rev` and `path` while the file is loaded, so `catasto.lock` records the same `git`, `rev`, `commit` and `sha256` as when they are written out, and moving an entry between the two forms does not make it stale. The `git` URL and `rev` of an upstream are checked where it is declared (and `path` and `symlink` are disallowed there). An entry uses `catasto.upstream(...)` or `catasto.git(...)`, not both. The declarations catasto reads are `::kind(catasto, ...)` and the attributes of the `catasto` vocabulary, `::upstream` and `::zone`.
 `catasto upstream add --force NAME GIT [--rev R] [--root DIR]` replaces the definition of an existing upstream name, leaving entries and comments where they are. It edits the manifest only, without touching the lock or files; run `catasto sync` afterward to take affected files from the new place.
 
 An entry may also say whether the file is executable by wrapping the constructor call in a tuple:

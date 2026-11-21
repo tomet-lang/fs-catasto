@@ -140,14 +140,14 @@ pub fn add_or_replace_entry(
         };
 
         let replaced = if text[replace_span.clone()] == new_source {
-            if has_use_catasto(text, &layout) {
+            if has_kind_catasto(text, &layout) {
                 return Ok((text.to_owned(), AddOutcome::Unchanged));
             }
             text.to_owned()
         } else {
             splice(text, replace_span, &new_source)
         };
-        let ensured = ensure_use_catasto(&replaced)?;
+        let ensured = ensure_kind_catasto(&replaced)?;
         let outcome = if ensured == text {
             AddOutcome::Unchanged
         } else {
@@ -156,9 +156,9 @@ pub fn add_or_replace_entry(
         return Ok((ensured, outcome));
     }
 
-    let text_with_use = ensure_use_catasto(text)?;
-    let layout = scan(&text_with_use)?;
-    let mut out = text_with_use.trim_end().to_owned();
+    let text_with_kind = ensure_kind_catasto(text)?;
+    let layout = scan(&text_with_kind)?;
+    let mut out = text_with_kind.trim_end().to_owned();
     if !out.empty_or_ends_with_newline() {
         out.push('\n');
     }
@@ -233,7 +233,7 @@ pub fn add_or_replace_upstream(
                 return Err(anyhow::Error::new(AlreadyDeclared::upstream(name)));
             }
             let replaced = if text[existing.value.clone()].trim() == upstream_text(upstream) {
-                if has_use_catasto(text, &initial_layout) {
+                if has_kind_catasto(text, &initial_layout) {
                     return Ok((text.to_owned(), AddOutcome::Unchanged));
                 }
                 text.to_owned()
@@ -259,7 +259,7 @@ pub fn add_or_replace_upstream(
                 block.push(')');
                 splice(text, decl.span.clone(), &block)
             };
-            let ensured = ensure_use_catasto(&replaced)?;
+            let ensured = ensure_kind_catasto(&replaced)?;
             let outcome = if ensured == text {
                 AddOutcome::Unchanged
             } else {
@@ -283,31 +283,31 @@ pub fn add_or_replace_upstream(
             block.push(')');
             splice(text, decl.span.clone(), &block)
         };
-        let ensured = ensure_use_catasto(&added)?;
+        let ensured = ensure_kind_catasto(&added)?;
         return Ok((ensured, AddOutcome::Added));
     }
 
-    let text_with_use = ensure_use_catasto(text)?;
-    let layout = scan(&text_with_use)?;
+    let text_with_kind = ensure_kind_catasto(text)?;
+    let layout = scan(&text_with_kind)?;
     let line = format!("  {name}: {}\n", upstream_text(upstream));
 
-    // Place `::upstream(...)` directly below `::use(catasto, ...)`.
-    let use_decl = layout
+    // Place `::upstream(...)` directly below `::kind(catasto, ...)`.
+    let kind_decl = layout
         .declarations
         .iter()
-        .find(|d| d.name == "use")
-        .ok_or_else(|| anyhow!("missing `::use(catasto)` declaration"))?;
-    let after_use = text_with_use[use_decl.span.end..]
+        .find(|d| d.name == "kind")
+        .ok_or_else(|| anyhow!("missing `::kind(catasto)` declaration"))?;
+    let after_kind = text_with_kind[kind_decl.span.end..]
         .find('\n')
-        .map_or(text_with_use.len(), |at| use_decl.span.end + at + 1);
-    let prefix = if text_with_use[..after_use].ends_with('\n') {
+        .map_or(text_with_kind.len(), |at| kind_decl.span.end + at + 1);
+    let prefix = if text_with_kind[..after_kind].ends_with('\n') {
         ""
     } else {
         "\n"
     };
     let block = format!("{prefix}::upstream(\n{line})\n");
     Ok((
-        splice(&text_with_use, after_use..after_use, &block),
+        splice(&text_with_kind, after_kind..after_kind, &block),
         AddOutcome::Added,
     ))
 }
@@ -397,9 +397,9 @@ pub fn upstream_is_used(text: &str, upstream: &str) -> Result<Vec<String>> {
     Ok(users)
 }
 
-fn has_use_catasto(text: &str, layout: &Layout) -> bool {
+fn has_kind_catasto(text: &str, layout: &Layout) -> bool {
     layout.declarations.iter().any(|decl| {
-        if decl.name != "use" {
+        if decl.name != "kind" {
             return false;
         }
         let Some(args) = &decl.args else {
@@ -408,18 +408,18 @@ fn has_use_catasto(text: &str, layout: &Layout) -> bool {
         let Ok(Value::Tuple(tuple)) = tomet_ast_parser::parse_value(&text[args.clone()]) else {
             return false;
         };
-        let target = tuple.get("target").or_else(|| tuple.nth_unnamed(0));
-        matches!(target, Some(Value::Scalar(Scalar::Text(ns))) if ns == "catasto")
+        let kind = tuple.get("kind").or_else(|| tuple.nth_unnamed(0));
+        matches!(kind, Some(Value::Scalar(Scalar::Text(ns))) if ns == "catasto")
     })
 }
 
-fn ensure_use_catasto(text: &str) -> Result<String> {
+fn ensure_kind_catasto(text: &str) -> Result<String> {
     let layout = scan(text)?;
-    if has_use_catasto(text, &layout) {
+    if has_kind_catasto(text, &layout) {
         return Ok(text.to_owned());
     }
     let at = layout.first_item_start(text);
-    let mut block = String::from("::use(catasto, version: \"1.0.0\")\n");
+    let mut block = String::from("::kind(catasto, version: \"1.0.0\")\n");
     if at == text.len() {
         let gap = match text {
             "" => "",

@@ -12,7 +12,7 @@ fn workspace(manifest: &str, files: &[(&str, &str)]) -> tempfile::TempDir {
 }
 
 const MANIFEST: &str = "\
-::use(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"1.0.0\")
 
 \"b.tmt\": catasto.local(\"src/b.tmt\")
 \"a.tmt\": catasto.local(\"src/a.tmt\")
@@ -48,7 +48,7 @@ fn written_lock_round_trips() {
 #[test]
 fn the_lock_text_is_json_keyed_by_path() {
     let dir = workspace(
-        "::use(catasto, version: \"1.0.0\")\n\n\"a.tmt\": catasto.local(\"src/a.tmt\")\n",
+        "::kind(catasto, version: \"1.0.0\")\n\n\"a.tmt\": catasto.local(\"src/a.tmt\")\n",
         &[("a.tmt", "abc")],
     );
 
@@ -66,7 +66,7 @@ fn the_lock_text_is_json_keyed_by_path() {
 #[test]
 fn a_file_named_version_does_not_collide_with_the_format() {
     let dir = workspace(
-        "::use(catasto, version: \"1.0.0\")\n\nversion: catasto.local(\"src/version\")\n",
+        "::kind(catasto, version: \"1.0.0\")\n\nversion: catasto.local(\"src/version\")\n",
         &[("version", "1")],
     );
 
@@ -99,7 +99,7 @@ fn lock_fails_when_a_managed_file_is_missing() {
 }
 
 const GIT_MANIFEST: &str = "\
-::use(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"1.0.0\")
 
 \"w.tmt\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"w.tmt\")
 ";
@@ -213,8 +213,8 @@ fn lock_round_trip_with_and_without_symlink_keep() {
 #[test]
 #[cfg(unix)]
 fn lock_fails_when_destination_kind_does_not_match_symlink_declaration() {
-    let keep_manifest = "::use(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\", symlink: keep)\n";
-    let default_manifest = "::use(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\")\n";
+    let keep_manifest = "::kind(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\", symlink: keep)\n";
+    let default_manifest = "::kind(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\")\n";
 
     // 1. keep declared, but destination is regular file -> error
     let dir1 = workspace(keep_manifest, &[("link", "regular file")]);
@@ -261,7 +261,7 @@ fn mode_executable_round_trips_and_absent_for_normal_file() {
 
 #[test]
 fn lock_preserves_existing_mode() {
-    let manifest = "::use(catasto, version: \"1.0.0\")\n\n\"run.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"run.sh\")\n";
+    let manifest = "::kind(catasto, version: \"1.0.0\")\n\n\"run.sh\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"run.sh\")\n";
     let dir = workspace(manifest, &[("run.sh", "#!/bin/sh")]);
     let initial_lock = "{\n  \"version\": 1,\n  \"files\": {\n    \"run.sh\": {\n      \"sha256\": \"x\",\n      \"source\": {\n        \"git\": \"https://example.com/v.git\",\n        \"rev\": \"v1\",\n        \"path\": \"run.sh\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\",\n      \"mode\": \"executable\"\n    }\n  }\n}\n";
     std::fs::write(dir.path().join(LOCK_FILE), initial_lock).unwrap();
@@ -279,7 +279,7 @@ fn lock_preserves_existing_mode() {
 #[test]
 fn lock_records_repo_entries_in_repos_section() {
     let manifest = "\
-::use(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"1.0.0\")
 
 \"tools/sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\", branch: main, submodule: true)
 ";
@@ -316,7 +316,7 @@ fn lock_records_repo_entries_in_repos_section() {
 #[test]
 fn repo_lock_preserves_existing_commit() {
     let manifest = "\
-::use(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"1.0.0\")
 
 \"sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\")
 ";

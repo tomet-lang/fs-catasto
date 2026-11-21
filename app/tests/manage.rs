@@ -171,7 +171,7 @@ fn the_comments_the_manifest_opened_with_survive_every_edit() {
         "{manifest}"
     );
     assert!(
-        manifest.contains("::use(catasto, version: \"1.0.0\")"),
+        manifest.contains("::kind(catasto, version: \"1.0.0\")"),
         "{manifest}"
     );
     assert!(manifest.contains("::upstream("), "{manifest}");

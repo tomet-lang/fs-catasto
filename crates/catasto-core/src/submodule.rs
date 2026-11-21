@@ -105,7 +105,7 @@ mod tests {
     use super::*;
     use catasto_manifest::LockedRepo;
 
-    const USE: &str = "::use(catasto, version: \"1.0.0\")\n\n";
+    const USE: &str = "::kind(catasto, version: \"1.0.0\")\n\n";
 
     #[test]
     fn renders_gitmodules_for_submodule_repos() {

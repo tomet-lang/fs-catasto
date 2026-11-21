@@ -1,11 +1,12 @@
 //! The hand-written `catasto.ctmt` declaration.
 //!
-//! A manifest declares `::use(catasto, version: "1.0.0")`, optional shared
-//! Git repositories in `::upstream(...)`, and maps workspace-relative paths to
-//! constructor calls from the `catasto` vocabulary:
+//! A manifest is a catasto document: it declares `::kind(catasto, version: "1.0.0")`,
+//! then the attributes of the `catasto` vocabulary it needs (shared Git repositories in
+//! `::upstream(...)`, directory rules in `::zone(...)`), and maps workspace-relative paths
+//! to constructor calls from the same vocabulary:
 //!
 //! ```text
-//! ::use(catasto, version: "1.0.0")
+//! ::kind(catasto, version: "1.0.0")
 //! ::upstream(
 //!   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, root: vocabularies)
 //! )

@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use anyhow::{Result, anyhow, bail};
-use tomet_ast::{Declaration as AstDeclaration, Value};
+use tomet_ast::{Declaration as AstDeclaration, Name, Value};
 use tomet_declaration::{Declaration as SemDeclaration, Host, check_declarations};
 use tomet_scalar::Scalar;
 use tomet_type::Version;
@@ -21,10 +21,12 @@ pub(super) struct Upstream {
     pub(super) root: Option<PathBuf>,
 }
 
-/// Header state parsed from `::use(catasto, ...)`, `::upstream(...)`, and `::zone(...)`.
+/// Header state parsed from `::kind(catasto, ...)`, `::upstream(...)`, and `::zone(...)`.
 #[derive(Default)]
 pub(super) struct Header {
-    pub(super) has_use: bool,
+    /// Whether the manifest says it is a catasto document (`::kind(catasto, ...)`), which is what
+    /// puts the vocabulary's attributes and constructors in scope.
+    pub(super) has_kind: bool,
     pub(super) upstreams: Upstreams,
     pub(super) zones: Vec<Zone>,
 }
@@ -43,7 +45,9 @@ pub(super) struct Upstreams {
 impl Header {
     /// Reads and validates the declarations before the first entry.
     ///
-    /// Catasto recognizes `::use(catasto, ...)` and `::upstream(...)`.
+    /// The manifest is a catasto document: `::kind(catasto, ...)` says so, and the other
+    /// declarations are the attributes of the `catasto` vocabulary (its `::attribute` table),
+    /// written bare (`::upstream`) or with the namespace (`::catasto.upstream`).
     pub(super) fn from_header(header: &[AstDeclaration]) -> Result<Self> {
         let sem_decls: Vec<SemDeclaration> =
             header.iter().filter_map(SemDeclaration::from_ast).collect();
@@ -54,28 +58,36 @@ impl Header {
             bail!("{problem}");
         }
 
-        let mut has_use = false;
+        let mut has_kind = false;
         let mut upstream_decls = Vec::new();
         let mut zone_decls = Vec::new();
 
         for ast_decl in header {
-            if ast_decl.name.is_bare_named("use") {
+            if ast_decl.name.is_bare_named("kind") {
                 let sem_decl = SemDeclaration::from_ast(ast_decl)
-                    .ok_or_else(|| anyhow!("malformed `::use` declaration"))?;
-                validate_use_decl(&sem_decl)?;
-                if has_use {
-                    bail!("`::use(catasto)` is declared twice");
+                    .ok_or_else(|| anyhow!("malformed `::kind` declaration"))?;
+                validate_kind_decl(&sem_decl)?;
+                if has_kind {
+                    bail!("`::kind(catasto)` is declared twice");
                 }
-                has_use = true;
-            } else if ast_decl.name.is_bare_named("upstream") {
-                upstream_decls.push(ast_decl);
-            } else if ast_decl.name.is_bare_named("zone") {
-                zone_decls.push(ast_decl);
-            } else {
+                has_kind = true;
+            } else if ast_decl.name.is_bare_named("use") {
                 bail!(
-                    "unknown declaration `::{}`; catasto reads `::use`, `::upstream`, and `::zone`",
-                    ast_decl.name
+                    "a manifest is a catasto document: write `::kind(catasto, version: \"1.0.0\")`, not `::use`"
                 );
+            } else {
+                match catasto_attribute(&ast_decl.name) {
+                    Some("upstream") => upstream_decls.push(ast_decl),
+                    Some("zone") => zone_decls.push(ast_decl),
+                    Some(other) => bail!(
+                        "`::{other}` is in the catasto vocabulary, but this catasto does not read it"
+                    ),
+                    None => bail!(
+                        "unknown declaration `::{}`; catasto reads `::kind` and {}",
+                        ast_decl.name,
+                        attribute_list()
+                    ),
+                }
             }
         }
 
@@ -97,9 +109,9 @@ impl Header {
                     "`::upstream` entries must be named: `::upstream(name: catasto.git(\"…\", rev: main))`"
                 );
             }
-            if !args.is_empty() && !has_use {
+            if !args.is_empty() && !has_kind {
                 bail!(
-                    "`catasto` constructors require `::use(catasto, version: \"1.0.0\")` at the top of the manifest"
+                    "`catasto` constructors require `::kind(catasto, version: \"1.0.0\")` at the top of the manifest"
                 );
             }
             for (name, value) in args.named() {
@@ -114,35 +126,59 @@ impl Header {
         let zones = parse_zone_decls(&zone_decls)?;
 
         Ok(Self {
-            has_use,
+            has_kind,
             upstreams: Upstreams { named },
             zones,
         })
     }
 }
 
-fn validate_use_decl(sem_decl: &SemDeclaration) -> Result<()> {
+/// The attribute of the catasto vocabulary that `name` resolves to: a bare name or one in the
+/// `catasto` namespace, found in the vocabulary's `::attribute` table.
+fn catasto_attribute(name: &Name) -> Option<&'static str> {
+    if !matches!(name.namespace.as_deref(), None | Some("catasto")) {
+        return None;
+    }
+    vocabulary()
+        .attributes
+        .get_key_value(name.name.as_str())
+        .map(|(declared, _)| declared.as_str())
+}
+
+/// The attributes a manifest may write, for an error message: "`::upstream` and `::zone`".
+fn attribute_list() -> String {
+    let names: Vec<String> = vocabulary()
+        .attributes
+        .keys()
+        .map(|name| format!("`::{name}`"))
+        .collect();
+    match names.split_last() {
+        None => "nothing else".to_owned(),
+        Some((last, [])) => last.clone(),
+        Some((last, rest)) => format!("{} and {last}", rest.join(", ")),
+    }
+}
+
+fn validate_kind_decl(sem_decl: &SemDeclaration) -> Result<()> {
     let Some(view) = sem_decl.args_view() else {
-        bail!("`::use` requires a vocabulary name, e.g. `::use(catasto, version: \"1.0.0\")`");
+        bail!("`::kind` requires a name, e.g. `::kind(catasto, version: \"1.0.0\")`");
     };
-    let Some(target_val) = view.get("target") else {
-        bail!("`::use` requires a vocabulary name, e.g. `::use(catasto, version: \"1.0.0\")`");
+    let Some(kind_val) = view.get("kind") else {
+        bail!("`::kind` requires a name, e.g. `::kind(catasto, version: \"1.0.0\")`");
     };
-    let Some(Scalar::Text(target)) = target_val.as_scalar() else {
-        bail!(
-            "`::use` vocabulary name must be a string, e.g. `::use(catasto, version: \"1.0.0\")`"
-        );
+    let Some(Scalar::Text(kind)) = kind_val.as_scalar() else {
+        bail!("`::kind` name must be a string, e.g. `::kind(catasto, version: \"1.0.0\")`");
     };
-    if target != "catasto" {
-        bail!("unknown vocabulary `{target}`; catasto only reads `::use(catasto, ...)`");
+    if kind != "catasto" {
+        bail!("a manifest is of kind `catasto`, not `{kind}`: write `::kind(catasto, ...)`");
     }
     if let Some(version_val) = view.get("version") {
         let version_text = version_val
             .as_scalar()
             .and_then(Scalar::text)
-            .ok_or_else(|| anyhow!("`::use(catasto)` version must be a version string"))?;
+            .ok_or_else(|| anyhow!("`::kind(catasto)` version must be a version string"))?;
         let version = Version::parse(version_text.trim())
-            .ok_or_else(|| anyhow!("invalid `::use(catasto)` version `{version_text}`"))?;
+            .ok_or_else(|| anyhow!("invalid `::kind(catasto)` version `{version_text}`"))?;
         if version.major() != 1
             || version.minor() != 0
             || version.patch() != 0

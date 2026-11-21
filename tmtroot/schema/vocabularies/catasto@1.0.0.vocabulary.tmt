@@ -1,5 +1,14 @@
 ::kind(vocabulary)
 ::vocabulary(catasto, version: "1.0.0")
+::attribute(
+  upstream: (
+    about: | Git repositories, each named once (`name: catasto.git(url, rev: main, root: dir)`), that entries take files from with `catasto.upstream(name, path: ...)`.
+    host: ctmt
+  )
+  zone: (
+    about: | Directory rules, keyed by a workspace path pattern: what a directory must hold, may hold, and must not hold.
+    host: ctmt
+))
 ::constructor(
   git: (
     about: | A file or repository in Git.

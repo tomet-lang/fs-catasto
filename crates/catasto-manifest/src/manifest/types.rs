@@ -429,9 +429,9 @@ fn parse_entry_kind(
     executable: Option<bool>,
     header: &Header,
 ) -> Result<ManagedKind> {
-    if !header.has_use {
+    if !header.has_kind {
         bail!(
-            "`catasto` constructors require `::use(catasto, version: \"1.0.0\")` at the top of the manifest"
+            "`catasto` constructors require `::kind(catasto, version: \"1.0.0\")` at the top of the manifest"
         );
     }
     let constructed = vocabulary()
@@ -557,7 +557,7 @@ impl Manifest {
 
     /// Parses and validates manifest text.
     ///
-    /// A file with nothing but comments (or only `::use(catasto, ...)`) is the
+    /// A file with nothing but comments (or only `::kind(catasto, ...)`) is the
     /// empty manifest.
     pub fn parse(text: &str) -> Result<Self> {
         let file = cotomet::parse_file(text).map_err(|e| anyhow!("{e}"))?;

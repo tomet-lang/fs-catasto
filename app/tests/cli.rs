@@ -41,7 +41,7 @@ impl Workspace {
         std::fs::create_dir_all(source.parent().unwrap()).unwrap();
         std::fs::write(
             vault.join("catasto.ctmt"),
-            "::use(catasto, version: \"1.0.0\")\n\n\"schema/writ.vocabulary.tmt\": catasto.local(\"../vocabularies/writ.vocabulary.tmt\")\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"schema/writ.vocabulary.tmt\": catasto.local(\"../vocabularies/writ.vocabulary.tmt\")\n",
         )
         .unwrap();
         std::fs::write(&source, "canonical").unwrap();
@@ -177,7 +177,7 @@ impl GitWorkspace {
         std::fs::write(
             ws.vault.join("catasto.ctmt"),
             format!(
-                "::use(catasto, version: \"1.0.0\")\n\n\"schema/w.tmt\": catasto.git({:?}, rev: main, path: \"w.tmt\")\n",
+                "::kind(catasto, version: \"1.0.0\")\n\n\"schema/w.tmt\": catasto.git({:?}, rev: main, path: \"w.tmt\")\n",
                 ws.remote
             ),
         )
@@ -295,7 +295,7 @@ fn e2e_git_symlink_follow() {
     std::fs::write(
         ws.vault.join("catasto.ctmt"),
         format!(
-            "::use(catasto, version: \"1.0.0\")\n\n\"followed.txt\": catasto.git({:?}, rev: main, path: \"link.txt\")\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"followed.txt\": catasto.git({:?}, rev: main, path: \"link.txt\")\n",
             ws.remote
         ),
     )
@@ -327,7 +327,7 @@ fn e2e_git_symlink_keep() {
     std::fs::write(
         ws.vault.join("catasto.ctmt"),
         format!(
-            "::use(catasto, version: \"1.0.0\")\n\n\"kept.txt\": catasto.git({:?}, rev: main, path: \"link.txt\", symlink: keep)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"kept.txt\": catasto.git({:?}, rev: main, path: \"link.txt\", symlink: keep)\n",
             ws.remote
         ),
     )
@@ -368,7 +368,7 @@ fn check_evaluates_zone_rules_for_human_and_json_output() {
     std::fs::write(
         ws.join("catasto.ctmt"),
         "\
-::use(catasto, version: \"1.0.0\")
+::kind(catasto, version: \"1.0.0\")
 ::zone(
   \"crates/<?kebab(crate)>/src\": (
     require: (\"lib.rs\")
