@@ -229,7 +229,7 @@ checksum = "a6ef517f0926dd24a1582492c791b6a4818a4d94e789a334894aa15b0d12f55c"
 [[package]]
 name = "cotomet"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "serde_cotomet",
  "tomet-ast",
@@ -693,7 +693,7 @@ dependencies = [
 [[package]]
 name = "serde_cotomet"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "serde",
  "tomet-ast",
@@ -826,7 +826,7 @@ checksum = "8b36ee98fd31ec7426d599183e8fe26932a8dc1fb76ddb6214d05493377d34ca"
 [[package]]
 name = "tomet-address"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "serde",
  "tomet-ast",
@@ -837,7 +837,7 @@ dependencies = [
 [[package]]
 name = "tomet-ast"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "serde",
  "tomet-scalar",
@@ -849,7 +849,7 @@ dependencies = [
 [[package]]
 name = "tomet-ast-parser"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-cst",
@@ -863,7 +863,7 @@ dependencies = [
 [[package]]
 name = "tomet-config"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-ast-parser",
@@ -879,7 +879,7 @@ dependencies = [
 [[package]]
 name = "tomet-cst"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "rowan",
 ]
@@ -887,7 +887,7 @@ dependencies = [
 [[package]]
 name = "tomet-cst-parser"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-cst",
  "tomet-lexer",
@@ -896,7 +896,7 @@ dependencies = [
 [[package]]
 name = "tomet-declaration"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-scalar",
@@ -909,7 +909,7 @@ dependencies = [
 [[package]]
 name = "tomet-expr"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "time",
  "tomet-ast",
@@ -926,7 +926,7 @@ dependencies = [
 [[package]]
 name = "tomet-formatter"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-ast-parser",
@@ -953,7 +953,7 @@ dependencies = [
 [[package]]
 name = "tomet-id"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "nanoid",
  "tomet-type",
@@ -963,7 +963,7 @@ dependencies = [
 [[package]]
 name = "tomet-lexer"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-cst",
  "tomet-span",
@@ -972,7 +972,7 @@ dependencies = [
 [[package]]
 name = "tomet-load-config"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast-parser",
  "tomet-config",
@@ -981,7 +981,7 @@ dependencies = [
 [[package]]
 name = "tomet-lowering"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-cst",
@@ -995,12 +995,12 @@ dependencies = [
 [[package]]
 name = "tomet-position"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 
 [[package]]
 name = "tomet-printer"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-config",
@@ -1014,7 +1014,7 @@ dependencies = [
 [[package]]
 name = "tomet-scalar"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "serde",
 ]
@@ -1022,7 +1022,7 @@ dependencies = [
 [[package]]
 name = "tomet-semantics"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "serde_json",
  "tomet-address",
@@ -1038,7 +1038,7 @@ dependencies = [
 [[package]]
 name = "tomet-semantics-core"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-scalar",
@@ -1048,7 +1048,7 @@ dependencies = [
 [[package]]
 name = "tomet-span"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "serde",
 ]
@@ -1056,7 +1056,7 @@ dependencies = [
 [[package]]
 name = "tomet-spec"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "clap",
  "tomet-ast",
@@ -1073,7 +1073,7 @@ dependencies = [
 [[package]]
 name = "tomet-spec-derive"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1083,7 +1083,7 @@ dependencies = [
 [[package]]
 name = "tomet-spelling"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-scalar",
  "tomet-type",
@@ -1092,7 +1092,7 @@ dependencies = [
 [[package]]
 name = "tomet-style"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "unicode-width",
@@ -1101,7 +1101,7 @@ dependencies = [
 [[package]]
 name = "tomet-tree"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-scalar",
@@ -1111,7 +1111,7 @@ dependencies = [
 [[package]]
 name = "tomet-type"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-scalar",
 ]
@@ -1119,7 +1119,7 @@ dependencies = [
 [[package]]
 name = "tomet-validator-blueprint"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-expr",
@@ -1138,7 +1138,7 @@ dependencies = [
 [[package]]
 name = "tomet-validator-core"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "serde",
  "tomet-address",
@@ -1159,7 +1159,7 @@ dependencies = [
 [[package]]
 name = "tomet-validator-rule"
 version = "0.5.0"
-source = "git+https://github.com/tomet-lang/tomet.git#71039d7b674bf22bbdd9554ac88a91e0181353b3"
+source = "git+https://github.com/tomet-lang/tomet.git#3b7e771c93204a5c248bd184fae54c87caf176cf"
 dependencies = [
  "tomet-ast",
  "tomet-scalar",
