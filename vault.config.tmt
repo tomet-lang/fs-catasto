@@ -16,9 +16,13 @@
     blank_before: true
     blank_after: true
   )
-  list:        (multiline.style.content: "box")
-  code:        (fence.lines: "marked")
-  map:         (align_values: true, collapse_closing_parens: true)
+  list: (multiline.style.content: "box")
+  code: (fence.lines: "marked")
+  map: (
+    align_values: true
+    collapse_closing_parens: true
+    multiline_comma: never
+  )
   declaration: (blank_after: true, blank_between: false)
   element: (
     table:   (adjust_width: auto, max_col_width: 50)

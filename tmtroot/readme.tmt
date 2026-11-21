@@ -1,5 +1,5 @@
 ::export(
-  type: commonmark,
+  type: commonmark
   path: "README.md"
 )
 ::id(doc-readme)

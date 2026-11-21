@@ -113,12 +113,13 @@ The format version this catasto reads and writes.
 
 The hand-written `catasto.ctmt` declaration.
 
-A manifest declares `::use(catasto, version: "1.0.0")`, optional shared
-Git repositories in `::upstream(...)`, and maps workspace-relative paths to
-constructor calls from the `catasto` vocabulary:
+A manifest is a catasto document: it declares `::kind(catasto, version: "1.0.0")`,
+then the attributes of the `catasto` vocabulary it needs (shared Git repositories in
+`::upstream(...)`, directory rules in `::zone(...)`), and maps workspace-relative paths
+to constructor calls from the same vocabulary:
 
 ```text
-`` ::use(catasto, version: "1.0.0")
+`` ::kind(catasto, version: "1.0.0")
 `` ::upstream(
 ``   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, root: vocabularies)
 `` )
@@ -209,6 +210,14 @@ Manifest entry declaring a managed workspace file or repository.
 Each top-level entry in `catasto.ctmt` binds a workspace-relative path
 to a `catasto.{upstream,git,local,repo}(...)` constructor call; file entries
 may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
+
+====[struct ZoneSpec]
+
+Directory schema rules declared in `::zone(...)`.
+
+A zone maps a workspace-relative directory path pattern (using `<?...>` holes, or `"."` for
+the workspace root) to constraints on child entries of each matching directory (and, when
+`recursive: true`, its non-ignored subdirectories).
 
 ===[Functions]
 
