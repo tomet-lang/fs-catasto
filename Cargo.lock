@@ -414,7 +414,7 @@ checksum = "2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea"
 [[package]]
 name = "hole-engine"
 version = "0.1.0"
-source = "git+https://github.com/tomet-lang/tomet-hole.git#68eeb3d237d5cd86dd1baf987fe258d07aea6e77"
+source = "git+https://github.com/tomet-lang/tomet-hole.git#adeabeb5f3ab18617a588019f2075452aa002e30"
 
 [[package]]
 name = "hybrid-array"
@@ -942,7 +942,7 @@ dependencies = [
 [[package]]
 name = "tomet-hole"
 version = "0.1.0"
-source = "git+https://github.com/tomet-lang/tomet-hole.git#68eeb3d237d5cd86dd1baf987fe258d07aea6e77"
+source = "git+https://github.com/tomet-lang/tomet-hole.git#adeabeb5f3ab18617a588019f2075452aa002e30"
 dependencies = [
  "hole-engine",
  "tomet-ast",
