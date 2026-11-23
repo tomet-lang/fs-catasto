@@ -124,9 +124,9 @@ to constructor calls from the same vocabulary:
 ``   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, root: vocabularies)
 `` )
 ``
-`` "tmtroot/schema/vocabularies/writ.vocabulary.tmt": catasto.local("../vocabularies/writ.vocabulary.tmt")
+`` "tmtroot/schema/writ.vocabulary.tmt": catasto.local("../vocabularies/writ.vocabulary.tmt")
 ``
-`` "tmtroot/schema/vocabularies/rust.vocabulary.tmt": catasto.upstream(
+`` "tmtroot/schema/rust.vocabulary.tmt": catasto.upstream(
 ``   vocabularies,
 ``   path: "rust/rust.vocabulary.tmt"
 `` )

@@ -11,9 +11,9 @@
 //!   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, root: vocabularies)
 //! )
 //!
-//! "tmtroot/schema/vocabularies/writ.vocabulary.tmt": catasto.local("../vocabularies/writ.vocabulary.tmt")
+//! "tmtroot/schema/writ.vocabulary.tmt": catasto.local("../vocabularies/writ.vocabulary.tmt")
 //!
-//! "tmtroot/schema/vocabularies/rust.vocabulary.tmt": catasto.upstream(
+//! "tmtroot/schema/rust.vocabulary.tmt": catasto.upstream(
 //!   vocabularies,
 //!   path: "rust/rust.vocabulary.tmt"
 //! )
@@ -52,7 +52,7 @@ pub const MANIFEST_FILE: &str = "catasto.ctmt";
 
 /// Canonical `catasto@1.0.0` vocabulary source.
 pub const VOCABULARY_TMT: &str =
-    include_str!("../../../../tmtroot/schema/vocabularies/catasto@1.0.0.vocabulary.tmt");
+    include_str!("../../../../tmtroot/schema/catasto@1.0.0.vocabulary.tmt");
 
 static VOCABULARY: LazyLock<Vocabulary> = LazyLock::new(|| {
     let doc = tomet_ast_parser::parse_file(VOCABULARY_TMT)

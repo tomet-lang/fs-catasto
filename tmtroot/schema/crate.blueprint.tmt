@@ -4,6 +4,6 @@
   description: "crate"
 }
 
-// @meta{
+// @meta(
 //   mtime: $generate.date(now)
-// }
+// )

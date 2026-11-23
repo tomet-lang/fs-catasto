@@ -5,8 +5,14 @@
 )
 ::zone(
   // --- Tomet ---
-  "tmtroot/schema/blueprints": (allow: ("<?kebab>.blueprint.tmt"))
-  "tmtroot/dev/dropped":       (allow: ("<?int>-<?kebab>.adr.tmt"))
+  "tmtroot/schema": (
+    allow: (
+      "<?kebab><?opt>[@<?int>.<?int>.<?int>].blueprint.tmt"
+      "<?kebab><?opt>[@<?int>.<?int>.<?int>].blueprint.ctmt"
+      "<?kebab><?opt>[@<?int>.<?int>.<?int>].vocabulary.tmt"
+    )
+  )
+  "tmtroot/dev/dropped": (allow: ("<?int>-<?kebab>.adr.tmt"))
   // --- Crates ---
   "crates/<?kebab>": (
     require: ("Cargo.toml", "src")
@@ -36,8 +42,8 @@
 "tmtroot/dev/howto/nix.tmt":               catasto.upstream(commonfiles, path: "tmtroot/dev/howto/nix.tmt")
 
 // --- Vocabularies ---
-"tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": catasto.upstream(vocabularies, path: "rust/rust@1.0.0.vocabulary.tmt")
-"tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt": catasto.upstream(vocabularies, path: "writ/writ@1.0.0.vocabulary.tmt")
+"tmtroot/schema/rust@1.0.0.vocabulary.tmt": catasto.upstream(vocabularies, path: "rust/rust@1.0.0.vocabulary.tmt")
+"tmtroot/schema/writ@1.0.0.vocabulary.tmt": catasto.upstream(vocabularies, path: "writ/writ@1.0.0.vocabulary.tmt")
 
 // --- Environment ---
 ".editorconfig":  catasto.upstream(commonfiles, path: ".editorconfig")

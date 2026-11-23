@@ -37,7 +37,7 @@ Every command works on the current directory; `-C DIR` (`--workspace DIR`) says 
 ```bash
 catasto init
 catasto upstream add vocabularies https://github.com/tomet-lang/vocabularies.git --root vocabularies
-catasto add tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt --upstream vocabularies writ/writ@1.0.0.vocabulary.tmt
+catasto add tmtroot/schema/writ@1.0.0.vocabulary.tmt --upstream vocabularies writ/writ@1.0.0.vocabulary.tmt
 catasto check
 ```
 
@@ -77,7 +77,7 @@ A source is one of four constructors:
 ```text
 ::kind(catasto, version: "1.0.0")
 
-"tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": catasto.git(
+"tmtroot/schema/rust@1.0.0.vocabulary.tmt": catasto.git(
   "https://github.com/tomet-lang/vocabularies.git",
   rev: main,
   path: "vocabularies/rust/rust@1.0.0.vocabulary.tmt"
@@ -94,7 +94,7 @@ Files that come from the same place name it once. `::upstream(...)` goes at the 
   vocabularies: catasto.git("https://github.com/tomet-lang/vocabularies.git", rev: main, root: vocabularies)
 )
 
-"tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": catasto.upstream(
+"tmtroot/schema/rust@1.0.0.vocabulary.tmt": catasto.upstream(
   vocabularies,
   path: "rust/rust@1.0.0.vocabulary.tmt"
 )

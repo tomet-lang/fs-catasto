@@ -163,7 +163,7 @@
       },
       "commit": "f5917d73c8cc20837a93d826828a9df67471ba58"
     },
-    "tmtroot/schema/vocabularies/rust@1.0.0.vocabulary.tmt": {
+    "tmtroot/schema/rust@1.0.0.vocabulary.tmt": {
       "sha256": "41b022ca9a034d7894d041039fc85fb793a4e5149da52ccc3191e88056430209",
       "source": {
         "git": "https://github.com/tomet-lang/vocabularies.git",
@@ -172,7 +172,7 @@
       },
       "commit": "7c8a43e240bfb5680d24e9711c4a42f09df4e75f"
     },
-    "tmtroot/schema/vocabularies/writ@1.0.0.vocabulary.tmt": {
+    "tmtroot/schema/writ@1.0.0.vocabulary.tmt": {
       "sha256": "2662a7f93d70d90f0e6de79a333036a01e89875b6ceeb11f5a7207e263ef4677",
       "source": {
         "git": "https://github.com/tomet-lang/vocabularies.git",
