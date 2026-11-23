@@ -6,8 +6,8 @@ pub mod manifest;
 pub mod spec;
 
 pub use edit::{AddOutcome, AlreadyDeclared, DeclaredKind, SourceText, UpstreamText};
-pub use lock::{LOCK_FILE, Lock, LockMode, Locked, LockedRepo};
+pub use lock::{LOCK_FILE, Lock, LockMode, Locked, LockedSubmodule};
 pub use manifest::{
-    EntryRules, Managed, ManagedKind, Manifest, Repo, Source, Symlink, Zone, ZonePattern,
+    EntryRules, Managed, ManagedKind, Manifest, Source, Submodule, Symlink, Zone, ZonePattern,
 };
 pub use spec::{ManifestEntrySpec, UpstreamSpec, ZoneSpec, all_manifest_specs, blueprint_spec};

@@ -394,34 +394,41 @@ fn old_lock_without_mode_is_clean_when_destination_is_normal_file() {
 }
 
 #[test]
-fn check_repo_detects_unlocked_missing_and_modified_remote() {
+fn check_submodule_detects_unlocked_missing_modified_remote_and_sparse_drift() {
     let tmp = tempfile::tempdir().unwrap();
     let vault = tmp.path().join("vault");
     std::fs::create_dir_all(&vault).unwrap();
 
     let upstream = catasto_git::testing::TestRepo::new();
-    let head = upstream.commit("README.md", "hello");
+    let head = upstream.commit("sub/dir/README.md", "hello");
+    upstream.commit("other/file.txt", "other file");
     let other = catasto_git::testing::TestRepo::new();
     other.commit("README.md", "other");
 
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"deps/tool\": catasto.repo({:?}, branch: main)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"deps/tool\": catasto.git({:?}, rev: main, path: \"sub/dir\", submodule: true)\n",
             upstream.url()
         ),
     )
     .unwrap();
 
-    // 1. No lockfile -> Unlocked
+    // 1. No lockfile -> Unlocked (and missing .gitmodules)
     let rep = check(&vault).unwrap();
-    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations.len(), 2);
     assert_eq!(rep.violations[0].path, Path::new("deps/tool"));
     assert_eq!(rep.violations[0].kind, ViolationKind::Unlocked);
+    assert_eq!(rep.violations[1].path, Path::new(".gitmodules"));
+    assert_eq!(rep.violations[1].kind, ViolationKind::Missing);
+
+    // Sync .gitmodules so subsequent checks isolate deps/tool violations
+    let manifest = Manifest::load(&vault).unwrap();
+    crate::submodule::sync_gitmodules(&vault, &manifest, &Lock::default()).unwrap();
 
     // 2. Locked, but directory missing -> Missing
     let lock_text = format!(
-        "{{\n  \"version\": 1,\n  \"files\": {{}},\n  \"repos\": {{\n    \"deps/tool\": {{\n      \"git\": {:?},\n      \"branch\": \"main\",\n      \"commit\": \"{head}\"\n    }}\n  }}\n}}\n",
+        "{{\n  \"version\": 1,\n  \"files\": {{}},\n  \"submodules\": {{\n    \"deps/tool\": {{\n      \"git\": {:?},\n      \"rev\": \"main\",\n      \"path\": \"sub/dir\",\n      \"commit\": \"{head}\"\n    }}\n  }}\n}}\n",
         upstream.url()
     );
     std::fs::write(vault.join("catasto.lock"), lock_text).unwrap();
@@ -430,16 +437,109 @@ fn check_repo_detects_unlocked_missing_and_modified_remote() {
     assert_eq!(rep.violations[0].kind, ViolationKind::Missing);
 
     // 3. Cloned from wrong remote -> Modified
-    catasto_git::clone_repo(&other.url(), &vault.join("deps/tool"), Some("main")).unwrap();
+    catasto_git::clone_submodule(&other.url(), &vault.join("deps/tool"), "main", None, None)
+        .unwrap();
     let rep = check(&vault).unwrap();
     assert_eq!(rep.violations.len(), 1);
     assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
 
-    // 4. Cloned from expected remote -> Clean
+    // 4. Cloned from expected remote without sparse-checkout -> Modified
     std::fs::remove_dir_all(vault.join("deps/tool")).unwrap();
-    catasto_git::clone_repo(&upstream.url(), &vault.join("deps/tool"), Some("main")).unwrap();
+    catasto_git::clone_submodule(&upstream.url(), &vault.join("deps/tool"), "main", None, None)
+        .unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+
+    // 5. Cloned from expected remote with wrong sparse-checkout -> Modified
+    catasto_git::apply_sparse_checkout(&vault.join("deps/tool"), Some(Path::new("other"))).unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+
+    // 6. Cloned from expected remote with matching sparse-checkout -> Clean
+    catasto_git::apply_sparse_checkout(&vault.join("deps/tool"), Some(Path::new("sub/dir")))
+        .unwrap();
     let rep = check(&vault).unwrap();
     assert!(rep.is_ok(), "{:?}", rep.violations);
+}
+
+#[test]
+#[cfg(unix)]
+fn check_directory_detects_modified_added_deleted_and_exec_drift() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    let repo = catasto_git::testing::TestRepo::new();
+    repo.commit("dir/a.txt", "hello");
+    repo.commit_executable("dir/sub/run.sh", "#!/bin/sh\necho hi\n");
+    repo.commit_symlink("dir/sub/link", "../a.txt");
+
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "::kind(catasto, version: \"1.0.0\")\n\n\"dir\": catasto.git({:?}, rev: main, path: \"dir\", symlink: keep)\n",
+            repo.url()
+        ),
+    )
+    .unwrap();
+
+    crate::sync_with(&vault, crate::SyncMode::Locked, Some(&cache)).unwrap();
+    assert!(check(&vault).unwrap().is_ok());
+
+    // 1. Modify a file inside directory -> Modified
+    std::fs::write(vault.join("dir/a.txt"), "edited").unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+    std::fs::write(vault.join("dir/a.txt"), "hello").unwrap();
+
+    // 2. Add an extra file inside directory -> Modified
+    std::fs::write(vault.join("dir/extra.txt"), "extra").unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+    std::fs::remove_file(vault.join("dir/extra.txt")).unwrap();
+
+    // 3. Delete a file inside directory -> Modified
+    std::fs::remove_file(vault.join("dir/a.txt")).unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+    std::fs::write(vault.join("dir/a.txt"), "hello").unwrap();
+
+    // 4. Strip executable bit on script inside directory -> Modified
+    std::fs::set_permissions(
+        vault.join("dir/sub/run.sh"),
+        std::fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+    std::fs::set_permissions(
+        vault.join("dir/sub/run.sh"),
+        std::fs::Permissions::from_mode(0o755),
+    )
+    .unwrap();
+    assert!(check(&vault).unwrap().is_ok());
+
+    // 5. Replace managed directory with regular file -> Modified
+    std::fs::remove_dir_all(vault.join("dir")).unwrap();
+    std::fs::write(vault.join("dir"), "not a dir").unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+
+    // 6. Delete managed directory -> Missing
+    std::fs::remove_file(vault.join("dir")).unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].kind, ViolationKind::Missing);
 }
 
 #[test]

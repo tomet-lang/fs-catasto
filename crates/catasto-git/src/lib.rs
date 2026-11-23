@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::{Result, bail};
-use catasto_digest::sha256_hex;
+use catasto_digest::{TreeDigestEntry, TreeEntryKind, sha256_hex, sha256_tree};
 
 mod cmd;
 #[cfg(any(test, feature = "testing"))]
@@ -15,8 +15,9 @@ mod tree;
 mod url;
 
 pub use cmd::{
-    checkout_commit, clone_repo, current_branch, fast_forward_branch, fetch_worktree, head_commit,
-    remote_url,
+    apply_sparse_checkout, check_sparse_checkout, checkout_commit, checkout_rev, clone_submodule,
+    current_branch, fetch_worktree, head_commit, is_sparse_checkout, remote_url,
+    sparse_checkout_list, update_submodule,
 };
 pub use url::{UrlKind, classify, resolve_url};
 
@@ -42,6 +43,24 @@ impl From<catasto_manifest::manifest::Symlink> for SymlinkMode {
     }
 }
 
+/// Content of a leaf entry inside a fetched directory.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DirEntryContent {
+    /// Regular file bytes and whether it is executable (`100755` in git).
+    File { bytes: Vec<u8>, executable: bool },
+    /// Symlink target path string.
+    Link(String),
+}
+
+/// One leaf entry inside a fetched directory, relative to the fetched directory root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DirEntry {
+    /// Relative path inside the directory (e.g. `"a/b.txt"`).
+    pub rel_path: PathBuf,
+    /// File bytes or symlink target.
+    pub content: DirEntryContent,
+}
+
 /// Content read from a git repository.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Content {
@@ -49,34 +68,81 @@ pub enum Content {
     File(Vec<u8>),
     /// Symlink target path string.
     Link(String),
+    /// Directory tree content, sorted by `rel_path`.
+    Dir(Vec<DirEntry>),
 }
 
 impl Content {
-    /// Returns the bytes of the file, or `None` if it is a symlink.
+    /// Returns the bytes of the file, or `None` if it is not a regular file.
     pub fn file_bytes(&self) -> Option<&[u8]> {
         match self {
             Self::File(bytes) => Some(bytes),
-            Self::Link(_) => None,
+            Self::Link(_) | Self::Dir(_) => None,
         }
     }
 
-    /// Returns the symlink target, or `None` if it is a file.
+    /// Returns the symlink target, or `None` if it is not a symlink.
     pub fn link_target(&self) -> Option<&str> {
         match self {
             Self::Link(target) => Some(target),
-            Self::File(_) => None,
+            Self::File(_) | Self::Dir(_) => None,
+        }
+    }
+
+    /// Returns the directory entries, or `None` if it is not a directory.
+    pub fn dir_entries(&self) -> Option<&[DirEntry]> {
+        match self {
+            Self::Dir(entries) => Some(entries),
+            Self::File(_) | Self::Link(_) => None,
+        }
+    }
+
+    /// Computes the deterministic SHA-256 digest of this content.
+    ///
+    /// For [`Content::Dir`], `executable_override` overrides the git executable bit on
+    /// regular files when `Some`.
+    pub fn sha256(&self, executable_override: Option<bool>) -> String {
+        match self {
+            Self::File(bytes) => sha256_hex(bytes),
+            Self::Link(target) => sha256_hex(target.as_bytes()),
+            Self::Dir(entries) => {
+                let digest_entries: Vec<TreeDigestEntry> = entries
+                    .iter()
+                    .map(|entry| {
+                        let rel_path = entry
+                            .rel_path
+                            .to_string_lossy()
+                            .replace(std::path::MAIN_SEPARATOR, "/");
+                        match &entry.content {
+                            DirEntryContent::File { bytes, executable } => TreeDigestEntry {
+                                rel_path,
+                                kind: TreeEntryKind::File {
+                                    executable: executable_override.unwrap_or(*executable),
+                                },
+                                sha256: sha256_hex(bytes),
+                            },
+                            DirEntryContent::Link(target) => TreeDigestEntry {
+                                rel_path,
+                                kind: TreeEntryKind::Link,
+                                sha256: sha256_hex(target.as_bytes()),
+                            },
+                        }
+                    })
+                    .collect();
+                sha256_tree(&digest_entries)
+            }
         }
     }
 }
 
-/// A file or link read from a repository, with the commit it was read at.
+/// A file, link, or directory read from a repository, with the commit it was read at.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Fetched {
     /// Full commit id the revision resolved to (or was pinned to).
     pub commit: String,
-    /// Content of the file or link at that commit.
+    /// Content of the file, link, or directory at that commit.
     pub content: Content,
-    /// Whether the file is executable (`100755` in git). Kept symlinks are always `false`.
+    /// Whether the file is executable (`100755` in git). Kept symlinks and directories are `false`.
     pub executable: bool,
 }
 
@@ -107,7 +173,7 @@ impl GitCache {
         bail!("cannot locate a cache directory: set {CACHE_DIR_ENV}")
     }
 
-    /// Reads `path` from the repository at `url`.
+    /// Reads `path` (or the repository root when `path` is `None`) from the repository at `url`.
     ///
     /// With `pinned`, that commit is used and the network is touched only if
     /// the commit is not cached yet. Without it, the repository is fetched and
@@ -116,9 +182,12 @@ impl GitCache {
     ///
     /// With [`SymlinkMode::Follow`], any symlinks are resolved inside the
     /// repository up to 8 hops with loop detection, returning the final regular
-    /// file content as [`Content::File`].
-    /// With [`SymlinkMode::Keep`], the entry must be a symlink, and its target
-    /// text is returned as [`Content::Link`] without following.
+    /// file content as [`Content::File`] or directory tree as [`Content::Dir`].
+    /// With [`SymlinkMode::Keep`], if `path` points to a symlink, its target
+    /// text is returned as [`Content::Link`] without following; if `path` points
+    /// to a directory, its entries are returned as [`Content::Dir`] keeping
+    /// symlinks inside it as [`DirEntryContent::Link`]. `SymlinkMode::Keep`
+    /// requires `path` to be `Some`.
     ///
     /// In both modes, intermediate directory components must not be symlinks,
     /// and symlink targets are validated not to be empty, contain NUL bytes,
@@ -127,7 +196,7 @@ impl GitCache {
         &self,
         url: &str,
         rev: &str,
-        path: &Path,
+        path: Option<&Path>,
         pinned: Option<&str>,
         symlink: SymlinkMode,
     ) -> Result<Fetched> {

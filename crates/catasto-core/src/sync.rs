@@ -7,7 +7,7 @@ use anyhow::{Context, Result, bail};
 
 use crate::lockfile::{Lock, LockMode, write_lock_selected_with_hashes};
 use crate::manifest::{Managed, ManagedKind, Manifest, Source};
-use catasto_git::{Content, Fetched, GitCache, resolve_url};
+use catasto_git::{Content, DirEntry, DirEntryContent, Fetched, GitCache, resolve_url};
 
 /// How `sync` treats git sources that the lock already pins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,21 +50,23 @@ pub fn sync_with(root: &Path, mode: SyncMode, cache_dir: Option<&Path>) -> Resul
     sync_only(root, mode, cache_dir, &[])
 }
 
-/// What `sync` would write for one managed file.
+/// What `sync` would write for one managed file or directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct PlannedFile {
-    /// Workspace-relative path of the managed file (as in manifest).
+    /// Workspace-relative path of the managed file or directory (as in manifest).
     pub path: PathBuf,
     /// Absolute path where it would be written on disk.
     pub destination: PathBuf,
-    /// What `sync` would write: file bytes or link target.
+    /// What `sync` would write: file bytes, link target, or directory tree.
     pub content: Content,
     /// The commit it came from (for git sources).
     pub commit: Option<String>,
     /// The canonical source from the manifest.
     pub source: Source,
-    /// Whether the file is executable (`100755` in git).
+    /// Whether the file is executable (`100755` in git). Always `false` for directories.
     pub executable: bool,
+    /// The executable override explicitly declared in the manifest, if any.
+    pub declared_executable: Option<bool>,
 }
 
 /// A plan of changes `sync` would write.
@@ -112,11 +114,11 @@ pub fn plan_sync(
                     .expect("every git source was fetched")?;
                 (file.content, Some(file.commit), file.executable)
             }
-            local => (
-                Content::File(read_local(root, &managed.path, local)?),
-                None,
-                false,
-            ),
+            local => (read_local(root, &managed.path, local)?, None, false),
+        };
+        let executable = match &content {
+            Content::Dir(_) => false,
+            Content::File(_) | Content::Link(_) => managed.is_executable(executable),
         };
         files.push(PlannedFile {
             path: managed.path.clone(),
@@ -124,7 +126,8 @@ pub fn plan_sync(
             content,
             commit,
             source: source.clone(),
-            executable: managed.is_executable(executable),
+            executable,
+            declared_executable: managed.executable(),
         });
     }
 
@@ -175,18 +178,16 @@ pub fn sync_with_options(root: &Path, options: &SyncOptions<'_>) -> Result<SyncO
         if let Some(commit) = &file.commit {
             commits.insert(file.path.clone(), commit.clone());
         }
-        if file.executable {
+        if file.executable && matches!(file.content, Content::File(_)) {
             modes.insert(file.path.clone(), LockMode::Executable);
         }
-        let hash = match &file.content {
-            Content::File(bytes) => catasto_digest::sha256_hex(bytes),
-            Content::Link(link_target) => catasto_digest::sha256_hex(link_target.as_bytes()),
-        };
+        let hash = file.content.sha256(file.declared_executable);
         hashes.insert(file.path.clone(), hash);
         fetched.push(SyncItem {
             destination: file.destination.clone(),
             content: file.content.clone(),
             executable: file.executable,
+            declared_executable: file.declared_executable,
         });
     }
 
@@ -197,30 +198,31 @@ pub fn sync_with_options(root: &Path, options: &SyncOptions<'_>) -> Result<SyncO
         if !selected(&managed.path) {
             continue;
         }
-        let ManagedKind::Repo(repo) = &managed.kind else {
+        let ManagedKind::Submodule(sub) = &managed.kind else {
             continue;
         };
         let dest = root.join(&managed.path);
-        let resolved_url = resolve_url(root, &repo.git)?;
+        let resolved_url = resolve_url(root, &sub.git)?;
         let commit = if !dest.exists() {
-            let cloned = catasto_git::clone_repo(&resolved_url, &dest, repo.branch.as_deref())?;
-            if options.mode == SyncMode::Locked
-                && let Some(pinned) = plan
-                    .lock
-                    .get_repo(&managed.path)
-                    .filter(|locked| {
-                        locked.git == repo.git
-                            && locked.branch == repo.branch
-                            && locked.submodule == repo.submodule
-                    })
-                    .and_then(|locked| locked.commit.as_deref())
-                && pinned != cloned
-            {
-                catasto_git::checkout_commit(&dest, pinned)?;
-                pinned.to_owned()
-            } else {
-                cloned
-            }
+            let pinned = (options.mode == SyncMode::Locked)
+                .then(|| {
+                    plan.lock
+                        .get_submodule(&managed.path)
+                        .filter(|locked| {
+                            locked.git == sub.git
+                                && locked.rev == sub.rev
+                                && locked.subpath == sub.path
+                        })
+                        .and_then(|locked| locked.commit.as_deref())
+                })
+                .flatten();
+            catasto_git::clone_submodule(
+                &resolved_url,
+                &dest,
+                &sub.rev,
+                pinned,
+                sub.path.as_deref(),
+            )?
         } else {
             if !dest.join(".git").exists() {
                 bail!(
@@ -230,22 +232,21 @@ pub fn sync_with_options(root: &Path, options: &SyncOptions<'_>) -> Result<SyncO
             }
             let actual_url = catasto_git::remote_url(&dest)
                 .with_context(|| format!("cannot inspect remote of {}", managed.path.display()))?;
-            if actual_url != repo.git && actual_url != resolved_url {
+            if actual_url != sub.git && actual_url != resolved_url {
                 bail!(
                     "repository at {} has remote {actual_url}, expected {}",
                     managed.path.display(),
-                    repo.git
+                    sub.git
                 );
             }
             match options.mode {
                 SyncMode::Update => {
-                    catasto_git::fetch_worktree(&dest)?;
-                    match &repo.branch {
-                        Some(branch) => catasto_git::fast_forward_branch(&dest, branch)?,
-                        None => catasto_git::head_commit(&dest)?,
-                    }
+                    catasto_git::update_submodule(&dest, &resolved_url, &sub.rev, sub.path.as_deref())?
                 }
-                SyncMode::Locked => catasto_git::head_commit(&dest)?,
+                SyncMode::Locked => {
+                    catasto_git::apply_sparse_checkout(&dest, sub.path.as_deref())?;
+                    catasto_git::head_commit(&dest)?
+                }
             }
         };
         commits.insert(managed.path.clone(), commit);
@@ -375,23 +376,23 @@ fn run_dry_run(
         if !selected(&managed.path) {
             continue;
         }
-        let ManagedKind::Repo(repo) = &managed.kind else {
+        let ManagedKind::Submodule(sub) = &managed.kind else {
             continue;
         };
         total_files += 1;
         let dest = root.join(&managed.path);
         if !dest.exists() || !dest.join(".git").exists() {
             output.push_str(&format!(
-                "would clone repo {} ({})\n",
+                "would clone submodule {} ({})\n",
                 managed.path.display(),
-                repo.git
+                sub.git
             ));
             changed_files += 1;
         } else if mode == SyncMode::Update {
             output.push_str(&format!(
-                "would update repo {} ({})\n",
+                "would update submodule {} ({})\n",
                 managed.path.display(),
-                repo.git
+                sub.git
             ));
             changed_files += 1;
         }
@@ -525,14 +526,31 @@ fn fetch_entry(
             .and_then(|locked| locked.commit.as_deref()),
     };
     cache
-        .fetch(url, rev, path, pinned, (*symlink).into())
+        .fetch(url, rev, path.as_deref(), pinned, (*symlink).into())
         .with_context(|| format!("source of {}", managed.path.display()))
 }
 
-fn read_local(root: &Path, managed: &Path, source: &Source) -> Result<Vec<u8>> {
+pub(crate) fn read_local(root: &Path, managed: &Path, source: &Source) -> Result<Content> {
     let Some(file) = source.local_path(root) else {
         unreachable!("only local sources are read from the filesystem");
     };
+    let meta = std::fs::symlink_metadata(&file).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            anyhow::anyhow!(
+                "source of {} does not exist: {}",
+                managed.display(),
+                file.display()
+            )
+        } else {
+            anyhow::Error::new(e).context(format!("cannot inspect {}", file.display()))
+        }
+    })?;
+    if meta.is_dir() {
+        let mut entries = Vec::new();
+        collect_local_dir_entries(&file, Path::new(""), &mut entries)?;
+        entries.sort_by(|a, b| a.rel_path.cmp(&b.rel_path));
+        return Ok(Content::Dir(entries));
+    }
     if !file.is_file() {
         bail!(
             "source of {} does not exist: {}",
@@ -540,28 +558,130 @@ fn read_local(root: &Path, managed: &Path, source: &Source) -> Result<Vec<u8>> {
             file.display()
         );
     }
-    std::fs::read(&file).with_context(|| format!("cannot read {}", file.display()))
+    let bytes = std::fs::read(&file).with_context(|| format!("cannot read {}", file.display()))?;
+    Ok(Content::File(bytes))
+}
+
+fn collect_local_dir_entries(
+    dir: &Path,
+    prefix: &Path,
+    entries: &mut Vec<DirEntry>,
+) -> Result<()> {
+    let read_dir =
+        std::fs::read_dir(dir).with_context(|| format!("cannot read directory {}", dir.display()))?;
+    for item in read_dir {
+        let item = item.with_context(|| format!("cannot read entry in {}", dir.display()))?;
+        let entry_path = item.path();
+        let rel_path = if prefix.as_os_str().is_empty() {
+            PathBuf::from(item.file_name())
+        } else {
+            prefix.join(item.file_name())
+        };
+        let meta = std::fs::symlink_metadata(&entry_path)
+            .with_context(|| format!("cannot stat {}", entry_path.display()))?;
+        if meta.is_symlink() {
+            let target = std::fs::read_link(&entry_path)
+                .with_context(|| format!("cannot read link {}", entry_path.display()))?;
+            let target_str = target
+                .to_str()
+                .with_context(|| {
+                    format!("symlink target is not valid UTF-8: {}", target.display())
+                })?
+                .to_owned();
+            entries.push(DirEntry {
+                rel_path,
+                content: DirEntryContent::Link(target_str),
+            });
+        } else if meta.is_dir() {
+            collect_local_dir_entries(&entry_path, &rel_path, entries)?;
+        } else if meta.is_file() {
+            let bytes = std::fs::read(&entry_path)
+                .with_context(|| format!("cannot read {}", entry_path.display()))?;
+            #[cfg(unix)]
+            let executable = {
+                use std::os::unix::fs::PermissionsExt;
+                meta.permissions().mode() & 0o111 != 0
+            };
+            #[cfg(not(unix))]
+            let executable = false;
+            entries.push(DirEntry {
+                rel_path,
+                content: DirEntryContent::File { bytes, executable },
+            });
+        } else {
+            bail!("unsupported file type at {}", entry_path.display());
+        }
+    }
+    Ok(())
 }
 
 struct SyncItem {
     destination: PathBuf,
     content: Content,
     executable: bool,
+    declared_executable: Option<bool>,
 }
 
 fn write_all(files: Vec<SyncItem>) -> Result<()> {
     for file in files {
-        if let Some(parent) = file.destination.parent() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("cannot create {}", parent.display()))?;
-        }
-        match file.content {
-            Content::File(bytes) => {
-                write_file_replacing_symlink(&file.destination, &bytes)?;
-                apply_executable_mode(&file.destination, file.executable)?;
+        write_one(&file)?;
+    }
+    Ok(())
+}
+
+fn write_one(item: &SyncItem) -> Result<()> {
+    if let Some(parent) = item.destination.parent() {
+        std::fs::create_dir_all(parent)
+            .with_context(|| format!("cannot create {}", parent.display()))?;
+    }
+    match &item.content {
+        Content::File(bytes) => {
+            if std::fs::symlink_metadata(&item.destination).is_ok_and(|m| m.is_dir()) {
+                std::fs::remove_dir_all(&item.destination).with_context(|| {
+                    format!("cannot replace directory {}", item.destination.display())
+                })?;
             }
-            Content::Link(link_target) => {
-                write_symlink_atomic(&file.destination, &link_target)?;
+            write_file_replacing_symlink(&item.destination, bytes)?;
+            apply_executable_mode(&item.destination, item.executable)?;
+        }
+        Content::Link(link_target) => {
+            if std::fs::symlink_metadata(&item.destination).is_ok_and(|m| m.is_dir()) {
+                std::fs::remove_dir_all(&item.destination).with_context(|| {
+                    format!("cannot replace directory {}", item.destination.display())
+                })?;
+            }
+            write_symlink_atomic(&item.destination, link_target)?;
+        }
+        Content::Dir(entries) => {
+            if let Ok(m) = std::fs::symlink_metadata(&item.destination) {
+                if m.is_dir() {
+                    std::fs::remove_dir_all(&item.destination).with_context(|| {
+                        format!("cannot clean directory {}", item.destination.display())
+                    })?;
+                } else {
+                    std::fs::remove_file(&item.destination)
+                        .with_context(|| format!("cannot replace {}", item.destination.display()))?;
+                }
+            }
+            std::fs::create_dir_all(&item.destination).with_context(|| {
+                format!("cannot create directory {}", item.destination.display())
+            })?;
+            for entry in entries {
+                let child = match &entry.content {
+                    DirEntryContent::File { bytes, executable } => SyncItem {
+                        destination: item.destination.join(&entry.rel_path),
+                        content: Content::File(bytes.clone()),
+                        executable: item.declared_executable.unwrap_or(*executable),
+                        declared_executable: None,
+                    },
+                    DirEntryContent::Link(target) => SyncItem {
+                        destination: item.destination.join(&entry.rel_path),
+                        content: Content::Link(target.clone()),
+                        executable: false,
+                        declared_executable: None,
+                    },
+                };
+                write_one(&child)?;
             }
         }
     }

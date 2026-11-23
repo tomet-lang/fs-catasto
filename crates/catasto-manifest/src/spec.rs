@@ -32,25 +32,25 @@ pub struct UpstreamSpec {
     pub root: Option<PathBuf>,
 }
 
-/// Manifest entry declaring a managed workspace file or repository.
+/// Manifest entry declaring a managed workspace file, directory, or submodule.
 ///
 /// Each top-level entry in `catasto.ctmt` binds a workspace-relative path
-/// to a `catasto.{upstream,git,local,repo}(...)` constructor call; file entries
+/// to a `catasto.{upstream,git,local}(...)` constructor call; file and directory entries
 /// may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
 #[derive(Debug, Clone, Default, PartialEq, Config)]
 #[config(group = "entry")]
 pub struct ManifestEntrySpec {
     /// Constructor call declaring where canonical content comes from:
     /// `catasto.upstream(name, path: "...")`, `catasto.git(url, rev: ..., path: "...")`,
-    /// `catasto.local("...")`, or `catasto.repo(url, branch: ..., submodule: ...)`.
+    /// or `catasto.local("...")`.
     #[config(
         key = "source",
-        type = "catasto.upstream(...) | catasto.git(...) | catasto.local(...) | catasto.repo(...)"
+        type = "catasto.upstream(...) | catasto.git(...) | catasto.local(...)"
     )]
     pub source: String,
 
     /// Whether a managed file is placed executable (`true`) or not (`false`), whatever the source says. Left out, the
-    /// source decides: a git file's `100755` or not, and a local file is never executable. Rejected on `catasto.repo(...)`.
+    /// source decides: a git file's `100755` or not, and a local file is never executable. Rejected when `submodule: true`.
     #[config(key = "executable", type = "boolean")]
     pub executable: Option<bool>,
 }
@@ -109,9 +109,9 @@ pub fn all_manifest_specs() -> Vec<ConfigGroupSpec> {
 /// - `::upstream(<$string(optional: true)>: <$catasto.git>)`
 /// - `::zone(<$string(optional: true)>: (...))` with `require`, `allow`, `deny`, `ignore`,
 ///   `recursive`, and nested `files` / `dirs` `(require, allow, deny)` rule tuples
-/// - Top-level entries mapping workspace paths (`<$string>`) to `catasto.repo`, a file source
-///   constructor (`catasto.git`, `catasto.upstream`, `catasto.local`), or a tuple pairing a
-///   file source constructor with optional `executable: bool`
+/// - Top-level entries mapping workspace paths (`<$string>`) to a source constructor
+///   (`catasto.git`, `catasto.upstream`, `catasto.local`), or a tuple pairing a
+///   source constructor with optional `executable: bool`
 pub fn blueprint_spec() -> CtmtBlueprintSpec {
     let zone_pattern_list = SeatExpr::enum_of([
         EnumVariantExpr::ty("string"),
@@ -135,7 +135,6 @@ pub fn blueprint_spec() -> CtmtBlueprintSpec {
     };
 
     let top_level_entry = SeatExpr::enum_of([
-        EnumVariantExpr::constructor("catasto", "repo"),
         EnumVariantExpr::enum_of(file_sources()),
         EnumVariantExpr::tuple(
             TupleSpec::new()

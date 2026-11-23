@@ -36,17 +36,12 @@ pub enum SourceText {
     Git {
         git: String,
         rev: String,
-        path: String,
+        path: Option<String>,
         keep_symlink: bool,
+        submodule: bool,
     },
     /// `catasto.local("relative/path")`
     Local { path: String },
-    /// `catasto.repo("...", branch: ..., submodule: true)`
-    Repo {
-        git: String,
-        branch: Option<String>,
-        submodule: bool,
-    },
 }
 
 /// What `::upstream(...)` says about one place.
@@ -453,24 +448,14 @@ fn source_value_text(source: &SourceText) -> String {
             rev,
             path,
             keep_symlink,
-        } => {
-            let symlink = if *keep_symlink { ", symlink: keep" } else { "" };
-            format!(
-                "catasto.git({}, rev: {}, path: {}{symlink})",
-                quoted(git),
-                scalar(rev),
-                quoted(path)
-            )
-        }
-        SourceText::Local { path } => format!("catasto.local({})", quoted(path)),
-        SourceText::Repo {
-            git,
-            branch,
             submodule,
         } => {
-            let mut out = format!("catasto.repo({}", quoted(git));
-            if let Some(branch) = branch {
-                out.push_str(&format!(", branch: {}", scalar(branch)));
+            let mut out = format!("catasto.git({}, rev: {}", quoted(git), scalar(rev));
+            if let Some(path) = path {
+                out.push_str(&format!(", path: {}", quoted(path)));
+            }
+            if *keep_symlink {
+                out.push_str(", symlink: keep");
             }
             if *submodule {
                 out.push_str(", submodule: true");
@@ -478,6 +463,7 @@ fn source_value_text(source: &SourceText) -> String {
             out.push(')');
             out
         }
+        SourceText::Local { path } => format!("catasto.local({})", quoted(path)),
     }
 }
 

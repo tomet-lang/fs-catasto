@@ -24,11 +24,11 @@ pub use check::{CheckReport, Violation, ViolationKind, check};
 pub use diff::diff;
 pub use discovery::discover_workspaces;
 pub use edit::{AddOutcome, AlreadyDeclared, DeclaredKind, SourceText, UpstreamText};
-pub use lockfile::{LOCK_FILE, Lock, LockMode, Locked, LockedRepo, lock};
+pub use lockfile::{LOCK_FILE, Lock, LockMode, Locked, LockedSubmodule, lock};
 pub use manage::{Row, add, init, list, remove, upstream_add, upstream_list, upstream_remove};
 pub use manifest::{
-    EntryRules, MANIFEST_FILE, Managed, ManagedKind, Manifest, Repo, Source, UpstreamInfo, Zone,
-    ZonePattern, upstreams_of,
+    EntryRules, MANIFEST_FILE, Managed, ManagedKind, Manifest, Source, Submodule, UpstreamInfo,
+    Zone, ZonePattern, upstreams_of,
 };
 pub use sync::{
     DryRunReport, MovedSource, PlannedFile, SyncMode, SyncOptions, SyncOutcome, SyncPlan,

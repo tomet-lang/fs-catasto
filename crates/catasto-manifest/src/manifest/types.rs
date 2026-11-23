@@ -24,18 +24,18 @@ pub struct Manifest {
     pub zones: Vec<Zone>,
 }
 
-/// A Git repository cloned as a directory or submodule in the workspace.
+/// A Git repository cloned as a submodule worktree in the workspace (`catasto.git(..., submodule: true)`).
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Repo {
+pub struct Submodule {
     /// An `https://` URL, or a local path relative to the workspace root.
     pub git: String,
-    /// Branch to check out and track, if declared.
-    pub branch: Option<String>,
-    /// Whether to register the repository in `.gitmodules`.
-    pub submodule: bool,
+    /// Branch, tag, or commit to check out and track.
+    pub rev: String,
+    /// Optional subdirectory or file inside the repository for sparse-checkout.
+    pub path: Option<PathBuf>,
 }
 
-/// What a managed entry represents: either a single file or a cloned Git repository.
+/// What a managed entry represents: either a file/directory or a Git submodule.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ManagedKind {
     File {
@@ -46,7 +46,7 @@ pub enum ManagedKind {
         /// or not; a local file is never executable).
         executable: Option<bool>,
     },
-    Repo(Repo),
+    Submodule(Submodule),
 }
 
 /// One declared entry: where it lives in the workspace and what it is.
@@ -54,42 +54,42 @@ pub enum ManagedKind {
 pub struct Managed {
     /// Location inside the workspace, relative to the root.
     pub path: PathBuf,
-    /// File source (with optional executable mode) or cloned repository.
+    /// File/directory source (with optional executable mode) or Git submodule.
     pub kind: ManagedKind,
 }
 
 impl Managed {
-    /// Returns `true` if this entry manages a file.
+    /// Returns `true` if this entry manages a file or directory.
     pub fn is_file(&self) -> bool {
         matches!(self.kind, ManagedKind::File { .. })
     }
 
-    /// Returns `true` if this entry manages a cloned repository.
-    pub fn is_repo(&self) -> bool {
-        matches!(self.kind, ManagedKind::Repo(_))
+    /// Returns `true` if this entry manages a Git submodule.
+    pub fn is_submodule(&self) -> bool {
+        matches!(self.kind, ManagedKind::Submodule(_))
     }
 
-    /// Returns the file source if this entry is a file.
+    /// Returns the source if this entry is a file or directory.
     pub fn source(&self) -> Option<&Source> {
         match &self.kind {
             ManagedKind::File { source, .. } => Some(source),
-            ManagedKind::Repo(_) => None,
+            ManagedKind::Submodule(_) => None,
         }
     }
 
-    /// Returns the repository spec if this entry is a repo.
-    pub fn repo(&self) -> Option<&Repo> {
+    /// Returns the submodule spec if this entry is a submodule.
+    pub fn submodule(&self) -> Option<&Submodule> {
         match &self.kind {
-            ManagedKind::Repo(repo) => Some(repo),
+            ManagedKind::Submodule(sub) => Some(sub),
             ManagedKind::File { .. } => None,
         }
     }
 
-    /// Returns the declared executable mode if this entry is a file.
+    /// Returns the declared executable mode if this entry is a file or directory.
     pub fn executable(&self) -> Option<bool> {
         match &self.kind {
             ManagedKind::File { executable, .. } => *executable,
-            ManagedKind::Repo(_) => None,
+            ManagedKind::Submodule(_) => None,
         }
     }
 
@@ -97,16 +97,16 @@ impl Managed {
     pub fn is_executable(&self, source_is_executable: bool) -> bool {
         match &self.kind {
             ManagedKind::File { executable, .. } => executable.unwrap_or(source_is_executable),
-            ManagedKind::Repo(_) => false,
+            ManagedKind::Submodule(_) => false,
         }
     }
 }
 
 impl Manifest {
-    /// Iterates over all declared repository entries.
-    pub fn repos(&self) -> impl Iterator<Item = (&Path, &Repo)> {
+    /// Iterates over all declared submodule entries.
+    pub fn submodules(&self) -> impl Iterator<Item = (&Path, &Submodule)> {
         self.managed.iter().filter_map(|m| match &m.kind {
-            ManagedKind::Repo(repo) => Some((m.path.as_path(), repo)),
+            ManagedKind::Submodule(sub) => Some((m.path.as_path(), sub)),
             ManagedKind::File { .. } => None,
         })
     }
@@ -140,15 +140,15 @@ impl Serialize for Symlink {
 pub enum Source {
     /// A file on the local filesystem, relative to the workspace root.
     Path(PathBuf),
-    /// A file in a git repository, read at the commit `rev` resolves to.
+    /// A file or directory in a git repository, read at the commit `rev` resolves to.
     Git {
         /// An `https://` URL, or a local path relative to the workspace root.
         /// ssh is not supported.
         git: String,
         /// A tag, a branch, or a commit id.
         rev: String,
-        /// Location of the file inside the repository.
-        path: PathBuf,
+        /// Location of the file or directory inside the repository (`None` for repository root).
+        path: Option<PathBuf>,
         /// How symlinks in the git source are handled (`Follow` by default, or `Keep`).
         symlink: Symlink,
     },
@@ -171,7 +171,8 @@ struct GitSource {
     git: String,
     #[serde(deserialize_with = "quoted_rev")]
     rev: String,
-    path: PathBuf,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    path: Option<PathBuf>,
     /// How symlinks are handled (`follow` by default, or `keep`).
     #[serde(default, deserialize_with = "deserialize_symlink")]
     symlink: Symlink,
@@ -259,8 +260,8 @@ fn quoted_rev<'de, D: Deserializer<'de>>(deserializer: D) -> Result<String, D::E
 pub(super) const NUMBER_REV: &str =
     "`rev` reads as a number; write it in quotes, e.g. `rev: \"1.2\"`";
 
-/// Checks the part of a git source that an upstream also names.
-pub(super) fn check_git(git: &str, rev: &str) -> Result<(), String> {
+/// Checks the part of a git source that an upstream or submodule also names.
+pub(crate) fn check_git(git: &str, rev: &str) -> Result<(), String> {
     crate::manifest::url::classify(git)?;
     if rev.is_empty() || rev.starts_with('-') {
         return Err(format!("invalid rev: {rev:?}"));
@@ -277,10 +278,12 @@ impl GitSource {
             symlink,
         } = self;
         check_git(&git, &rev)?;
-        if !is_inside_workspace(&path) {
+        if let Some(ref p) = path
+            && !is_inside_workspace(p)
+        {
             return Err(format!(
                 "git path must be relative and stay inside the repository: {}",
-                path.display()
+                p.display()
             ));
         }
         Ok(Source::Git {
@@ -300,7 +303,7 @@ impl<'de> Deserialize<'de> for Source {
             type Value = Source;
 
             fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-                f.write_str("a local path, or a map with `git`, `rev` and `path`")
+                f.write_str("a local path, or a map with `git` and `rev`")
             }
 
             fn visit_str<E: de::Error>(self, path: &str) -> Result<Source, E> {
@@ -327,7 +330,8 @@ impl Serialize for Source {
         struct GitSourceRef<'a> {
             git: &'a str,
             rev: &'a str,
-            path: &'a Path,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            path: Option<&'a Path>,
             #[serde(skip_serializing_if = "is_follow")]
             symlink: Symlink,
         }
@@ -346,7 +350,7 @@ impl Serialize for Source {
             } => GitSourceRef {
                 git,
                 rev,
-                path,
+                path: path.as_deref(),
                 symlink: *symlink,
             }
             .serialize(serializer),
@@ -438,39 +442,6 @@ fn parse_entry_kind(
         .read_call(call_value)
         .map_err(|e| anyhow!("{path}: {e}"))?;
 
-    if constructed.name == "repo" {
-        if executable.is_some() {
-            bail!("{path}: catasto.repo(...) cannot declare executable");
-        }
-        let git = require_text(&constructed, "url", path)?;
-        crate::manifest::url::classify(&git).map_err(|e| anyhow!("{path}: {e}"))?;
-        let branch = match constructed.get("branch") {
-            None | Some(Value::Scalar(Scalar::None)) => None,
-            Some(Value::Scalar(Scalar::Text(b))) => {
-                if b.is_empty() || b.starts_with('-') {
-                    bail!("{path}: invalid branch name: {b:?}");
-                }
-                Some(b.clone())
-            }
-            Some(Value::Scalar(Scalar::Int(_) | Scalar::Float(_) | Scalar::Number(_))) => {
-                bail!(
-                    "{path}: `branch` reads as a number; write it in quotes, e.g. `branch: \"1.2\"`"
-                );
-            }
-            Some(_) => bail!("{path}: `branch` must be a string"),
-        };
-        let submodule = match constructed.get("submodule") {
-            None => false,
-            Some(Value::Scalar(Scalar::Bool(b))) => *b,
-            Some(_) => bail!("{path}: `submodule` must be a boolean (`true` or `false`)"),
-        };
-        return Ok(ManagedKind::Repo(Repo {
-            git,
-            branch,
-            submodule,
-        }));
-    }
-
     let source = match constructed.name.as_str() {
         "local" => {
             let local_path = require_text(&constructed, "path", path)?;
@@ -490,22 +461,48 @@ fn parse_entry_kind(
             let git = require_text(&constructed, "url", path)?;
             let rev = require_rev(&constructed, path)?;
             check_git(&git, &rev).map_err(|e| anyhow!("{path}: {e}"))?;
-            let file_path = match constructed.get("path") {
-                Some(Value::Scalar(Scalar::Text(p))) => PathBuf::from(p),
+            let entry_path = match constructed.get("path") {
+                None | Some(Value::Scalar(Scalar::None)) => None,
+                Some(Value::Scalar(Scalar::Text(p))) => {
+                    let pb = PathBuf::from(p);
+                    if !is_inside_workspace(&pb) {
+                        bail!(
+                            "{path}: git path must be relative and stay inside the repository: {}",
+                            pb.display()
+                        );
+                    }
+                    Some(pb)
+                }
                 Some(_) => bail!("{path}: `path` must be a string"),
-                None => bail!("{path}: `catasto.git` requires `path`"),
             };
-            if !is_inside_workspace(&file_path) {
-                bail!(
-                    "{path}: git path must be relative and stay inside the repository: {}",
-                    file_path.display()
-                );
+            let is_submodule = match constructed.get("submodule") {
+                None => false,
+                Some(Value::Scalar(Scalar::Bool(b))) => *b,
+                Some(_) => bail!("{path}: `submodule` must be a boolean (`true` or `false`)"),
+            };
+            if is_submodule {
+                if executable.is_some() {
+                    bail!("{path}: catasto.git(..., submodule: true) cannot declare executable");
+                }
+                if let Value::Call(_, raw_args) = call_value
+                    && raw_args.contains_key("symlink")
+                {
+                    bail!("{path}: catasto.git(..., submodule: true) cannot specify `symlink`");
+                }
+                return Ok(ManagedKind::Submodule(Submodule {
+                    git,
+                    rev,
+                    path: entry_path,
+                }));
             }
             let symlink = parse_symlink(&constructed, path)?;
+            if symlink == Symlink::Keep && entry_path.is_none() {
+                bail!("{path}: `symlink: keep` requires `path`");
+            }
             Source::Git {
                 git,
                 rev,
-                path: file_path,
+                path: entry_path,
                 symlink,
             }
         }
@@ -531,7 +528,7 @@ fn parse_entry_kind(
             Source::Git {
                 git: upstream.git.clone(),
                 rev: upstream.rev.clone(),
-                path: full_path,
+                path: Some(full_path),
                 symlink,
             }
         }
@@ -600,13 +597,15 @@ impl Manifest {
                 bail!("path is declared twice: {}", managed.path.display());
             }
         }
-        for (repo_path, _) in self.repos() {
+        for (submodule_path, _) in self.submodules() {
             for managed in &self.managed {
-                if managed.path != repo_path && is_strictly_inside(&managed.path, repo_path) {
+                if managed.path != submodule_path
+                    && is_strictly_inside(&managed.path, submodule_path)
+                {
                     bail!(
-                        "entry '{}' cannot be inside declared repo '{}'",
+                        "entry '{}' cannot be inside declared submodule '{}'",
                         managed.path.display(),
-                        repo_path.display()
+                        submodule_path.display()
                     );
                 }
             }

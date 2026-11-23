@@ -1,8 +1,9 @@
 //! The generated `catasto.lock`.
 //!
 //! JSON, written by `catasto lock` and `catasto sync` and read by nothing that
-//! needs a human in the loop. Files are keyed by path under `files` and repositories
-//! under `repos`, so a file named `version` cannot collide with the format's own fields:
+//! needs a human in the loop. Files and directories are keyed by path under `files`
+//! and submodules under `submodules`, so a file named `version` cannot collide with
+//! the format's own fields:
 //!
 //! ```text
 //! {
@@ -25,9 +26,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 
-use catasto_digest::{sha256_file, sha256_link};
-pub use catasto_manifest::lock::{LOCK_FILE, Lock, LockMode, Locked, LockedRepo};
-use catasto_manifest::manifest::{ManagedKind, Manifest, Repo, Source, Symlink};
+use catasto_digest::{sha256_dir, sha256_file, sha256_link};
+pub use catasto_manifest::lock::{LOCK_FILE, Lock, LockMode, Locked, LockedSubmodule};
+use catasto_manifest::manifest::{ManagedKind, Manifest, Source, Submodule, Symlink};
 
 /// Hashes every managed file and records repository commits in `catasto.lock`.
 ///
@@ -52,25 +53,27 @@ pub fn lock(root: &Path) -> Result<Lock> {
                 {
                     commits.insert(managed.path.clone(), commit.clone());
                 }
-                let mode = match executable {
-                    Some(true) => Some(LockMode::Executable),
-                    Some(false) => None,
-                    None => existing
-                        .get(&managed.path)
-                        .filter(|locked| &locked.source == source)
-                        .and_then(|locked| locked.mode),
-                };
-                if let Some(mode) = mode {
-                    modes.insert(managed.path.clone(), mode);
+                if !root.join(&managed.path).is_dir() {
+                    let mode = match executable {
+                        Some(true) => Some(LockMode::Executable),
+                        Some(false) => None,
+                        None => existing
+                            .get(&managed.path)
+                            .filter(|locked| &locked.source == source)
+                            .and_then(|locked| locked.mode),
+                    };
+                    if let Some(mode) = mode {
+                        modes.insert(managed.path.clone(), mode);
+                    }
                 }
             }
-            ManagedKind::Repo(repo) => {
+            ManagedKind::Submodule(sub) => {
                 let commit = existing
-                    .get_repo(&managed.path)
+                    .get_submodule(&managed.path)
                     .filter(|locked| {
-                        locked.git == repo.git
-                            && locked.branch == repo.branch
-                            && locked.submodule == repo.submodule
+                        locked.git == sub.git
+                            && locked.rev == sub.rev
+                            && locked.subpath == sub.path
                     })
                     .and_then(|r| r.commit.clone())
                     .or_else(|| {
@@ -137,42 +140,38 @@ pub(crate) fn write_lock_selected_with_hashes(
     known_hashes: &HashMap<PathBuf, String>,
 ) -> Result<Lock> {
     let mut file_entries: Vec<(PathBuf, Source)> = Vec::new();
-    let mut repo_entries: Vec<(PathBuf, Repo)> = Vec::new();
+    let mut submodule_entries: Vec<(PathBuf, Submodule)> = Vec::new();
     for managed in manifest.managed {
         match managed.kind {
             ManagedKind::File { source, .. } => file_entries.push((managed.path, source)),
-            ManagedKind::Repo(repo) => repo_entries.push((managed.path, repo)),
+            ManagedKind::Submodule(sub) => submodule_entries.push((managed.path, sub)),
         }
     }
 
-    let locked_repos: Vec<LockedRepo> = repo_entries
+    let locked_submodules: Vec<LockedSubmodule> = submodule_entries
         .into_iter()
-        .filter_map(|(path, repo)| {
+        .filter_map(|(path, sub)| {
             if !selected(&path) {
                 return previous
-                    .get_repo(&path)
+                    .get_submodule(&path)
                     .filter(|kept| {
-                        kept.git == repo.git
-                            && kept.branch == repo.branch
-                            && kept.submodule == repo.submodule
+                        kept.git == sub.git && kept.rev == sub.rev && kept.subpath == sub.path
                     })
                     .cloned();
             }
             let commit = commits.get(&path).cloned().or_else(|| {
                 previous
-                    .get_repo(&path)
+                    .get_submodule(&path)
                     .filter(|kept| {
-                        kept.git == repo.git
-                            && kept.branch == repo.branch
-                            && kept.submodule == repo.submodule
+                        kept.git == sub.git && kept.rev == sub.rev && kept.subpath == sub.path
                     })
                     .and_then(|r| r.commit.clone())
             });
-            Some(LockedRepo {
+            Some(LockedSubmodule {
                 path,
-                git: repo.git,
-                branch: repo.branch,
-                submodule: repo.submodule,
+                git: sub.git,
+                rev: sub.rev,
+                subpath: sub.path,
                 commit,
             })
         })
@@ -208,7 +207,9 @@ pub(crate) fn write_lock_selected_with_hashes(
                 }
             );
 
-            if is_keep {
+            if meta.is_dir() {
+                // Directories carry their entries' modes inside `sha256_dir` and never set top-level `mode`.
+            } else if is_keep {
                 if !meta.is_symlink() {
                     bail!(
                         "`symlink: keep` declared for {}, but destination is not a symlink",
@@ -229,6 +230,7 @@ pub(crate) fn write_lock_selected_with_hashes(
 
             let sha256 = match known_hashes.get(&path) {
                 Some(hash) => hash.clone(),
+                None if meta.is_dir() => sha256_dir(&file)?,
                 None if is_keep => sha256_link(&file)?,
                 None => sha256_file(&file)?,
             };
@@ -242,7 +244,11 @@ pub(crate) fn write_lock_selected_with_hashes(
                     )
                 })?),
             };
-            let mode = modes.get(&path).copied();
+            let mode = if meta.is_dir() {
+                None
+            } else {
+                modes.get(&path).copied()
+            };
             Ok(Some(Locked {
                 sha256,
                 path,
@@ -256,7 +262,7 @@ pub(crate) fn write_lock_selected_with_hashes(
 
     let locked: Vec<Locked> = locked_results?.into_iter().flatten().collect();
 
-    let lock = Lock::new(locked, locked_repos);
+    let lock = Lock::new(locked, locked_submodules);
     let file = root.join(LOCK_FILE);
     std::fs::write(&file, lock.render()?)
         .with_context(|| format!("cannot write {}", file.display()))?;

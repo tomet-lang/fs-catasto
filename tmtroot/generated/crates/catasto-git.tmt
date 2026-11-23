@@ -25,9 +25,13 @@ A throwaway repository on branch `main`.
 
 ==[Structs]
 
+===[struct DirEntry]
+
+One leaf entry inside a fetched directory, relative to the fetched directory root.
+
 ===[struct Fetched]
 
-A file or link read from a repository, with the commit it was read at.
+A file, link, or directory read from a repository, with the commit it was read at.
 
 ===[struct GitCache]
 
@@ -38,6 +42,10 @@ Bare clones of the repositories catasto reads from.
 ===[enum SymlinkMode]
 
 How symlinks in git repositories are handled.
+
+===[enum DirEntryContent]
+
+Content of a leaf entry inside a fetched directory.
 
 ===[enum Content]
 

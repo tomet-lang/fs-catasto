@@ -33,23 +33,23 @@ fn sync_single(path: &Path, update: bool, only: &[PathBuf], dry_run: bool) -> Re
     if only.is_empty() {
         println!(
             "{}",
-            format_sync_summary(lock.locked.len(), lock.repos.len())
+            format_sync_summary(lock.locked.len(), lock.submodules.len())
         );
     } else {
         println!(
             "synced {} of {} file(s)",
             only.len(),
-            lock.locked.len() + lock.repos.len()
+            lock.locked.len() + lock.submodules.len()
         );
     }
     Ok(ExitCode::SUCCESS)
 }
 
-fn format_sync_summary(files: usize, repos: usize) -> String {
-    match (files, repos) {
+fn format_sync_summary(files: usize, submodules: usize) -> String {
+    match (files, submodules) {
         (f, 0) => format!("synced {f} file(s)"),
-        (0, r) => format!("synced {r} repo(s)"),
-        (f, r) => format!("synced {f} file(s), {r} repo(s)"),
+        (0, s) => format!("synced {s} submodule(s)"),
+        (f, s) => format!("synced {f} file(s), {s} submodule(s)"),
     }
 }
 
@@ -95,13 +95,13 @@ fn sync_all(root: &Path, update: bool, only: &[PathBuf], dry_run: bool) -> Resul
                     if only.is_empty() {
                         println!(
                             "[{num}/{total}] {ws_display} ... {}",
-                            format_sync_summary(lock.locked.len(), lock.repos.len())
+                            format_sync_summary(lock.locked.len(), lock.submodules.len())
                         );
                     } else {
                         println!(
                             "[{num}/{total}] {ws_display} ... synced {} of {} file(s)",
                             only.len(),
-                            lock.locked.len() + lock.repos.len()
+                            lock.locked.len() + lock.submodules.len()
                         );
                     }
                 }

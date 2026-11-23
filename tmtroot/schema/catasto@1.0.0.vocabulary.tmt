@@ -30,15 +30,20 @@
       )
       path: (
         type: string
-        about: | Location of the file inside the Git repository (required for manifest entries).
+        about: | Location of the file or directory inside the Git repository. Omit to take the repository root.
       )
       symlink: (
         type: string
         default: follow
         about: | How symlinks in the repository are handled (`follow` or `keep`).
+      )
+      submodule: (
+        type: bool
+        default: false
+        about: | Whether to clone the repository as a Git submodule and register it in `.gitmodules`.
   )))
   upstream: (
-    about: | A file from an upstream repository declared in `::upstream(...)`.
+    about: | A file or directory from an upstream repository declared in `::upstream(...)`.
     args: (
       upstream: (
         type: string
@@ -49,7 +54,7 @@
       path: (
         type: string
         required: true
-        about: | Location of the file inside the upstream repository (relative to `root` if set).
+        about: | Location of the file or directory inside the upstream repository (relative to `root` if set).
       )
       symlink: (
         type: string
@@ -64,22 +69,4 @@
         positional: true
         required: true
         about: | Path to the local source file, relative to the workspace root.
-  )))
-  repo: (
-    about: | A Git repository cloned as a directory or submodule in the workspace.
-    args: (
-      url: (
-        type: string
-        positional: true
-        required: true
-        about: | Repository URL (`https://` URL or workspace-relative path).
-      )
-      branch: (
-        type: string
-        about: | Branch to check out and track.
-      )
-      submodule: (
-        type: bool
-        default: false
-        about: | Whether to register the repository in `.gitmodules`.
-))))
+  ))))

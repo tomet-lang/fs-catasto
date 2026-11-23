@@ -18,24 +18,22 @@ pub enum GitmodulesDrift {
 
 /// Renders `.gitmodules` text from the manifest, or `None` if no entry has `submodule: true`.
 pub fn render_gitmodules(manifest: &Manifest) -> Result<Option<String>> {
-    let mut submodule_repos: Vec<_> = manifest.repos().filter(|(_, r)| r.submodule).collect();
-    if submodule_repos.is_empty() {
+    let mut submodules: Vec<_> = manifest.submodules().collect();
+    if submodules.is_empty() {
         return Ok(None);
     }
 
-    submodule_repos.sort_by_key(|(path, _)| *path);
+    submodules.sort_by_key(|(path, _)| *path);
 
     let mut out = String::new();
-    for (path, repo) in submodule_repos {
+    for (path, sub) in submodules {
         let path_str = path
             .to_str()
             .ok_or_else(|| anyhow!("path is not valid UTF-8: {}", path.display()))?;
         out.push_str(&format!("[submodule \"{path_str}\"]\n"));
         out.push_str(&format!("\tpath = {path_str}\n"));
-        out.push_str(&format!("\turl = {}\n", repo.git));
-        if let Some(ref branch) = repo.branch {
-            out.push_str(&format!("\tbranch = {branch}\n"));
-        }
+        out.push_str(&format!("\turl = {}\n", sub.git));
+        out.push_str(&format!("\tbranch = {}\n", sub.rev));
         out.push_str("\tignore = dirty\n");
     }
     Ok(Some(out))
@@ -46,8 +44,8 @@ pub fn render_gitmodules(manifest: &Manifest) -> Result<Option<String>> {
 /// Writes the file if `submodule: true` entries exist; removes it if previously tracked submodules are gone.
 /// Leaves an unrelated `.gitmodules` untouched when neither `manifest` nor `lock` declares any submodule.
 pub fn sync_gitmodules(root: &Path, manifest: &Manifest, lock: &Lock) -> Result<()> {
-    let has_manifest_submodules = manifest.repos().any(|(_, r)| r.submodule);
-    let had_lock_submodules = lock.repos.iter().any(|r| r.submodule);
+    let has_manifest_submodules = manifest.submodules().next().is_some();
+    let had_lock_submodules = !lock.submodules.is_empty();
 
     if !has_manifest_submodules && !had_lock_submodules {
         return Ok(());
@@ -74,8 +72,8 @@ pub fn check_gitmodules(
     manifest: &Manifest,
     lock: &Lock,
 ) -> Result<Option<GitmodulesDrift>> {
-    let has_manifest_submodules = manifest.repos().any(|(_, r)| r.submodule);
-    let had_lock_submodules = lock.repos.iter().any(|r| r.submodule);
+    let has_manifest_submodules = manifest.submodules().next().is_some();
+    let had_lock_submodules = !lock.submodules.is_empty();
 
     if !has_manifest_submodules && !had_lock_submodules {
         return Ok(None);
@@ -103,16 +101,16 @@ pub fn check_gitmodules(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use catasto_manifest::LockedRepo;
+    use catasto_manifest::LockedSubmodule;
 
     const USE: &str = "::kind(catasto, version: \"1.0.0\")\n\n";
 
     #[test]
-    fn renders_gitmodules_for_submodule_repos() {
+    fn renders_gitmodules_for_submodule_entries() {
         let manifest = Manifest::parse(&format!(
             "{USE}\
-             \"tools/sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\", branch: main, submodule: true)\n\
-             \"sisho-desk\": catasto.repo(\"https://github.com/tomet-lang/sisho-desk.git\", submodule: false)\n"
+             \"tools/sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, submodule: true)\n\
+             \"sisho-desk\": catasto.git(\"https://github.com/tomet-lang/sisho-desk.git\", rev: main, submodule: false)\n"
         ))
         .unwrap();
 
@@ -126,7 +124,7 @@ mod tests {
     #[test]
     fn renders_none_when_no_submodules() {
         let manifest = Manifest::parse(&format!(
-            "{USE}\"tools/sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\")\n"
+            "{USE}\"tools/sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main)\n"
         ))
         .unwrap();
 
@@ -137,7 +135,7 @@ mod tests {
     fn sync_and_check_gitmodules_lifecycle() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = Manifest::parse(&format!(
-            "{USE}\"sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\", submodule: true)\n"
+            "{USE}\"sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, submodule: true)\n"
         ))
         .unwrap();
         let lock = Lock::default();
@@ -164,11 +162,11 @@ mod tests {
         let empty_manifest = Manifest::default();
         let lock_with_sub = Lock::new(
             Vec::new(),
-            vec![LockedRepo {
+            vec![LockedSubmodule {
                 path: "sisho".into(),
                 git: "https://github.com/tomet-lang/sisho.git".into(),
-                branch: None,
-                submodule: true,
+                rev: "main".into(),
+                subpath: None,
                 commit: None,
             }],
         );
@@ -184,7 +182,7 @@ mod tests {
     fn ignores_unrelated_gitmodules_when_no_submodules_configured() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = Manifest::parse(&format!(
-            "{USE}\"sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\")\n"
+            "{USE}\"sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main)\n"
         ))
         .unwrap();
         let lock = Lock::default();

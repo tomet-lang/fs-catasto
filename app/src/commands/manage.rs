@@ -20,44 +20,29 @@ pub fn add(root: &Path, args: &AddArgs) -> Result<ExitCode> {
         bail!("--local has no --keep-symlink option; a local source has no such option");
     }
     let dest = args.dest.strip_prefix("./").unwrap_or(&args.dest);
-    let source = if let Some(repo_url) = &args.repo {
-        if args.from.is_some() {
-            bail!("--repo clones the entire repository; no source path can be specified");
+    let source = if let Some(name) = &args.upstream {
+        let from = args.from.clone().unwrap_or_else(|| dest.to_owned());
+        SourceText::Upstream {
+            name: name.clone(),
+            path: from,
+            keep_symlink: args.keep_symlink,
         }
-        if args.keep_symlink {
-            bail!("--repo has no --keep-symlink option");
+    } else if let Some(url) = &args.git {
+        if args.submodule && args.keep_symlink {
+            bail!("`--submodule` cannot be used with `--keep-symlink`");
         }
-        SourceText::Repo {
-            git: repo_url.clone(),
-            branch: args.branch.clone(),
+        SourceText::Git {
+            git: url.clone(),
+            rev: args.rev.clone(),
+            path: args.from.clone(),
+            keep_symlink: args.keep_symlink,
             submodule: args.submodule,
         }
     } else {
-        let from = match &args.from {
-            Some(from) => from.clone(),
-            None => {
-                if args.local {
-                    bail!("--local needs the path of the file to take it from");
-                }
-                dest.to_owned()
-            }
+        let Some(from) = &args.from else {
+            bail!("--local needs the path of the file to take it from");
         };
-        if let Some(name) = &args.upstream {
-            SourceText::Upstream {
-                name: name.clone(),
-                path: from,
-                keep_symlink: args.keep_symlink,
-            }
-        } else if let Some(git) = &args.git {
-            SourceText::Git {
-                git: git.clone(),
-                rev: args.rev.clone(),
-                path: from,
-                keep_symlink: args.keep_symlink,
-            }
-        } else {
-            SourceText::Local { path: from }
-        }
+        SourceText::Local { path: from.clone() }
     };
     let outcome = catasto_core::add(root, &args.dest, &source, args.force, None)?;
     let lock = Lock::load(root)?;
@@ -65,7 +50,7 @@ pub fn add(root: &Path, args: &AddArgs) -> Result<ExitCode> {
         .get(Path::new(dest))
         .and_then(|locked| locked.commit.as_deref())
         .or_else(|| {
-            lock.get_repo(Path::new(dest))
+            lock.get_submodule(Path::new(dest))
                 .and_then(|locked| locked.commit.as_deref())
         });
     let suffix = match commit {

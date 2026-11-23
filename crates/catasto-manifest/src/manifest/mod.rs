@@ -42,7 +42,8 @@ mod upstream;
 pub mod url;
 mod zone;
 
-pub use types::{Managed, ManagedKind, Manifest, Repo, Source, Symlink};
+pub(crate) use types::check_git;
+pub use types::{Managed, ManagedKind, Manifest, Source, Submodule, Symlink};
 pub use upstream::{UpstreamInfo, upstreams_of};
 pub use url::{UrlKind, classify};
 pub use zone::{EntryRules, Zone, ZonePattern};

@@ -277,56 +277,57 @@ fn lock_preserves_existing_mode() {
 }
 
 #[test]
-fn lock_records_repo_entries_in_repos_section() {
+fn lock_records_submodule_entries_in_submodules_section() {
     let manifest = "\
 ::kind(catasto, version: \"1.0.0\")
 
-\"tools/sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\", branch: main, submodule: true)
+\"tools/sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, path: \"crates/sisho\", submodule: true)
 ";
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("catasto.ctmt"), manifest).unwrap();
 
     let locked = lock(dir.path()).unwrap();
     assert_eq!(locked.locked.len(), 0);
-    assert_eq!(locked.repos.len(), 1);
+    assert_eq!(locked.submodules.len(), 1);
     assert_eq!(
-        locked.repos[0],
-        LockedRepo {
+        locked.submodules[0],
+        LockedSubmodule {
             path: "tools/sisho".into(),
             git: "https://github.com/tomet-lang/sisho.git".into(),
-            branch: Some("main".into()),
-            submodule: true,
+            rev: "main".into(),
+            subpath: Some("crates/sisho".into()),
             commit: None,
         }
     );
 
     let text = std::fs::read_to_string(dir.path().join(LOCK_FILE)).unwrap();
-    assert!(text.contains("\"repos\": {"), "{text}");
+    assert!(text.contains("\"submodules\": {"), "{text}");
     assert!(
         text.contains("\"git\": \"https://github.com/tomet-lang/sisho.git\""),
         "{text}"
     );
-    assert!(text.contains("\"branch\": \"main\""), "{text}");
-    assert!(text.contains("\"submodule\": true"), "{text}");
+    assert!(text.contains("\"rev\": \"main\""), "{text}");
+    assert!(text.contains("\"path\": \"crates/sisho\""), "{text}");
 
     let loaded = Lock::load(dir.path()).unwrap();
     assert_eq!(loaded, locked);
 }
 
 #[test]
-fn repo_lock_preserves_existing_commit() {
+fn submodule_lock_preserves_existing_commit() {
     let manifest = "\
 ::kind(catasto, version: \"1.0.0\")
 
-\"sisho\": catasto.repo(\"https://github.com/tomet-lang/sisho.git\")
+\"sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, submodule: true)
 ";
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("catasto.ctmt"), manifest).unwrap();
     let initial_lock = r#"{
   "version": 1,
-  "repos": {
+  "submodules": {
     "sisho": {
       "git": "https://github.com/tomet-lang/sisho.git",
+      "rev": "main",
       "commit": "0123456789abcdef0123456789abcdef01234567"
     }
   }
@@ -336,13 +337,13 @@ fn repo_lock_preserves_existing_commit() {
 
     let updated = lock(dir.path()).unwrap();
     assert_eq!(
-        updated.repos[0].commit.as_deref(),
+        updated.submodules[0].commit.as_deref(),
         Some("0123456789abcdef0123456789abcdef01234567")
     );
 }
 
 #[test]
-fn lock_without_repos_omits_repos_key() {
+fn lock_without_submodules_omits_submodules_key() {
     let lock = Lock::from_files(vec![Locked {
         path: "a.tmt".into(),
         source: Source::Path("src/a.tmt".into()),
@@ -351,5 +352,37 @@ fn lock_without_repos_omits_repos_key() {
         mode: None,
     }]);
     let rendered = lock.render().unwrap();
+    assert!(!rendered.contains("\"submodules\""), "{rendered}");
     assert!(!rendered.contains("\"repos\""), "{rendered}");
+}
+
+#[test]
+#[cfg(unix)]
+fn lock_hashes_managed_directory_and_omits_mode() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let manifest = "\
+::kind(catasto, version: \"1.0.0\")
+
+\"dir\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"dir\")
+";
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("catasto.ctmt"), manifest).unwrap();
+    std::fs::create_dir_all(dir.path().join("dir/sub")).unwrap();
+    std::fs::write(dir.path().join("dir/a.txt"), "hello").unwrap();
+    let script = dir.path().join("dir/sub/run.sh");
+    std::fs::write(&script, "#!/bin/sh\n").unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+
+    let initial_lock = "{\n  \"version\": 1,\n  \"files\": {\n    \"dir\": {\n      \"sha256\": \"old\",\n      \"source\": {\n        \"git\": \"https://example.com/v.git\",\n        \"rev\": \"v1\",\n        \"path\": \"dir\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\"\n    }\n  }\n}\n";
+    std::fs::write(dir.path().join(LOCK_FILE), initial_lock).unwrap();
+
+    let updated = lock(dir.path()).unwrap();
+    assert_eq!(updated.locked.len(), 1);
+    assert_eq!(updated.locked[0].mode, None);
+    assert_eq!(
+        updated.locked[0].sha256,
+        catasto_digest::sha256_dir(&dir.path().join("dir")).unwrap()
+    );
+    assert!(crate::check::check(dir.path()).unwrap().is_ok());
 }

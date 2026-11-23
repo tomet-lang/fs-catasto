@@ -87,7 +87,7 @@ mod tests {
   )
 )
 
-"vendor/lib": catasto.repo("https://example.com/lib.git", branch: main, submodule: true)
+"vendor/lib": catasto.git("https://example.com/lib.git", rev: main, submodule: true)
 "a.txt": catasto.git("https://example.com/a.git", rev: main, path: "a.txt")
 "b.txt": catasto.upstream(common, path: "b.txt")
 "c.txt": catasto.local("local/c.txt")
@@ -115,7 +115,7 @@ mod tests {
 )
 
 "bad_entry": "not-a-call"
-"bad_repo_tuple": (catasto.repo("https://example.com/lib.git"), executable: true)
+"bad_unknown_ctor_tuple": (catasto.repo("https://example.com/lib.git"), executable: true)
 "bad_exec": (catasto.local("a.txt"), executable: "yes")
 "#,
         )

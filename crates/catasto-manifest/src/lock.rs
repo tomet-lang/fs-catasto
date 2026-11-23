@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::{Source, reject_misnamed};
+use crate::manifest::{Source, check_git, is_inside_workspace, reject_misnamed};
 
 /// File name of the lockfile, relative to the workspace root.
 pub const LOCK_FILE: &str = "catasto.lock";
@@ -15,13 +15,13 @@ pub const LOCK_FILE: &str = "catasto.lock";
 /// The format version this catasto reads and writes.
 pub const LOCK_VERSION: u32 = 1;
 
-/// What each managed file and repository looked like when it was locked.
+/// What each managed file, directory, and submodule looked like when it was locked.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct Lock {
-    /// Locked files, sorted by path.
+    /// Locked files and directories, sorted by path.
     pub locked: Vec<Locked>,
-    /// Locked repositories, sorted by path.
-    pub repos: Vec<LockedRepo>,
+    /// Locked submodules, sorted by path.
+    pub submodules: Vec<LockedSubmodule>,
 }
 
 /// Special mode for a locked file.
@@ -32,38 +32,34 @@ pub enum LockMode {
     Executable,
 }
 
-/// One locked file.
+/// One locked file or directory.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Locked {
     /// Location inside the workspace, relative to the root.
     pub path: PathBuf,
-    /// The source declared when the file was locked.
+    /// The source declared when the entry was locked.
     pub source: Source,
-    /// Lowercase hex SHA-256 of the file content.
+    /// Lowercase hex SHA-256 of the file content or directory tree.
     pub sha256: String,
-    /// Full commit id the file was read at. Present exactly for git sources.
+    /// Full commit id the entry was read at. Present exactly for git sources.
     pub commit: Option<String>,
-    /// Special mode of the file, absent for normal files.
+    /// Special mode of the file, absent for normal files and directories.
     pub mode: Option<LockMode>,
 }
 
-/// One locked repository entry.
+/// One locked submodule entry.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct LockedRepo {
+pub struct LockedSubmodule {
     /// Location inside the workspace, relative to the root.
     pub path: PathBuf,
     /// Repository URL (`https://` or local path).
     pub git: String,
-    /// Branch checked out and tracked, if declared.
-    pub branch: Option<String>,
-    /// Whether registered in `.gitmodules`.
-    pub submodule: bool,
+    /// Branch, tag, or commit checked out and tracked.
+    pub rev: String,
+    /// Optional subdirectory or file inside the repository for sparse-checkout.
+    pub subpath: Option<PathBuf>,
     /// Full commit id checked out at HEAD.
     pub commit: Option<String>,
-}
-
-fn is_false(b: &bool) -> bool {
-    !*b
 }
 
 /// The JSON document.
@@ -74,7 +70,7 @@ struct LockDocument {
     #[serde(default)]
     files: BTreeMap<String, LockedBody>,
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    repos: BTreeMap<String, LockedRepoBody>,
+    submodules: BTreeMap<String, LockedSubmoduleBody>,
 }
 
 /// A locked file's fields, keyed by its path in [`LockDocument`].
@@ -89,25 +85,24 @@ struct LockedBody {
     mode: Option<LockMode>,
 }
 
-/// A locked repository's fields, keyed by its path in [`LockDocument`].
+/// A locked submodule's fields, keyed by its path in [`LockDocument`].
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct LockedRepoBody {
+struct LockedSubmoduleBody {
     git: String,
+    rev: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    branch: Option<String>,
-    #[serde(default, skip_serializing_if = "is_false")]
-    submodule: bool,
+    path: Option<PathBuf>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     commit: Option<String>,
 }
 
 impl Lock {
-    /// A lock of `locked` files and `repos`, each sorted by path.
-    pub fn new(mut locked: Vec<Locked>, mut repos: Vec<LockedRepo>) -> Self {
+    /// A lock of `locked` files and `submodules`, each sorted by path.
+    pub fn new(mut locked: Vec<Locked>, mut submodules: Vec<LockedSubmodule>) -> Self {
         locked.sort_by(|a, b| a.path.cmp(&b.path));
-        repos.sort_by(|a, b| a.path.cmp(&b.path));
-        Self { locked, repos }
+        submodules.sort_by(|a, b| a.path.cmp(&b.path));
+        Self { locked, submodules }
     }
 
     /// A lock containing only locked files.
@@ -154,18 +149,26 @@ impl Lock {
                 mode: body.mode,
             })
             .collect();
-        let repos = document
-            .repos
-            .into_iter()
-            .map(|(path, body)| LockedRepo {
+        let mut submodules = Vec::with_capacity(document.submodules.len());
+        for (path, body) in document.submodules {
+            check_git(&body.git, &body.rev).map_err(|e| anyhow!("submodule `{path}`: {e}"))?;
+            if let Some(ref p) = body.path
+                && !is_inside_workspace(p)
+            {
+                bail!(
+                    "submodule `{path}`: git path must be relative and stay inside the repository: {}",
+                    p.display()
+                );
+            }
+            submodules.push(LockedSubmodule {
                 path: path.into(),
                 git: body.git,
-                branch: body.branch,
-                submodule: body.submodule,
+                rev: body.rev,
+                subpath: body.path,
                 commit: body.commit,
-            })
-            .collect();
-        Ok(Self::new(files, repos))
+            });
+        }
+        Ok(Self::new(files, submodules))
     }
 
     /// Renders the lockfile text.
@@ -186,26 +189,26 @@ impl Lock {
                 },
             );
         }
-        let mut repos = BTreeMap::new();
-        for repo in &self.repos {
-            let path = repo
+        let mut submodules = BTreeMap::new();
+        for sub in &self.submodules {
+            let path = sub
                 .path
                 .to_str()
-                .ok_or_else(|| anyhow!("path is not valid UTF-8: {}", repo.path.display()))?;
-            repos.insert(
+                .ok_or_else(|| anyhow!("path is not valid UTF-8: {}", sub.path.display()))?;
+            submodules.insert(
                 path.to_owned(),
-                LockedRepoBody {
-                    git: repo.git.clone(),
-                    branch: repo.branch.clone(),
-                    submodule: repo.submodule,
-                    commit: repo.commit.clone(),
+                LockedSubmoduleBody {
+                    git: sub.git.clone(),
+                    rev: sub.rev.clone(),
+                    path: sub.subpath.clone(),
+                    commit: sub.commit.clone(),
                 },
             );
         }
         let document = LockDocument {
             version: LOCK_VERSION,
             files,
-            repos,
+            submodules,
         };
         let mut text = serde_json::to_string_pretty(&document)?;
         text.push('\n');
@@ -217,8 +220,93 @@ impl Lock {
         self.locked.iter().find(|l| l.path == path)
     }
 
-    /// Looks up the locked repository entry for `path`.
-    pub fn get_repo(&self, path: &Path) -> Option<&LockedRepo> {
-        self.repos.iter().find(|r| r.path == path)
+    /// Looks up the locked submodule entry for `path`.
+    pub fn get_submodule(&self, path: &Path) -> Option<&LockedSubmodule> {
+        self.submodules.iter().find(|s| s.path == path)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::Symlink;
+
+    #[test]
+    fn round_trips_files_and_submodules() {
+        let lock = Lock::new(
+            vec![
+                Locked {
+                    path: "dir".into(),
+                    source: Source::Git {
+                        git: "https://example.com/a.git".into(),
+                        rev: "main".into(),
+                        path: None,
+                        symlink: Symlink::Follow,
+                    },
+                    sha256: "abc".into(),
+                    commit: Some("deadbeef".into()),
+                    mode: None,
+                },
+                Locked {
+                    path: "run.sh".into(),
+                    source: Source::Git {
+                        git: "https://example.com/a.git".into(),
+                        rev: "v1".into(),
+                        path: Some("bin/run.sh".into()),
+                        symlink: Symlink::Follow,
+                    },
+                    sha256: "def".into(),
+                    commit: Some("deadbeef".into()),
+                    mode: Some(LockMode::Executable),
+                },
+            ],
+            vec![LockedSubmodule {
+                path: "tools/sisho".into(),
+                git: "https://example.com/sisho.git".into(),
+                rev: "main".into(),
+                subpath: Some("crates/sisho".into()),
+                commit: Some("cafebabe".into()),
+            }],
+        );
+
+        let rendered = lock.render().unwrap();
+        assert!(!rendered.contains("\"repos\""), "{rendered}");
+        assert!(rendered.contains("\"submodules\""), "{rendered}");
+        let parsed = Lock::parse(&rendered).unwrap();
+        assert_eq!(parsed, lock);
+        assert_eq!(
+            parsed.get_submodule(Path::new("tools/sisho")),
+            Some(&lock.submodules[0])
+        );
+    }
+
+    #[test]
+    fn rejects_legacy_repos_field_and_invalid_submodule_fields() {
+        let legacy = r#"{
+  "version": 1,
+  "files": {},
+  "repos": {
+    "tools/sisho": { "git": "https://example.com/sisho.git" }
+  }
+}"#;
+        assert!(Lock::parse(legacy).is_err());
+
+        let bad_url = r#"{
+  "version": 1,
+  "files": {},
+  "submodules": {
+    "tools/sisho": { "git": "git@github.com:org/repo.git", "rev": "main" }
+  }
+}"#;
+        assert!(Lock::parse(bad_url).is_err());
+
+        let bad_subpath = r#"{
+  "version": 1,
+  "files": {},
+  "submodules": {
+    "tools/sisho": { "git": "https://example.com/sisho.git", "rev": "main", "path": "../outside" }
+  }
+}"#;
+        assert!(Lock::parse(bad_subpath).is_err());
     }
 }

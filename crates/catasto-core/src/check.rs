@@ -7,8 +7,8 @@ use anyhow::{Context, Result, bail};
 use rayon::prelude::*;
 
 use crate::lockfile::Lock;
-use crate::manifest::{Managed, ManagedKind, Manifest, Repo, Source, Symlink};
-use catasto_digest::{sha256_file, sha256_link};
+use crate::manifest::{Managed, ManagedKind, Manifest, Source, Submodule, Symlink};
+use catasto_digest::{sha256_dir, sha256_file, sha256_link};
 
 /// How a managed entry or directory zone has drifted or failed validation.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -164,14 +164,14 @@ pub fn check(root: &Path) -> Result<CheckReport> {
         }
     }
 
-    for locked_repo in &lock.repos {
+    for locked_sub in &lock.submodules {
         if !manifest
             .managed
             .iter()
-            .any(|m| m.is_repo() && m.path == locked_repo.path)
+            .any(|m| m.is_submodule() && m.path == locked_sub.path)
         {
             violations.push(Violation {
-                path: locked_repo.path.clone(),
+                path: locked_sub.path.clone(),
                 kind: ViolationKind::Orphaned,
             });
         }
@@ -203,7 +203,7 @@ fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<Violat
         ManagedKind::File { source, executable } => {
             check_file(root, lock, &managed.path, source, *executable)
         }
-        ManagedKind::Repo(repo) => check_repo(root, lock, &managed.path, repo),
+        ManagedKind::Submodule(sub) => check_submodule(root, lock, &managed.path, sub),
     }
 }
 
@@ -214,22 +214,25 @@ fn check_file(
     source: &Source,
     executable: Option<bool>,
 ) -> Result<Vec<ViolationKind>> {
-    let Some(locked) = lock.get(path).filter(|locked| {
-        &locked.source == source
-            && matches!(source, Source::Git { .. }) == locked.commit.is_some()
-            // A declared executable mode that the lock does not hold is a declaration changed since the lock.
-            && executable.is_none_or(|declared| {
-                declared == (locked.mode == Some(crate::lockfile::LockMode::Executable))
-            })
-    }) else {
-        return Ok(vec![ViolationKind::Unlocked]);
-    };
-
     let file = root.join(path);
     let meta = match std::fs::symlink_metadata(&file) {
         Ok(m) => Some(m),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => None,
         Err(e) => return Err(e).with_context(|| format!("cannot inspect {}", file.display())),
+    };
+
+    let is_dir_on_disk = meta.as_ref().is_some_and(|m| m.is_dir());
+    let Some(locked) = lock.get(path).filter(|locked| {
+        &locked.source == source
+            && matches!(source, Source::Git { .. }) == locked.commit.is_some()
+            // A declared executable mode that the lock does not hold is a declaration changed since the lock
+            // (for directories, locked.mode is always None because executable bits are hashed in sha256_dir).
+            && (is_dir_on_disk
+                || executable.is_none_or(|declared| {
+                    declared == (locked.mode == Some(crate::lockfile::LockMode::Executable))
+                }))
+    }) else {
+        return Ok(vec![ViolationKind::Unlocked]);
     };
 
     let is_keep = matches!(
@@ -242,16 +245,21 @@ fn check_file(
 
     let mut kinds = Vec::new();
 
-    match (is_keep, meta) {
-        (_, None) => {
+    match meta {
+        None => {
             kinds.push(ViolationKind::Missing);
         }
-        (true, Some(meta)) => {
+        Some(meta) if meta.is_dir() => {
+            if sha256_dir(&file)? != locked.sha256 {
+                kinds.push(ViolationKind::Modified);
+            }
+        }
+        Some(meta) if is_keep => {
             if !meta.is_symlink() || sha256_link(&file)? != locked.sha256 {
                 kinds.push(ViolationKind::Modified);
             }
         }
-        (false, Some(meta)) => {
+        Some(meta) => {
             #[cfg(unix)]
             let mode_matches = {
                 use std::os::unix::fs::PermissionsExt;
@@ -272,9 +280,17 @@ fn check_file(
         }
     }
 
-    let readable_source = source.local_path(root).filter(|s| s.is_file());
-    if let Some(source_file) = readable_source {
-        if sha256_file(&source_file)? != locked.sha256 {
+    if let Some(source_path) = source.local_path(root) {
+        if source_path.is_dir() {
+            let source_hash = if executable.is_some() {
+                crate::sync::read_local(root, path, source)?.sha256(executable)
+            } else {
+                sha256_dir(&source_path)?
+            };
+            if source_hash != locked.sha256 {
+                kinds.push(ViolationKind::Stale);
+            }
+        } else if source_path.is_file() && sha256_file(&source_path)? != locked.sha256 {
             kinds.push(ViolationKind::Stale);
         }
     }
@@ -282,9 +298,14 @@ fn check_file(
     Ok(kinds)
 }
 
-fn check_repo(root: &Path, lock: &Lock, path: &Path, repo: &Repo) -> Result<Vec<ViolationKind>> {
-    let Some(_locked) = lock.get_repo(path).filter(|locked| {
-        locked.git == repo.git && locked.branch == repo.branch && locked.submodule == repo.submodule
+fn check_submodule(
+    root: &Path,
+    lock: &Lock,
+    path: &Path,
+    sub: &Submodule,
+) -> Result<Vec<ViolationKind>> {
+    let Some(_locked) = lock.get_submodule(path).filter(|locked| {
+        locked.git == sub.git && locked.rev == sub.rev && locked.subpath == sub.path
     }) else {
         return Ok(vec![ViolationKind::Unlocked]);
     };
@@ -294,10 +315,14 @@ fn check_repo(root: &Path, lock: &Lock, path: &Path, repo: &Repo) -> Result<Vec<
         return Ok(vec![ViolationKind::Missing]);
     }
 
-    let resolved_url = catasto_git::resolve_url(root, &repo.git)?;
+    let resolved_url = catasto_git::resolve_url(root, &sub.git)?;
     match catasto_git::remote_url(&dir) {
-        Ok(actual_url) if actual_url == repo.git || actual_url == resolved_url => {}
+        Ok(actual_url) if actual_url == sub.git || actual_url == resolved_url => {}
         Ok(_) | Err(_) => return Ok(vec![ViolationKind::Modified]),
+    }
+
+    if !catasto_git::check_sparse_checkout(&dir, sub.path.as_deref()).unwrap_or(false) {
+        return Ok(vec![ViolationKind::Modified]);
     }
 
     Ok(Vec::new())

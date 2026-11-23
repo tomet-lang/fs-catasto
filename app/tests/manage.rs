@@ -268,13 +268,20 @@ fn add_defaults_path_to_dest_for_upstream_and_git_and_nested_dest() {
     let listed = w.ok(&["list"]);
     assert!(listed.contains("shared:sub/b.tmt"), "{listed}");
 
-    // --git without PATH defaults to dest
+    // --git without PATH omits `path` and fetches the entire repository root as a directory
     let w_git = World::new();
     w_git.ok(&["init"]);
-    w_git.ok(&["add", "a.tmt", "--git", w_git.url(), "--rev", "main"]);
-    assert_eq!(w_git.read("a.tmt"), "a one");
+    w_git.ok(&["add", "vendor/shared", "--git", w_git.url(), "--rev", "main"]);
+    assert_eq!(w_git.read("vendor/shared/a.tmt"), "a one");
+    assert_eq!(w_git.read("vendor/shared/sub/b.tmt"), "b one");
     let manifest_git = w_git.read("catasto.ctmt");
-    assert!(manifest_git.contains("path: \"a.tmt\""), "{manifest_git}");
+    assert!(
+        manifest_git.contains(&format!(
+            "\"vendor/shared\": catasto.git({:?}, rev: main)",
+            w_git.url()
+        )),
+        "{manifest_git}"
+    );
 }
 
 #[test]
@@ -750,23 +757,31 @@ fn executable_bit_cli_contract() {
 }
 
 #[test]
-fn add_repo_and_remove_repo_with_submodule_updates_gitmodules_and_list() {
+fn add_and_remove_git_submodule_updates_gitmodules_and_list() {
     let w = World::new();
     w.ok(&["init"]);
 
     // Rejects invalid combinations
-    let err = w.fails(&["add", "tools/sisho", "--repo", w.url(), "extra"]);
-    assert!(err.contains("--repo clones the entire repository"), "{err}");
-    let err = w.fails(&["add", "tools/sisho", "--repo", w.url(), "--keep-symlink"]);
-    assert!(err.contains("--repo has no --keep-symlink"), "{err}");
+    let err = w.fails(&[
+        "add",
+        "tools/sisho",
+        "--git",
+        w.url(),
+        "--submodule",
+        "--keep-symlink",
+    ]);
+    assert!(
+        err.contains("--submodule` cannot be used with `--keep-symlink"),
+        "{err}"
+    );
 
-    // Add repo with --branch and --submodule
+    // Add submodule with --git, --rev main, and --submodule
     let out = w.ok(&[
         "add",
         "tools/sisho",
-        "--repo",
+        "--git",
         w.url(),
-        "--branch",
+        "--rev",
         "main",
         "--submodule",
     ]);
@@ -782,8 +797,8 @@ fn add_repo_and_remove_repo_with_submodule_updates_gitmodules_and_list() {
 
     let manifest = w.read("catasto.ctmt");
     assert!(
-        manifest.contains("catasto.repo(")
-            && manifest.contains("branch: main")
+        manifest.contains("catasto.git(")
+            && manifest.contains("rev: main")
             && manifest.contains("submodule: true"),
         "{manifest}"
     );
@@ -791,6 +806,7 @@ fn add_repo_and_remove_repo_with_submodule_updates_gitmodules_and_list() {
     // List (plain and --json)
     let listed = w.ok(&["list"]);
     assert!(listed.contains("tools/sisho"), "{listed}");
+    assert!(listed.contains("submodule "), "{listed}");
     assert!(listed.contains("@main"), "{listed}");
     assert!(listed.contains("ok"), "{listed}");
 
@@ -807,5 +823,48 @@ fn add_repo_and_remove_repo_with_submodule_updates_gitmodules_and_list() {
     assert!(removed.contains("deleted the directory"), "{removed}");
     assert!(!w.vault.join("tools/sisho").exists());
     assert!(!w.exists(".gitmodules"));
+    assert!(w.run(&["check"]).status.success());
+}
+
+#[test]
+fn cli_add_git_sparse_submodule_and_directory_end_to_end() {
+    let w = World::new();
+    w.ok(&["init"]);
+
+    // 1. Sparse-checkout submodule: `catasto add vendor/sub --git <url> sub --submodule`
+    let out = w.ok(&["add", "vendor/sub", "--git", w.url(), "sub", "--submodule"]);
+    assert!(out.starts_with("added vendor/sub, locked at "), "{out}");
+    assert!(w.vault.join("vendor/sub/.git").exists());
+    assert_eq!(w.read("vendor/sub/sub/b.tmt"), "b one");
+    assert!(!w.exists("vendor/sub/a.tmt"));
+
+    let gitmodules = w.read(".gitmodules");
+    assert!(
+        gitmodules.contains("[submodule \"vendor/sub\"]"),
+        "{gitmodules}"
+    );
+    let lock_json: serde_json::Value = serde_json::from_str(&w.read("catasto.lock")).unwrap();
+    assert_eq!(lock_json["submodules"]["vendor/sub"]["path"], "sub");
+
+    let listed = w.ok(&["list"]);
+    assert!(listed.contains("@main:sub"), "{listed}");
+    assert!(w.run(&["check"]).status.success());
+
+    // 2. Plain directory fetch via --git <url> sub (no .git, no submodule)
+    w.ok(&["add", "fetched_sub", "--git", w.url(), "sub"]);
+    assert!(!w.exists("fetched_sub/.git"));
+    assert_eq!(w.read("fetched_sub/b.tmt"), "b one");
+    assert!(w.run(&["check"]).status.success());
+
+    // Extra file inside fetched_sub triggers check failure and diff output, and sync cleans it
+    std::fs::write(w.vault.join("fetched_sub/stray.txt"), "extra").unwrap();
+    assert_eq!(w.run(&["check"]).status.code(), Some(1));
+    let diff_out = w.run(&["diff", "--only", "fetched_sub"]);
+    assert_eq!(diff_out.status.code(), Some(1));
+    let diff_stdout = String::from_utf8_lossy(&diff_out.stdout);
+    assert!(diff_stdout.contains("fetched_sub/stray.txt"), "{diff_stdout}");
+
+    w.ok(&["sync"]);
+    assert!(!w.exists("fetched_sub/stray.txt"));
     assert!(w.run(&["check"]).status.success());
 }

@@ -287,14 +287,23 @@ fn entry_text_with_and_without_keep_symlink() {
     let git_follow = SourceText::Git {
         git: "https://example.com/repo.git".into(),
         rev: "main".into(),
-        path: "bin/tool".into(),
+        path: Some("bin/tool".into()),
         keep_symlink: false,
+        submodule: false,
     };
     let git_keep = SourceText::Git {
         git: "https://example.com/repo.git".into(),
         rev: "main".into(),
-        path: "bin/tool".into(),
+        path: Some("bin/tool".into()),
         keep_symlink: true,
+        submodule: false,
+    };
+    let git_root = SourceText::Git {
+        git: "https://example.com/repo.git".into(),
+        rev: "main".into(),
+        path: None,
+        keep_symlink: false,
+        submodule: false,
     };
     assert_eq!(
         entry_text("bin/tool", &git_follow),
@@ -303,6 +312,10 @@ fn entry_text_with_and_without_keep_symlink() {
     assert_eq!(
         entry_text("bin/tool", &git_keep),
         "\"bin/tool\": catasto.git(\"https://example.com/repo.git\", rev: main, path: \"bin/tool\", symlink: keep)\n"
+    );
+    assert_eq!(
+        entry_text("vendor/repo", &git_root),
+        "\"vendor/repo\": catasto.git(\"https://example.com/repo.git\", rev: main)\n"
     );
 
     // Verify added entry with symlink: keep parses cleanly
@@ -550,30 +563,34 @@ fn add_or_replace_upstream_oneline_block() {
 }
 
 #[test]
-fn adds_and_replaces_repo_entry() {
-    let repo = SourceText::Repo {
+fn adds_and_replaces_submodule_entry() {
+    let sub = SourceText::Git {
         git: "https://example.com/sisho.git".into(),
-        branch: Some("main".into()),
+        rev: "main".into(),
+        path: Some("crates/sisho".into()),
+        keep_symlink: false,
         submodule: true,
     };
-    let text = add_entry("", "tools/sisho", &repo).unwrap();
+    let text = add_entry("", "tools/sisho", &sub).unwrap();
     assert_eq!(
         text,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\", branch: main, submodule: true)\n"
+        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", rev: main, path: \"crates/sisho\", submodule: true)\n"
     );
     assert!(Manifest::parse(&text).is_ok());
 
-    let plain_repo = SourceText::Repo {
+    let plain_dir = SourceText::Git {
         git: "https://example.com/sisho.git".into(),
-        branch: None,
+        rev: "v1".into(),
+        path: None,
+        keep_symlink: false,
         submodule: false,
     };
     let (replaced, outcome) =
-        add_or_replace_entry(&text, "tools/sisho", &plain_repo, true).unwrap();
+        add_or_replace_entry(&text, "tools/sisho", &plain_dir, true).unwrap();
     assert_eq!(outcome, AddOutcome::Replaced);
     assert_eq!(
         replaced,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.repo(\"https://example.com/sisho.git\")\n"
+        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", rev: v1)\n"
     );
     assert!(Manifest::parse(&replaced).is_ok());
 }

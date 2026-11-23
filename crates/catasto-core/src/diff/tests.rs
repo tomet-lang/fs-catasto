@@ -218,3 +218,66 @@ fn symlink_diff_formats() {
         "link.tmt: regular file becomes symlink to target1.tmt\n"
     );
 }
+
+#[test]
+fn diff_handles_managed_directory_modified_missing_extra_and_type_mismatch() {
+    let fx = Fixture::new();
+    fx.ready();
+    fx.repo.commit("dir/a.txt", "a one\n");
+    fx.repo.commit("dir/sub/b.txt", "b one\n");
+
+    add(
+        &fx.root,
+        "dir",
+        &SourceText::Upstream {
+            name: "t".into(),
+            path: "dir".into(),
+            keep_symlink: false,
+        },
+        false,
+        Some(&fx.cache),
+    )
+    .unwrap();
+
+    // 1. Clean directory -> empty diff
+    assert_eq!(diff(&fx.root, Some(&fx.cache), &[]).unwrap(), "");
+
+    // 2. Modified file inside directory
+    std::fs::write(fx.root.join("dir/a.txt"), "a edited\n").unwrap();
+    let out = diff(&fx.root, Some(&fx.cache), &[]).unwrap();
+    assert!(out.contains("--- a/dir/a.txt"), "{out}");
+    assert!(out.contains("+++ b/dir/a.txt\tgit "), "{out}");
+    assert!(out.contains("-a edited"), "{out}");
+    assert!(out.contains("+a one"), "{out}");
+    std::fs::write(fx.root.join("dir/a.txt"), "a one\n").unwrap();
+
+    // 3. Extra file inside directory -> reported as removed
+    std::fs::write(fx.root.join("dir/extra.txt"), "extra\n").unwrap();
+    let out = diff(&fx.root, Some(&fx.cache), &[]).unwrap();
+    assert!(out.contains("--- a/dir/extra.txt"), "{out}");
+    assert!(out.contains("+++ /dev/null"), "{out}");
+    assert!(out.contains("-extra"), "{out}");
+    std::fs::remove_file(fx.root.join("dir/extra.txt")).unwrap();
+
+    // 4. Deleted file inside directory -> reported as added
+    std::fs::remove_file(fx.root.join("dir/sub/b.txt")).unwrap();
+    let out = diff(&fx.root, Some(&fx.cache), &[]).unwrap();
+    assert!(out.contains("--- /dev/null"), "{out}");
+    assert!(out.contains("+++ b/dir/sub/b.txt\tgit "), "{out}");
+    assert!(out.contains("+b one"), "{out}");
+
+    // 5. Regular file on disk where directory is expected
+    std::fs::remove_dir_all(fx.root.join("dir")).unwrap();
+    std::fs::write(fx.root.join("dir"), "not a dir\n").unwrap();
+    let out = diff(&fx.root, Some(&fx.cache), &[]).unwrap();
+    assert!(out.contains("--- a/dir"), "{out}");
+    assert!(out.contains("-not a dir"), "{out}");
+    assert!(out.contains("+++ b/dir/a.txt\tgit "), "{out}");
+    assert!(out.contains("+++ b/dir/sub/b.txt\tgit "), "{out}");
+
+    // 6. Missing directory entirely
+    std::fs::remove_file(fx.root.join("dir")).unwrap();
+    let out = diff(&fx.root, Some(&fx.cache), &[]).unwrap();
+    assert!(out.contains("+++ b/dir/a.txt\tgit "), "{out}");
+    assert!(out.contains("+++ b/dir/sub/b.txt\tgit "), "{out}");
+}

@@ -110,14 +110,14 @@ pub fn remove(root: &Path, dest: &str, delete_file: bool) -> Result<()> {
         .filter(|locked| locked.path != Path::new(&dest))
         .cloned()
         .collect();
-    let kept_repos: Vec<_> = previous_lock
-        .repos
+    let kept_submodules: Vec<_> = previous_lock
+        .submodules
         .iter()
-        .filter(|repo| repo.path != Path::new(&dest))
+        .filter(|sub| sub.path != Path::new(&dest))
         .cloned()
         .collect();
     let file = root.join(LOCK_FILE);
-    std::fs::write(&file, Lock::new(kept_files, kept_repos).render()?)
+    std::fs::write(&file, Lock::new(kept_files, kept_submodules).render()?)
         .with_context(|| format!("cannot write {}", file.display()))?;
 
     let manifest = Manifest::load(root)?;
@@ -242,15 +242,15 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
                     _ => None,
                 },
             },
-            ManagedKind::Repo(repo) => Row {
+            ManagedKind::Submodule(sub) => Row {
                 path: managed.path.clone(),
-                from: match &repo.branch {
-                    Some(branch) => format!("repo {}@{branch}", repo.git),
-                    None => format!("repo {}", repo.git),
+                from: match &sub.path {
+                    Some(p) => format!("submodule {}@{}:{}", sub.git, sub.rev, p.display()),
+                    None => format!("submodule {}@{}", sub.git, sub.rev),
                 },
                 state: violations_by_path.get(&managed.path).cloned(),
                 commit: lock
-                    .get_repo(&managed.path)
+                    .get_submodule(&managed.path)
                     .and_then(|locked| locked.commit.clone()),
                 symlink: None,
             },
@@ -271,16 +271,26 @@ fn describe(source: &Source, upstreams: &[UpstreamInfo]) -> String {
                 Symlink::Follow => "",
                 Symlink::Keep => " symlink: keep",
             };
-            for upstream in upstreams.iter().filter(|u| &u.git == git && &u.rev == rev) {
-                let inside = match &upstream.root {
-                    Some(root) => path.strip_prefix(root).ok(),
-                    None => Some(path.as_path()),
-                };
-                if let Some(inside) = inside {
-                    return format!("{}:{}{suffix}", upstream.name, inside.display());
+            if let Some(p) = path {
+                for upstream in upstreams.iter().filter(|u| &u.git == git && &u.rev == rev) {
+                    let inside = match &upstream.root {
+                        Some(root) => p.strip_prefix(root).ok(),
+                        None => Some(p.as_path()),
+                    };
+                    if let Some(inside) = inside {
+                        return format!("{}:{}{suffix}", upstream.name, inside.display());
+                    }
                 }
+                format!("git {git}@{rev}:{}{suffix}", p.display())
+            } else {
+                if let Some(upstream) = upstreams
+                    .iter()
+                    .find(|u| &u.git == git && &u.rev == rev && u.root.is_none())
+                {
+                    return format!("{}{suffix}", upstream.name);
+                }
+                format!("git {git}@{rev}{suffix}")
             }
-            format!("git {git}@{rev}:{}{suffix}", path.display())
         }
     }
 }

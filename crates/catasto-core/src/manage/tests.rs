@@ -161,8 +161,9 @@ fn a_file_from_a_repository_written_out_and_a_local_file_are_added_too() {
         &SourceText::Git {
             git: fx.repo.url(),
             rev: "main".into(),
-            path: "a.tmt".into(),
+            path: Some("a.tmt".into()),
             keep_symlink: false,
+            submodule: false,
         },
         false,
         Some(&fx.cache),
@@ -561,8 +562,76 @@ fn upstream_add_force_outcomes_and_guarantees() {
         Source::Git {
             git: fx.repo.url(),
             rev: "v2".into(),
-            path: PathBuf::from("a.tmt"),
+            path: Some(PathBuf::from("a.tmt")),
             symlink: Symlink::Follow,
         }
     );
+}
+
+#[test]
+fn list_formats_git_root_and_submodule_with_and_without_subpath() {
+    let fx = Fixture::new();
+    init(&fx.root).unwrap();
+
+    // 1. Git root (path omitted)
+    add(
+        &fx.root,
+        "root_copy",
+        &SourceText::Git {
+            git: fx.repo.url(),
+            rev: "main".into(),
+            path: None,
+            keep_symlink: false,
+            submodule: false,
+        },
+        false,
+        Some(&fx.cache),
+    )
+    .unwrap();
+
+    // 2. Submodule with subpath
+    add(
+        &fx.root,
+        "sub_part",
+        &SourceText::Git {
+            git: fx.repo.url(),
+            rev: "main".into(),
+            path: Some("sub".into()),
+            keep_symlink: false,
+            submodule: true,
+        },
+        false,
+        Some(&fx.cache),
+    )
+    .unwrap();
+
+    // 3. Submodule without subpath
+    add(
+        &fx.root,
+        "sub_full",
+        &SourceText::Git {
+            git: fx.repo.url(),
+            rev: "main".into(),
+            path: None,
+            keep_symlink: false,
+            submodule: true,
+        },
+        false,
+        Some(&fx.cache),
+    )
+    .unwrap();
+
+    let rows = list(&fx.root).unwrap();
+    assert_eq!(rows.len(), 3);
+    assert_eq!(rows[0].from, format!("git {}@main", fx.repo.url()));
+    assert_eq!(rows[0].state, None);
+    assert_eq!(
+        rows[1].from,
+        format!("submodule {}@main:sub", fx.repo.url())
+    );
+    assert_eq!(rows[1].state, None);
+    assert!(rows[1].commit.is_some());
+    assert_eq!(rows[2].from, format!("submodule {}@main", fx.repo.url()));
+    assert_eq!(rows[2].state, None);
+    assert!(rows[2].commit.is_some());
 }

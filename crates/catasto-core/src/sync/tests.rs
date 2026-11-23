@@ -877,7 +877,7 @@ fn lock_records_the_declared_mode_without_the_network() {
 }
 
 #[test]
-fn sync_clones_repo_entry_creates_gitmodules_and_locks_commit() {
+fn sync_clones_submodule_entry_creates_gitmodules_and_locks_commit() {
     let tmp = tempfile::tempdir().unwrap();
     let vault = tmp.path().join("vault");
     let cache = tmp.path().join("cache");
@@ -889,7 +889,7 @@ fn sync_clones_repo_entry_creates_gitmodules_and_locks_commit() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.repo({:?}, branch: main, submodule: true)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git({:?}, rev: main, submodule: true)\n",
             upstream_repo.url()
         ),
     )
@@ -913,14 +913,14 @@ fn sync_clones_repo_entry_creates_gitmodules_and_locks_commit() {
     assert!(gitmodules.contains("branch = main"));
     assert!(gitmodules.contains("ignore = dirty"));
 
-    // Lockfile records repos
-    assert_eq!(lock.repos.len(), 1);
-    let locked_repo = &lock.repos[0];
-    assert_eq!(locked_repo.path, Path::new("tools/sisho"));
-    assert_eq!(locked_repo.git, upstream_repo.url());
-    assert_eq!(locked_repo.branch.as_deref(), Some("main"));
-    assert!(locked_repo.submodule);
-    assert_eq!(locked_repo.commit.as_deref(), Some(head.as_str()));
+    // Lockfile records submodules
+    assert_eq!(lock.submodules.len(), 1);
+    let locked_sub = &lock.submodules[0];
+    assert_eq!(locked_sub.path, Path::new("tools/sisho"));
+    assert_eq!(locked_sub.git, upstream_repo.url());
+    assert_eq!(locked_sub.rev, "main");
+    assert_eq!(locked_sub.subpath, None);
+    assert_eq!(locked_sub.commit.as_deref(), Some(head.as_str()));
 
     // check passes cleanly
     let report = check(&vault).unwrap();
@@ -937,7 +937,7 @@ fn sync_clones_repo_entry_creates_gitmodules_and_locks_commit() {
     sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
     assert!(check(&vault).unwrap().is_ok());
 
-    // Drift: missing repo directory
+    // Drift: missing submodule directory
     std::fs::remove_dir_all(&cloned_dir).unwrap();
     let report = check(&vault).unwrap();
     assert_eq!(report.violations.len(), 1);
@@ -951,7 +951,7 @@ fn sync_clones_repo_entry_creates_gitmodules_and_locks_commit() {
 }
 
 #[test]
-fn sync_dry_run_does_not_clone_repo_or_write_gitmodules() {
+fn sync_dry_run_does_not_clone_submodule_or_write_gitmodules() {
     let tmp = tempfile::tempdir().unwrap();
     let vault = tmp.path().join("vault");
     let cache = tmp.path().join("cache");
@@ -963,7 +963,7 @@ fn sync_dry_run_does_not_clone_repo_or_write_gitmodules() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.repo({:?}, branch: main, submodule: true)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git({:?}, rev: main, submodule: true)\n",
             upstream_repo.url()
         ),
     )
@@ -983,7 +983,7 @@ fn sync_dry_run_does_not_clone_repo_or_write_gitmodules() {
     };
 
     assert!(
-        report.output.contains("would clone repo tools/sisho"),
+        report.output.contains("would clone submodule tools/sisho"),
         "{}",
         report.output
     );
@@ -998,7 +998,7 @@ fn sync_dry_run_does_not_clone_repo_or_write_gitmodules() {
 }
 
 #[test]
-fn sync_update_fast_forwards_relative_repo_and_updates_commit() {
+fn sync_update_advances_relative_submodule_and_updates_commit() {
     let tmp = tempfile::tempdir().unwrap();
     let vault = tmp.path().join("vault");
     let cache = tmp.path().join("cache");
@@ -1016,31 +1016,196 @@ fn sync_update_fast_forwards_relative_repo_and_updates_commit() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"vendor/lib\": catasto.repo(\"../../{repo_name}\", branch: main)\n"
+            "::kind(catasto, version: \"1.0.0\")\n\n\"vendor/lib\": catasto.git(\"../../{repo_name}\", rev: main, submodule: true)\n"
         ),
     )
     .unwrap();
 
     let lock1 = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
-    assert_eq!(lock1.repos[0].commit.as_deref(), Some(c1.as_str()));
+    assert_eq!(lock1.submodules[0].commit.as_deref(), Some(c1.as_str()));
     assert!(check(&vault).unwrap().is_ok());
 
     let c2 = upstream_repo.commit("README.md", "v2");
 
     // Locked sync keeps c1
     let lock_locked = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
-    assert_eq!(lock_locked.repos[0].commit.as_deref(), Some(c1.as_str()));
+    assert_eq!(lock_locked.submodules[0].commit.as_deref(), Some(c1.as_str()));
     assert_eq!(
         std::fs::read_to_string(vault.join("vendor/lib/README.md")).unwrap(),
         "v1"
     );
 
-    // Update sync fast-forwards to c2
+    // Update sync advances to c2
     let lock_updated = sync_with(&vault, SyncMode::Update, Some(&cache)).unwrap();
-    assert_eq!(lock_updated.repos[0].commit.as_deref(), Some(c2.as_str()));
+    assert_eq!(
+        lock_updated.submodules[0].commit.as_deref(),
+        Some(c2.as_str())
+    );
     assert_eq!(
         std::fs::read_to_string(vault.join("vendor/lib/README.md")).unwrap(),
         "v2"
     );
+    assert!(check(&vault).unwrap().is_ok());
+}
+
+#[test]
+#[cfg(unix)]
+fn sync_fetches_directory_from_git_upstream_and_repo_root() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    let repo = TestRepo::new();
+    repo.commit("root.txt", "root");
+    repo.commit("dir/a.txt", "hello");
+    repo.commit_executable("dir/sub/run.sh", "#!/bin/sh\necho hi\n");
+    repo.commit_symlink("dir/sub/link", "../a.txt");
+
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "\
+::kind(catasto, version: \"1.0.0\")
+::upstream(u: catasto.git({url:?}, rev: main))
+
+\"kept_dir\": catasto.git({url:?}, rev: main, path: \"dir\", symlink: keep)
+\"followed_dir\": catasto.upstream(u, path: \"dir\")
+\"repo_root\": catasto.git({url:?}, rev: main)
+\"forced_exec_dir\": (catasto.git({url:?}, rev: main, path: \"dir\"), executable: true)
+",
+            url = repo.url()
+        ),
+    )
+    .unwrap();
+
+    let lock = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+
+    // 1. kept_dir keeps symlinks and executable bits without top-level lock mode
+    let kept_locked = lock.get(Path::new("kept_dir")).unwrap();
+    assert_eq!(kept_locked.mode, None);
+    assert_eq!(
+        kept_locked.sha256,
+        catasto_digest::sha256_dir(&vault.join("kept_dir")).unwrap()
+    );
+    assert_eq!(std::fs::read_to_string(vault.join("kept_dir/a.txt")).unwrap(), "hello");
+    assert!(is_executable(&vault.join("kept_dir/sub/run.sh")));
+    assert!(
+        std::fs::symlink_metadata(vault.join("kept_dir/sub/link"))
+            .unwrap()
+            .is_symlink()
+    );
+
+    // 2. followed_dir resolves symlink inside directory
+    let followed_link_meta = std::fs::symlink_metadata(vault.join("followed_dir/sub/link")).unwrap();
+    assert!(followed_link_meta.is_file());
+    assert!(!followed_link_meta.is_symlink());
+    assert_eq!(
+        std::fs::read_to_string(vault.join("followed_dir/sub/link")).unwrap(),
+        "hello"
+    );
+
+    // 3. repo_root fetches entire repository root without .git
+    assert!(!vault.join("repo_root/.git").exists());
+    assert_eq!(
+        std::fs::read_to_string(vault.join("repo_root/root.txt")).unwrap(),
+        "root"
+    );
+    assert_eq!(
+        std::fs::read_to_string(vault.join("repo_root/dir/a.txt")).unwrap(),
+        "hello"
+    );
+
+    // 4. forced_exec_dir applies executable: true to all files inside the directory
+    assert_eq!(lock.get(Path::new("forced_exec_dir")).unwrap().mode, None);
+    assert!(is_executable(&vault.join("forced_exec_dir/a.txt")));
+    assert!(is_executable(&vault.join("forced_exec_dir/sub/run.sh")));
+
+    // Check passes cleanly across all directory entries
+    let rep = check(&vault).unwrap();
+    assert!(rep.is_ok(), "violations: {:?}", rep.violations);
+
+    // 5. Upstream deletes a file inside `dir`, and sync --update removes the stale file on disk
+    std::fs::remove_file(Path::new(&repo.url()).join("dir/a.txt")).unwrap();
+    repo.git(&["add", "--all"]);
+    repo.git(&["commit", "--quiet", "-m", "remove dir/a.txt"]);
+    // Also remove dir/sub/link which became broken, or update it to point to something valid
+    repo.commit("dir/b.txt", "new");
+    std::fs::remove_file(Path::new(&repo.url()).join("dir/sub/link")).unwrap();
+    repo.git(&["add", "--all"]);
+    repo.git(&["commit", "--quiet", "-m", "remove broken link"]);
+
+    // Also add an extra untracked file on disk inside kept_dir to verify cleanup
+    std::fs::write(vault.join("kept_dir/stale.txt"), "stale").unwrap();
+    let mode = std::fs::metadata(vault.join("kept_dir/sub/run.sh"))
+        .unwrap()
+        .permissions()
+        .mode();
+    assert_ne!(mode & 0o111, 0);
+
+    sync_with(&vault, SyncMode::Update, Some(&cache)).unwrap();
+    assert!(!vault.join("kept_dir/a.txt").exists());
+    assert!(!vault.join("kept_dir/stale.txt").exists());
+    assert_eq!(
+        std::fs::read_to_string(vault.join("kept_dir/b.txt")).unwrap(),
+        "new"
+    );
+    assert!(check(&vault).unwrap().is_ok());
+}
+
+#[test]
+fn sync_and_check_sparse_checkout_submodule() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let cache = tmp.path().join("cache");
+    std::fs::create_dir_all(&vault).unwrap();
+
+    let upstream_repo = TestRepo::new();
+    let head = upstream_repo.commit("sub/dir/one.txt", "one");
+    upstream_repo.commit("sub/dir/nested/two.txt", "two");
+    let head2 = upstream_repo.commit("other/ignored.txt", "ignored");
+    let _ = head;
+
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        format!(
+            "::kind(catasto, version: \"1.0.0\")\n\n\"vendor/part\": catasto.git({:?}, rev: main, path: \"sub/dir\", submodule: true)\n",
+            upstream_repo.url()
+        ),
+    )
+    .unwrap();
+
+    let lock = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+    assert!(vault.join("vendor/part/.git").exists());
+    assert_eq!(
+        std::fs::read_to_string(vault.join("vendor/part/sub/dir/one.txt")).unwrap(),
+        "one"
+    );
+    assert_eq!(
+        std::fs::read_to_string(vault.join("vendor/part/sub/dir/nested/two.txt")).unwrap(),
+        "two"
+    );
+    assert!(!vault.join("vendor/part/other").exists());
+
+    assert_eq!(lock.submodules.len(), 1);
+    assert_eq!(
+        lock.submodules[0].subpath.as_deref(),
+        Some(Path::new("sub/dir"))
+    );
+    assert_eq!(lock.submodules[0].commit.as_deref(), Some(head2.as_str()));
+    assert!(check(&vault).unwrap().is_ok());
+
+    // Sparse-checkout drift (disabling sparse checkout) is detected as Modified
+    catasto_git::apply_sparse_checkout(&vault.join("vendor/part"), None).unwrap();
+    let rep = check(&vault).unwrap();
+    assert_eq!(rep.violations.len(), 1);
+    assert_eq!(rep.violations[0].path, Path::new("vendor/part"));
+    assert_eq!(rep.violations[0].kind, ViolationKind::Modified);
+
+    // Sync restores sparse-checkout cleanly
+    sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
+    assert!(!vault.join("vendor/part/other").exists());
     assert!(check(&vault).unwrap().is_ok());
 }

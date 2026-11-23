@@ -6,7 +6,27 @@
 
 `catasto-digest` -- SHA-256 content hashing for catasto.
 
+==[Structs]
+
+===[struct TreeDigestEntry]
+
+One leaf entry included in a deterministic directory tree digest.
+
+==[Enums]
+
+===[enum TreeEntryKind]
+
+Kind of entry in a deterministic directory tree digest.
+
 ==[Functions]
+
+===[fn sha256_tree]
+
+Computes a deterministic SHA-256 digest over a set of tree entries.
+
+===[fn sha256_dir]
+
+Computes the deterministic SHA-256 tree digest of the directory at `path`.
 
 ===[fn sha256_file]
 

@@ -83,15 +83,15 @@ The generated `catasto.lock` data model and serialization.
 
 ====[struct Lock]
 
-What each managed file and repository looked like when it was locked.
+What each managed file, directory, and submodule looked like when it was locked.
 
 ====[struct Locked]
 
-One locked file.
+One locked file or directory.
 
-====[struct LockedRepo]
+====[struct LockedSubmodule]
 
-One locked repository entry.
+One locked submodule entry.
 
 ===[Enums]
 
@@ -205,10 +205,10 @@ optionally with a `root` directory inside the repository from which entry paths 
 
 ====[struct ManifestEntrySpec]
 
-Manifest entry declaring a managed workspace file or repository.
+Manifest entry declaring a managed workspace file, directory, or submodule.
 
 Each top-level entry in `catasto.ctmt` binds a workspace-relative path
-to a `catasto.{upstream,git,local,repo}(...)` constructor call; file entries
+to a `catasto.{upstream,git,local}(...)` constructor call; file and directory entries
 may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
 
 ====[struct ZoneSpec]
@@ -224,3 +224,20 @@ the workspace root) to constraints on child entries of each matching directory (
 ====[fn all_manifest_specs]
 
 Returns all configuration and declaration specification groups for `catasto.ctmt`.
+
+====[fn blueprint_spec]
+
+Returns the cotomet blueprint schema (`catasto@1.0.0.blueprint.ctmt`) for `catasto.ctmt`.
+
+Reflects the exact header attributes (`::upstream`, `::zone`) and body entry shapes
+accepted by \[`crate::Manifest::parse`\]:
+
+- `::upstream(<$string(optional: true)>: <$catasto.git>)`
+- `::zone(<$string(optional: true)>: (...))` with `require`, `allow`, `deny`, `ignore`,
+
+`recursive`, and nested `files` / `dirs` `(require, allow, deny)` rule tuples
+
+- Top-level entries mapping workspace paths (`<$string>`) to a source constructor
+
+(`catasto.git`, `catasto.upstream`, `catasto.local`), or a tuple pairing a
+source constructor with optional `executable: bool`

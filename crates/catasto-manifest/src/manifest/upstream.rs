@@ -210,6 +210,11 @@ fn parse_upstream_entry(name: &str, value: &Value) -> Result<Upstream> {
                 bail!("{context}: `catasto.git` inside `::upstream` cannot specify `{forbidden}`");
             }
         }
+        if raw_args.contains_key("submodule") {
+            bail!(
+                "upstream `{name}` cannot specify `submodule`; `submodule` goes on a manifest entry"
+            );
+        }
     }
 
     let git = require_text(&constructed, "url", &context)?;
