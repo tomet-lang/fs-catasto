@@ -10,4 +10,4 @@ pub use lock::{LOCK_FILE, Lock, LockMode, Locked, LockedRepo};
 pub use manifest::{
     EntryRules, Managed, ManagedKind, Manifest, Repo, Source, Symlink, Zone, ZonePattern,
 };
-pub use spec::{ManifestEntrySpec, UpstreamSpec, ZoneSpec, all_manifest_specs};
+pub use spec::{ManifestEntrySpec, UpstreamSpec, ZoneSpec, all_manifest_specs, blueprint_spec};

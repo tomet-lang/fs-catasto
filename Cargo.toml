@@ -33,9 +33,10 @@ tomet-declaration = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-hole        = { git = "https://github.com/tomet-lang/tomet-hole.git" }
 tomet-load-config = { git = "https://github.com/tomet-lang/tomet.git" }
 tomet-scalar      = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-semantics   = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-spec        = { git = "https://github.com/tomet-lang/tomet.git" }
-tomet-type        = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-semantics           = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-spec                = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-type                = { git = "https://github.com/tomet-lang/tomet.git" }
+tomet-validator-blueprint = { git = "https://github.com/tomet-lang/tomet.git" }
 #--- Crates.io ---
 anyhow     = "1"
 clap       = { version = "4.6", features = ["derive"] }

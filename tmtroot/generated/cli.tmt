@@ -244,7 +244,7 @@ Generate automated .tmt specifications and reference documentation
 
 Arguments:
 
-- `[TARGET]`: Documentation target to generate (`cli` | `manifest`).
+- `[TARGET]`: Documentation target to generate (`cli` | `manifest` | `blueprint`).
 
 Options:
 

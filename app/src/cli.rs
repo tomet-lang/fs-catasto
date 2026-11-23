@@ -130,7 +130,7 @@ Examples:
     },
     /// Generate automated .tmt specifications and reference documentation.
     Spec {
-        /// Documentation target to generate (`cli` | `manifest`).
+        /// Documentation target to generate (`cli` | `manifest` | `blueprint`).
         #[arg(value_name = "TARGET")]
         target: Option<crate::commands::spec::SpecTarget>,
         /// Generate all declared specification targets. Requires `--out <DIR>`.

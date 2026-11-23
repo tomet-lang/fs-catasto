@@ -5,6 +5,7 @@ use std::path::{Path, PathBuf};
 
 use clap::ValueEnum;
 
+pub mod blueprint;
 pub mod cli;
 pub mod manifest;
 pub mod util;
@@ -21,6 +22,8 @@ pub enum SpecTarget {
     /// Alias for manifest specification.
     #[value(alias = "config")]
     Config,
+    /// Cotomet blueprint schema (`catasto@1.0.0.blueprint.ctmt`) derived from catasto-manifest.
+    Blueprint,
 }
 
 pub fn spec_cmd(
@@ -43,6 +46,11 @@ pub fn spec_cmd(
             manifest::render(&config_for_output(out)),
             "manifest.tmt",
             "manifest",
+        ),
+        SpecTarget::Blueprint => (
+            blueprint::render(&config_for_output(out)),
+            "catasto@1.0.0.blueprint.ctmt",
+            "blueprint",
         ),
     };
 

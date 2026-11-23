@@ -72,10 +72,12 @@ clean:
 docs:
     cargo build -p catasto-cli
     ./target/debug/catasto spec --all --out tmtroot/generated
+    ./target/debug/catasto spec blueprint --out tmtroot/schema/blueprints/catasto@1.0.0.blueprint.ctmt
     sisho fix .
 
 # Check that all documents parse, format cleanly, and match export targets.
 docs-check:
     cargo build -p catasto-cli
     ./target/debug/catasto spec --all --check --out tmtroot/generated
+    ./target/debug/catasto spec blueprint --check --out tmtroot/schema/blueprints/catasto@1.0.0.blueprint.ctmt
     sisho check .

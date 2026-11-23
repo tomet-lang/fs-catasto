@@ -6,6 +6,10 @@
 use std::path::PathBuf;
 
 use tomet_spec::Config;
+use tomet_spec::blueprint::{
+    CtmtBlueprintSpec, EnumVariantExpr, HeaderAttrSpec, SeatExpr, TupleSpec, TypeArg,
+    TypeArgValue, ValueSpec,
+};
 use tomet_spec::schema::{ConfigGroupSpec, ConfigSpecProvider};
 
 /// Upstream repository definitions declared in `::upstream(...)`.
@@ -97,6 +101,80 @@ pub fn all_manifest_specs() -> Vec<ConfigGroupSpec> {
     ]
 }
 
+/// Returns the cotomet blueprint schema (`catasto@1.0.0.blueprint.ctmt`) for `catasto.ctmt`.
+///
+/// Reflects the exact header attributes (`::upstream`, `::zone`) and body entry shapes
+/// accepted by [`crate::Manifest::parse`]:
+///
+/// - `::upstream(<$string(optional: true)>: <$catasto.git>)`
+/// - `::zone(<$string(optional: true)>: (...))` with `require`, `allow`, `deny`, `ignore`,
+///   `recursive`, and nested `files` / `dirs` `(require, allow, deny)` rule tuples
+/// - Top-level entries mapping workspace paths (`<$string>`) to `catasto.repo`, a file source
+///   constructor (`catasto.git`, `catasto.upstream`, `catasto.local`), or a tuple pairing a
+///   file source constructor with optional `executable: bool`
+pub fn blueprint_spec() -> CtmtBlueprintSpec {
+    let zone_pattern_list = SeatExpr::enum_of([
+        EnumVariantExpr::ty("string"),
+        EnumVariantExpr::type_with("list", [TypeArg::positional(TypeArgValue::ty("string"))]),
+    ])
+    .optional();
+
+    let entry_rules_tuple = TupleSpec::map()
+        .fixed("require", zone_pattern_list.clone())
+        .fixed("allow", zone_pattern_list.clone())
+        .fixed("deny", zone_pattern_list.clone());
+    let optional_entry_rules =
+        SeatExpr::enum_of([EnumVariantExpr::tuple(entry_rules_tuple)]).optional();
+
+    let file_sources = || {
+        [
+            EnumVariantExpr::constructor("catasto", "git"),
+            EnumVariantExpr::constructor("catasto", "upstream"),
+            EnumVariantExpr::constructor("catasto", "local"),
+        ]
+    };
+
+    let top_level_entry = SeatExpr::enum_of([
+        EnumVariantExpr::constructor("catasto", "repo"),
+        EnumVariantExpr::enum_of(file_sources()),
+        EnumVariantExpr::tuple(
+            TupleSpec::new()
+                .positional(ValueSpec::Seat(SeatExpr::enum_of(file_sources())))
+                .fixed("executable", SeatExpr::bool().optional()),
+        ),
+    ]);
+
+    CtmtBlueprintSpec::new("catasto")
+        .header_attr(
+            HeaderAttrSpec::new(
+                "upstream",
+                TupleSpec::map().dynamic(
+                    SeatExpr::string().optional(),
+                    SeatExpr::constructor("catasto", "git"),
+                ),
+            )
+            .comment("Named upstream git repositories."),
+        )
+        .header_attr(
+            HeaderAttrSpec::new(
+                "zone",
+                TupleSpec::map().dynamic(
+                    SeatExpr::string().optional(),
+                    TupleSpec::map()
+                        .fixed("require", zone_pattern_list.clone())
+                        .fixed("allow", zone_pattern_list.clone())
+                        .fixed("deny", zone_pattern_list.clone())
+                        .fixed("ignore", zone_pattern_list)
+                        .fixed("recursive", SeatExpr::bool().optional())
+                        .fixed("files", optional_entry_rules.clone())
+                        .fixed("dirs", optional_entry_rules),
+                ),
+            )
+            .comment("Directory schema and path matching rules."),
+        )
+        .body(TupleSpec::map().dynamic(SeatExpr::string(), top_level_entry))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -128,5 +206,35 @@ mod tests {
         assert!(rendered.contains("`dirs`"));
         assert!(rendered.contains("`source`"));
         assert!(rendered.contains("`executable`"));
+    }
+
+    #[test]
+    fn blueprint_spec_self_checks_and_validates_repo_manifest() {
+        let spec = blueprint_spec();
+        let rendered = tomet_spec::blueprint::render(&spec, &PrinterConfig::default());
+        let bp_ast = tomet_ast_parser::parse_data_file(&rendered)
+            .expect("rendered blueprint parses as valid cotomet");
+
+        let vocab = crate::manifest::vocabulary().clone();
+        let bp_bindings = tomet_semantics::Bindings::for_document(&bp_ast, [vocab.clone()]);
+        let bp_errors = tomet_validator_blueprint::validate_ctmt_blueprint(&bp_ast, &bp_bindings);
+        assert!(
+            bp_errors.is_empty(),
+            "blueprint self-check failed: {bp_errors:?}\n{rendered}"
+        );
+
+        let repo_manifest_src = include_str!("../../../catasto.ctmt");
+        let repo_manifest =
+            tomet_ast_parser::parse_data_file(repo_manifest_src).expect("repo catasto.ctmt parses");
+        let doc_bindings = tomet_semantics::Bindings::for_document(&repo_manifest, [vocab]);
+        let doc_errors = tomet_validator_blueprint::validate_ctmt_against_blueprint(
+            &repo_manifest,
+            &bp_ast,
+            &doc_bindings,
+        );
+        assert!(
+            doc_errors.is_empty(),
+            "repo catasto.ctmt failed blueprint validation: {doc_errors:?}"
+        );
     }
 }

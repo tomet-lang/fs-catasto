@@ -26,6 +26,8 @@ mimalloc       = { workspace = true }
 serde_json     = { workspace = true }
 
 [dev-dependencies]
-serde_json       = { workspace = true }
-tempfile         = { workspace = true }
-tomet-ast-parser = { workspace = true }
+serde_json                = { workspace = true }
+tempfile                  = { workspace = true }
+tomet-ast-parser          = { workspace = true }
+tomet-semantics           = { workspace = true }
+tomet-validator-blueprint = { workspace = true }
