@@ -1,5 +1,0 @@
-::kind(blueprint)
-::blueprint(catasto)
-::upstream(<$string>: <$catasto.git>)
-
-<$string>: <$enum(catasto.git, catasto.upstream, catasto.local, catasto.repo)>
