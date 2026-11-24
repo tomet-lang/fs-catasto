@@ -8,11 +8,11 @@ Authoritative reference of all declarations and fields supported in `catasto.ctm
 
 ==[ upstream ]
 
-Upstream repository definitions declared in `::upstream(...)`. An upstream declares a named `catasto.git(...)` repository at a pinned revision, optionally with a `root` directory inside the repository from which entry paths start.
+Upstream repository definitions declared in `::upstream(...)`. An upstream declares a named `catasto.git(...)` repository at a pinned revision, optionally with a `path` directory inside the repository from which entry paths start.
 
 - `url` (string): Repository URL (`https://` URL or workspace-relative path), passed to `catasto.git(...)`.
 - `rev` (string, default: `main`): Pinned tag, branch, or commit hash. Quote numeric revisions (e.g. `rev: "1.2"`).
-- `root` (path): Directory inside the upstream repository that entry paths are relative to.
+- `path` (path): Directory or file inside the upstream repository that entry paths are relative to.
 
 ==[ zone ]
 
@@ -28,7 +28,9 @@ Directory schema rules declared in `::zone(...)`. A zone maps a workspace-relati
 
 ==[ entry ]
 
-Manifest entry declaring a managed workspace file, directory, or submodule. Each top-level entry in `catasto.ctmt` binds a workspace-relative path to a `catasto.{upstream,git,local}(...)` constructor call; file and directory entries may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
+Manifest entry declaring a managed workspace file, directory, or submodule. Each top-level entry in `catasto.ctmt` binds a workspace-relative path to a `catasto.{upstream,git,local}(...)` constructor call, or a tuple `(call, executable: bool, symlink: follow | keep, submodule: bool)` pairing the source with placement options.
 
 - `source` (catasto.upstream(...) | catasto.git(...) | catasto.local(...)): Constructor call declaring where canonical content comes from: `catasto.upstream(name, path: "...")`, `catasto.git(url, rev: ..., path: "...")`, or `catasto.local("...")`.
 - `executable` (boolean): Whether a managed file is placed executable (`true`) or not (`false`), whatever the source says. Left out, the source decides: a git file's `100755` or not, and a local file is never executable. Rejected when `submodule: true`.
+- `symlink` (follow | keep, default: `follow`): How symlinks in a git or upstream source are handled (`follow` or `keep`). Rejected on `catasto.local` or when `submodule: true`.
+- `submodule` (boolean, default: `false`): Whether to clone a git or upstream source as a Git submodule and register it in `.gitmodules`. Rejected on `catasto.local`.

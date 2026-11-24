@@ -1,13 +1,15 @@
 //! The generated `catasto.lock` data model and serialization.
 
 use std::collections::BTreeMap;
+use std::fmt;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, anyhow, bail};
-use serde::{Deserialize, Serialize};
+use serde::de::{self, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
 
-use crate::manifest::{Source, check_git, is_inside_workspace, reject_misnamed};
+use crate::manifest::{Source, Symlink, check_git, is_relative_inside, reject_misnamed};
 
 /// File name of the lockfile, relative to the workspace root.
 pub const LOCK_FILE: &str = "catasto.lock";
@@ -45,6 +47,8 @@ pub struct Locked {
     pub commit: Option<String>,
     /// Special mode of the file, absent for normal files and directories.
     pub mode: Option<LockMode>,
+    /// How symlinks in a git source are handled (`Follow` by default, or `Keep`).
+    pub symlink: Symlink,
 }
 
 /// One locked submodule entry.
@@ -73,6 +77,58 @@ struct LockDocument {
     submodules: BTreeMap<String, LockedSubmoduleBody>,
 }
 
+fn is_follow(symlink: &Symlink) -> bool {
+    matches!(symlink, Symlink::Follow)
+}
+
+fn deserialize_symlink<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Symlink, D::Error> {
+    struct SymlinkVisitor;
+
+    impl Visitor<'_> for SymlinkVisitor {
+        type Value = Symlink;
+
+        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
+            f.write_str("`keep`")
+        }
+
+        fn visit_str<E: de::Error>(self, v: &str) -> Result<Symlink, E> {
+            if v == "keep" {
+                Ok(Symlink::Keep)
+            } else {
+                Err(E::custom(
+                    "invalid symlink option: `keep` is the only supported value",
+                ))
+            }
+        }
+
+        fn visit_bool<E: de::Error>(self, _: bool) -> Result<Symlink, E> {
+            Err(E::custom(
+                "invalid symlink option: `keep` is the only supported value",
+            ))
+        }
+
+        fn visit_i64<E: de::Error>(self, _: i64) -> Result<Symlink, E> {
+            Err(E::custom(
+                "invalid symlink option: `keep` is the only supported value",
+            ))
+        }
+
+        fn visit_u64<E: de::Error>(self, _: u64) -> Result<Symlink, E> {
+            Err(E::custom(
+                "invalid symlink option: `keep` is the only supported value",
+            ))
+        }
+
+        fn visit_f64<E: de::Error>(self, _: f64) -> Result<Symlink, E> {
+            Err(E::custom(
+                "invalid symlink option: `keep` is the only supported value",
+            ))
+        }
+    }
+
+    deserializer.deserialize_any(SymlinkVisitor)
+}
+
 /// A locked file's fields, keyed by its path in [`LockDocument`].
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -83,6 +139,12 @@ struct LockedBody {
     commit: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     mode: Option<LockMode>,
+    #[serde(
+        default,
+        skip_serializing_if = "is_follow",
+        deserialize_with = "deserialize_symlink"
+    )]
+    symlink: Symlink,
 }
 
 /// A locked submodule's fields, keyed by its path in [`LockDocument`].
@@ -138,22 +200,25 @@ impl Lock {
                 document.version
             );
         }
-        let files = document
-            .files
-            .into_iter()
-            .map(|(path, body)| Locked {
+        let mut files = Vec::with_capacity(document.files.len());
+        for (path, body) in document.files {
+            if body.symlink == Symlink::Keep && matches!(body.source, Source::Path(_)) {
+                bail!("file `{path}`: local source cannot specify `symlink`");
+            }
+            files.push(Locked {
                 path: path.into(),
                 source: body.source,
                 sha256: body.sha256,
                 commit: body.commit,
                 mode: body.mode,
-            })
-            .collect();
+                symlink: body.symlink,
+            });
+        }
         let mut submodules = Vec::with_capacity(document.submodules.len());
         for (path, body) in document.submodules {
             check_git(&body.git, &body.rev).map_err(|e| anyhow!("submodule `{path}`: {e}"))?;
             if let Some(ref p) = body.path
-                && !is_inside_workspace(p)
+                && !is_relative_inside(p)
             {
                 bail!(
                     "submodule `{path}`: git path must be relative and stay inside the repository: {}",
@@ -186,6 +251,7 @@ impl Lock {
                     source: locked.source.clone(),
                     commit: locked.commit.clone(),
                     mode: locked.mode,
+                    symlink: locked.symlink,
                 },
             );
         }
@@ -241,11 +307,23 @@ mod tests {
                         git: "https://example.com/a.git".into(),
                         rev: "main".into(),
                         path: None,
-                        symlink: Symlink::Follow,
                     },
                     sha256: "abc".into(),
                     commit: Some("deadbeef".into()),
                     mode: None,
+                    symlink: Symlink::Follow,
+                },
+                Locked {
+                    path: "link.tmt".into(),
+                    source: Source::Git {
+                        git: "https://example.com/a.git".into(),
+                        rev: "v1".into(),
+                        path: Some("link.tmt".into()),
+                    },
+                    sha256: "ghi".into(),
+                    commit: Some("deadbeef".into()),
+                    mode: None,
+                    symlink: Symlink::Keep,
                 },
                 Locked {
                     path: "run.sh".into(),
@@ -253,11 +331,11 @@ mod tests {
                         git: "https://example.com/a.git".into(),
                         rev: "v1".into(),
                         path: Some("bin/run.sh".into()),
-                        symlink: Symlink::Follow,
                     },
                     sha256: "def".into(),
                     commit: Some("deadbeef".into()),
                     mode: Some(LockMode::Executable),
+                    symlink: Symlink::Follow,
                 },
             ],
             vec![LockedSubmodule {
@@ -272,6 +350,7 @@ mod tests {
         let rendered = lock.render().unwrap();
         assert!(!rendered.contains("\"repos\""), "{rendered}");
         assert!(rendered.contains("\"submodules\""), "{rendered}");
+        assert!(rendered.contains("\"symlink\": \"keep\""), "{rendered}");
         let parsed = Lock::parse(&rendered).unwrap();
         assert_eq!(parsed, lock);
         assert_eq!(
@@ -308,5 +387,29 @@ mod tests {
   }
 }"#;
         assert!(Lock::parse(bad_subpath).is_err());
+
+        let symlink_in_source = r#"{
+  "version": 1,
+  "files": {
+    "a": {
+      "sha256": "abc",
+      "source": { "git": "https://example.com/a.git", "rev": "main", "path": "a", "symlink": "keep" },
+      "commit": "0123456789abcdef0123456789abcdef01234567"
+    }
+  }
+}"#;
+        assert!(Lock::parse(symlink_in_source).is_err());
+
+        let symlink_on_local = r#"{
+  "version": 1,
+  "files": {
+    "a": {
+      "sha256": "abc",
+      "source": "src/a",
+      "symlink": "keep"
+    }
+  }
+}"#;
+        assert!(Lock::parse(symlink_on_local).is_err());
     }
 }

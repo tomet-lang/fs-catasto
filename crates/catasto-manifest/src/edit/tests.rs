@@ -5,7 +5,7 @@ const VOCAB: &str = "\
 // The files catasto manages in this workspace.
 ::kind(catasto, version: \"1.0.0\")
 ::upstream(
-  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main, root: vocabularies)
+  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main, path: vocabularies)
 )
 
 // the rust one
@@ -16,8 +16,9 @@ const VOCAB: &str = "\
 fn up(name: &str, path: &str) -> SourceText {
     SourceText::Upstream {
         name: name.into(),
-        path: path.into(),
+        path: Some(path.into()),
         keep_symlink: false,
+        submodule: false,
     }
 }
 
@@ -130,13 +131,13 @@ fn an_upstream_goes_above_the_closing_paren_of_a_block_on_lines_of_its_own() {
         &UpstreamText {
             git: "https://example.com/s.git".into(),
             rev: "v1".into(),
-            root: None,
+            path: None,
         },
     )
     .unwrap();
     assert!(
         text.contains(
-            "  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main, root: vocabularies)\n  shared: catasto.git(\"https://example.com/s.git\", rev: v1)\n)\n"
+            "  vocabularies: catasto.git(\"https://example.com/v.git\", rev: main, path: vocabularies)\n  shared: catasto.git(\"https://example.com/s.git\", rev: v1)\n)\n"
         ),
         "{text}"
     );
@@ -152,13 +153,13 @@ fn a_block_on_one_line_is_written_out_when_it_gains_a_place() {
         &UpstreamText {
             git: "https://x/b.git".into(),
             rev: "main".into(),
-            root: Some("dir/sub".into()),
+            path: Some("dir/sub".into()),
         },
     )
     .unwrap();
     assert!(
         text.starts_with(
-            "::kind(catasto, version: \"1.0.0\")\n::upstream(\n  a: catasto.git(\"https://x/a.git\", rev: main)\n  b: catasto.git(\"https://x/b.git\", rev: main, root: dir/sub)\n)\n"
+            "::kind(catasto, version: \"1.0.0\")\n::upstream(\n  a: catasto.git(\"https://x/a.git\", rev: main)\n  b: catasto.git(\"https://x/b.git\", rev: main, path: dir/sub)\n)\n"
         ),
         "{text}"
     );
@@ -173,7 +174,7 @@ fn the_first_upstream_creates_the_declaration_and_kind_above_the_entries() {
         &UpstreamText {
             git: "https://x/v.git".into(),
             rev: "main".into(),
-            root: None,
+            path: None,
         },
     )
     .unwrap();
@@ -194,7 +195,7 @@ fn a_rev_that_reads_as_a_number_is_quoted() {
         &UpstreamText {
             git: "https://x/v.git".into(),
             rev: "1.2".into(),
-            root: None,
+            path: None,
         },
     )
     .unwrap();
@@ -214,7 +215,7 @@ fn an_upstream_is_removed_and_the_declaration_goes_with_the_last() {
         &UpstreamText {
             git: "https://example.com/s.git".into(),
             rev: "main".into(),
-            root: None,
+            path: None,
         },
     )
     .unwrap();
@@ -244,8 +245,9 @@ fn who_uses_an_upstream_is_found_in_the_entries() {
                  ::upstream(a: catasto.git(\"https://x/a.git\", rev: main))\n\
                  // catasto.upstream(a, path: \"ignored-comment\")\n\
                  \"p1\": (catasto.upstream(upstream: \"a\", path: \"one\"), executable: true)\n\
-                 \"p2\": catasto.local(\"upstream: a\")\n";
-    assert_eq!(upstream_is_used(mixed, "a").unwrap(), ["p1"]);
+                 \"p2\": catasto.local(\"upstream: a\")\n\
+                 \"p3\": (catasto.upstream(a), submodule: true)\n";
+    assert_eq!(upstream_is_used(mixed, "a").unwrap(), ["p1", "p3"]);
 }
 
 #[test]
@@ -256,7 +258,7 @@ fn a_name_with_punctuation_is_refused() {
         &UpstreamText {
             git: "https://x".into(),
             rev: "main".into(),
-            root: None,
+            path: None,
         },
     )
     .unwrap_err();
@@ -264,16 +266,36 @@ fn a_name_with_punctuation_is_refused() {
 }
 
 #[test]
-fn entry_text_with_and_without_keep_symlink() {
+fn entry_text_with_and_without_keep_symlink_and_optional_path() {
     let upstream_follow = SourceText::Upstream {
         name: "commonfiles".into(),
-        path: "CLAUDE.md".into(),
+        path: Some("CLAUDE.md".into()),
         keep_symlink: false,
+        submodule: false,
     };
     let upstream_keep = SourceText::Upstream {
         name: "commonfiles".into(),
-        path: "CLAUDE.md".into(),
+        path: Some("CLAUDE.md".into()),
         keep_symlink: true,
+        submodule: false,
+    };
+    let upstream_no_path = SourceText::Upstream {
+        name: "commonfiles".into(),
+        path: None,
+        keep_symlink: false,
+        submodule: false,
+    };
+    let upstream_no_path_keep = SourceText::Upstream {
+        name: "commonfiles".into(),
+        path: None,
+        keep_symlink: true,
+        submodule: false,
+    };
+    let upstream_sub = SourceText::Upstream {
+        name: "commonfiles".into(),
+        path: Some("sub".into()),
+        keep_symlink: false,
+        submodule: true,
     };
     assert_eq!(
         entry_text("CLAUDE.md", &upstream_follow),
@@ -281,7 +303,19 @@ fn entry_text_with_and_without_keep_symlink() {
     );
     assert_eq!(
         entry_text("CLAUDE.md", &upstream_keep),
-        "\"CLAUDE.md\": catasto.upstream(commonfiles, path: \"CLAUDE.md\", symlink: keep)\n"
+        "\"CLAUDE.md\": (catasto.upstream(commonfiles, path: \"CLAUDE.md\"), symlink: keep)\n"
+    );
+    assert_eq!(
+        entry_text("dir", &upstream_no_path),
+        "\"dir\": catasto.upstream(commonfiles)\n"
+    );
+    assert_eq!(
+        entry_text("dir", &upstream_no_path_keep),
+        "\"dir\": (catasto.upstream(commonfiles), symlink: keep)\n"
+    );
+    assert_eq!(
+        entry_text("vendor/sub", &upstream_sub),
+        "\"vendor/sub\": (catasto.upstream(commonfiles, path: \"sub\"), submodule: true)\n"
     );
 
     let git_follow = SourceText::Git {
@@ -311,7 +345,7 @@ fn entry_text_with_and_without_keep_symlink() {
     );
     assert_eq!(
         entry_text("bin/tool", &git_keep),
-        "\"bin/tool\": catasto.git(\"https://example.com/repo.git\", rev: main, path: \"bin/tool\", symlink: keep)\n"
+        "\"bin/tool\": (catasto.git(\"https://example.com/repo.git\", rev: main, path: \"bin/tool\"), symlink: keep)\n"
     );
     assert_eq!(
         entry_text("vendor/repo", &git_root),
@@ -324,8 +358,9 @@ fn entry_text_with_and_without_keep_symlink() {
         "link.tmt",
         &SourceText::Upstream {
             name: "vocabularies".into(),
-            path: "rust/rust.tmt".into(),
+            path: Some("rust/rust.tmt".into()),
             keep_symlink: true,
+            submodule: false,
         },
     )
     .unwrap();
@@ -355,8 +390,9 @@ fn add_or_replace_entry_keeps_position_comment_and_executable_in_tuple() {
 
     let new_source = SourceText::Upstream {
         name: "vocabularies".into(),
-        path: "new/target.sh".into(),
+        path: Some("new/target.sh".into()),
         keep_symlink: false,
+        submodule: false,
     };
 
     // 1. without force: fails with AlreadyDeclared
@@ -436,7 +472,7 @@ fn add_or_replace_upstream_multiline_block() {
     let new_middle = UpstreamText {
         git: "https://example.com/new-middle.git".into(),
         rev: "v2".into(),
-        root: Some("subdir".into()),
+        path: Some("subdir".into()),
     };
 
     // 1. without force: fails with AlreadyDeclared
@@ -463,7 +499,7 @@ fn add_or_replace_upstream_multiline_block() {
   // comment above first
   first: catasto.git(\"https://example.com/first.git\", rev: v1)
   // comment above middle
-  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, root: subdir)
+  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, path: subdir)
   // comment above last
   last: catasto.git(\"https://example.com/last.git\", rev: v1)
 )
@@ -483,7 +519,7 @@ fn add_or_replace_upstream_multiline_block() {
     let new_first = UpstreamText {
         git: "https://example.com/new-first.git".into(),
         rev: "main".into(),
-        root: None,
+        path: None,
     };
     let (replaced_first, outcome) =
         add_or_replace_upstream(&replaced_middle, "first", &new_first, true).unwrap();
@@ -496,7 +532,7 @@ fn add_or_replace_upstream_multiline_block() {
   // comment above first
   first: catasto.git(\"https://example.com/new-first.git\", rev: main)
   // comment above middle
-  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, root: subdir)
+  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, path: subdir)
   // comment above last
   last: catasto.git(\"https://example.com/last.git\", rev: v1)
 )
@@ -510,7 +546,7 @@ fn add_or_replace_upstream_multiline_block() {
     let new_last = UpstreamText {
         git: "https://example.com/new-last.git".into(),
         rev: "v3".into(),
-        root: None,
+        path: None,
     };
     let (replaced_last, outcome) =
         add_or_replace_upstream(&replaced_first, "last", &new_last, true).unwrap();
@@ -523,7 +559,7 @@ fn add_or_replace_upstream_multiline_block() {
   // comment above first
   first: catasto.git(\"https://example.com/new-first.git\", rev: main)
   // comment above middle
-  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, root: subdir)
+  middle: catasto.git(\"https://example.com/new-middle.git\", rev: v2, path: subdir)
   // comment above last
   last: catasto.git(\"https://example.com/new-last.git\", rev: v3)
 )
@@ -540,7 +576,7 @@ fn add_or_replace_upstream_oneline_block() {
     let new_b = UpstreamText {
         git: "https://x/b2.git".into(),
         rev: "v2".into(),
-        root: None,
+        path: None,
     };
 
     let (replaced, outcome) = add_or_replace_upstream(manifest, "b", &new_b, true).unwrap();
@@ -574,7 +610,7 @@ fn adds_and_replaces_submodule_entry() {
     let text = add_entry("", "tools/sisho", &sub).unwrap();
     assert_eq!(
         text,
-        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", rev: main, path: \"crates/sisho\", submodule: true)\n"
+        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", rev: main, path: \"crates/sisho\"), submodule: true)\n"
     );
     assert!(Manifest::parse(&text).is_ok());
 
@@ -593,6 +629,28 @@ fn adds_and_replaces_submodule_entry() {
         "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", rev: v1)\n"
     );
     assert!(Manifest::parse(&replaced).is_ok());
+
+    // Replacing a bare entry with keep_symlink wraps it in a tuple, and replacing back unwraps it
+    let keep_link = SourceText::Git {
+        git: "https://example.com/sisho.git".into(),
+        rev: "v1".into(),
+        path: Some("link".into()),
+        keep_symlink: true,
+        submodule: false,
+    };
+    let (with_link, outcome) =
+        add_or_replace_entry(&replaced, "tools/sisho", &keep_link, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(
+        with_link,
+        "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", rev: v1, path: \"link\"), symlink: keep)\n"
+    );
+    assert!(Manifest::parse(&with_link).is_ok());
+
+    let (back_to_plain, outcome) =
+        add_or_replace_entry(&with_link, "tools/sisho", &plain_dir, true).unwrap();
+    assert_eq!(outcome, AddOutcome::Replaced);
+    assert_eq!(back_to_plain, replaced);
 }
 
 #[test]
@@ -643,7 +701,7 @@ fn edits_preserve_zone_declarations_intact() {
         &UpstreamText {
             git: "https://example.com/s.git".into(),
             rev: "main".into(),
-            root: None,
+            path: None,
         },
     )
     .unwrap();

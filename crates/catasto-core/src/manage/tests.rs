@@ -29,15 +29,16 @@ impl Fixture {
         UpstreamText {
             git: self.repo.url(),
             rev: "main".into(),
-            root: None,
+            path: None,
         }
     }
 
     fn via(&self, path: &str) -> SourceText {
         SourceText::Upstream {
             name: "t".into(),
-            path: path.into(),
+            path: Some(path.into()),
             keep_symlink: false,
+            submodule: false,
         }
     }
 
@@ -211,8 +212,9 @@ fn an_upstream_that_is_not_named_is_refused_with_the_names_there_are() {
         "a.tmt",
         &SourceText::Upstream {
             name: "nope".into(),
-            path: "a.tmt".into(),
+            path: Some("a.tmt".into()),
             keep_symlink: false,
+            submodule: false,
         },
         false,
         Some(&fx.cache),
@@ -310,7 +312,7 @@ fn the_upstreams_are_listed_in_order() {
         &UpstreamText {
             git: "https://example.com/s.git".into(),
             rev: "v1".into(),
-            root: Some("dir".into()),
+            path: Some("dir".into()),
         },
         false,
     )
@@ -318,7 +320,7 @@ fn the_upstreams_are_listed_in_order() {
     let names: Vec<_> = upstream_list(&fx.root)
         .unwrap()
         .into_iter()
-        .map(|u| (u.name, u.root))
+        .map(|u| (u.name, u.path))
         .collect();
     assert_eq!(
         names,
@@ -335,16 +337,32 @@ fn list_shows_where_each_file_comes_from_and_how_it_stands() {
     fx.ready();
     fx.add("a.tmt", "a.tmt").unwrap();
     fx.add("b.tmt", "sub/b.tmt").unwrap();
+    add(
+        &fx.root,
+        "whole_dir",
+        &SourceText::Upstream {
+            name: "t".into(),
+            path: None,
+            keep_symlink: false,
+            submodule: false,
+        },
+        false,
+        Some(&fx.cache),
+    )
+    .unwrap();
     std::fs::write(fx.root.join("b.tmt"), "edited").unwrap();
 
     let rows = list(&fx.root).unwrap();
-    assert_eq!(rows.len(), 2);
+    assert_eq!(rows.len(), 3);
     assert_eq!(rows[0].path, Path::new("a.tmt"));
     assert_eq!(rows[0].from, "t:a.tmt");
     assert_eq!(rows[0].state, None);
     assert!(rows[0].commit.is_some());
     assert_eq!(rows[1].from, "t:sub/b.tmt");
     assert_eq!(rows[1].state, Some(ViolationKind::Modified));
+    assert_eq!(rows[2].path, Path::new("whole_dir"));
+    assert_eq!(rows[2].from, "t");
+    assert_eq!(rows[2].state, None);
 }
 
 #[test]
@@ -407,8 +425,9 @@ fn add_with_keep_symlink_writes_fetches_and_locks_a_link() {
         "link.tmt",
         &SourceText::Upstream {
             name: "t".into(),
-            path: "link.tmt".into(),
+            path: Some("link.tmt".into()),
             keep_symlink: true,
+            submodule: false,
         },
         false,
         Some(&fx.cache),
@@ -442,8 +461,9 @@ fn add_with_keep_symlink_on_regular_file_fails_and_leaves_everything_as_it_was()
         "not_a_link.tmt",
         &SourceText::Upstream {
             name: "t".into(),
-            path: "a.tmt".into(),
+            path: Some("a.tmt".into()),
             keep_symlink: true,
+            submodule: false,
         },
         false,
         Some(&fx.cache),
@@ -531,7 +551,7 @@ fn upstream_add_force_outcomes_and_guarantees() {
     let new_upstream = UpstreamText {
         git: fx.repo.url(),
         rev: "v2".into(),
-        root: None,
+        path: None,
     };
 
     // 5. Replace with force: Replaced, reports affected files
@@ -563,17 +583,17 @@ fn upstream_add_force_outcomes_and_guarantees() {
             git: fx.repo.url(),
             rev: "v2".into(),
             path: Some(PathBuf::from("a.tmt")),
-            symlink: Symlink::Follow,
         }
     );
+    assert_eq!(locked.symlink, Symlink::Follow);
 }
 
 #[test]
 fn list_formats_git_root_and_submodule_with_and_without_subpath() {
     let fx = Fixture::new();
-    init(&fx.root).unwrap();
+    fx.ready();
 
-    // 1. Git root (path omitted)
+    // 1. Git root (path omitted), even when an upstream with the same (git, rev) is declared
     add(
         &fx.root,
         "root_copy",
@@ -589,7 +609,7 @@ fn list_formats_git_root_and_submodule_with_and_without_subpath() {
     )
     .unwrap();
 
-    // 2. Submodule with subpath
+    // 2. Submodule with subpath via git
     add(
         &fx.root,
         "sub_part",
@@ -605,7 +625,7 @@ fn list_formats_git_root_and_submodule_with_and_without_subpath() {
     )
     .unwrap();
 
-    // 3. Submodule without subpath
+    // 3. Submodule without subpath via git
     add(
         &fx.root,
         "sub_full",
@@ -621,8 +641,23 @@ fn list_formats_git_root_and_submodule_with_and_without_subpath() {
     )
     .unwrap();
 
+    // 4. Submodule via upstream with subpath
+    add(
+        &fx.root,
+        "sub_up",
+        &SourceText::Upstream {
+            name: "t".into(),
+            path: Some("sub".into()),
+            keep_symlink: false,
+            submodule: true,
+        },
+        false,
+        Some(&fx.cache),
+    )
+    .unwrap();
+
     let rows = list(&fx.root).unwrap();
-    assert_eq!(rows.len(), 3);
+    assert_eq!(rows.len(), 4);
     assert_eq!(rows[0].from, format!("git {}@main", fx.repo.url()));
     assert_eq!(rows[0].state, None);
     assert_eq!(
@@ -634,4 +669,7 @@ fn list_formats_git_root_and_submodule_with_and_without_subpath() {
     assert_eq!(rows[2].from, format!("submodule {}@main", fx.repo.url()));
     assert_eq!(rows[2].state, None);
     assert!(rows[2].commit.is_some());
+    assert_eq!(rows[3].from, "submodule t:sub");
+    assert_eq!(rows[3].state, None);
+    assert!(rows[3].commit.is_some());
 }

@@ -327,7 +327,7 @@ fn e2e_git_symlink_keep() {
     std::fs::write(
         ws.vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"kept.txt\": catasto.git({:?}, rev: main, path: \"link.txt\", symlink: keep)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"kept.txt\": (catasto.git({:?}, rev: main, path: \"link.txt\"), symlink: keep)\n",
             ws.remote
         ),
     )

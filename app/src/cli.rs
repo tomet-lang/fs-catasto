@@ -18,7 +18,7 @@ pub struct Cli {
     /// The workspace root. Defaults to the current directory.
     ///
     /// `check`, `lock` and `sync` also take it as a trailing path, like the
-    /// other tools of the ecosystem. (`upstream add --root` is something else:
+    /// other tools of the ecosystem. (`upstream add --path` is something else:
     /// a directory inside the repository it names.)
     #[arg(short = 'C', long = "workspace", global = true, value_name = "DIR")]
     pub workspace: Option<PathBuf>,
@@ -40,7 +40,7 @@ pub enum Command {
     /// replace its source.
     #[command(after_help = "\
 Examples:
-  catasto add .envrc --upstream commonfiles
+  catasto add vendor/common --upstream commonfiles
   catasto add docs/terms.tmt --upstream shared terms.tmt
   catasto add schema/writ.tmt --git https://example.com/v.git --rev v1 writ/writ.tmt
   catasto add notes/a.tmt --local ../shared/a.tmt
@@ -154,8 +154,8 @@ Examples:
 pub struct AddArgs {
     /// Where the file, directory, or submodule goes, relative to the workspace root.
     pub dest: String,
-    /// Path in the upstream or git repository (omit for repository root with --git),
-    /// or on disk with --local. Defaults to DEST with --upstream.
+    /// Path in the upstream or git repository (omit for the whole upstream or repository root),
+    /// or on disk with --local.
     pub from: Option<String>,
     /// Take it from a place named in `::upstream(...)`.
     #[arg(long, value_name = "NAME")]
@@ -169,8 +169,8 @@ pub struct AddArgs {
     /// The tag, branch or commit to read, with --git.
     #[arg(long, default_value = "main", requires = "git")]
     pub rev: String,
-    /// Clone as a git submodule worktree and register in `.gitmodules`, with --git.
-    #[arg(long, requires = "git")]
+    /// Clone as a git submodule worktree and register in `.gitmodules`.
+    #[arg(long)]
     pub submodule: bool,
     /// Place an upstream symlink as a symlink rather than following it.
     #[arg(long)]
@@ -193,7 +193,7 @@ pub enum UpstreamCommand {
         rev: String,
         /// The directory of the repository that the entries' paths start from.
         #[arg(long)]
-        root: Option<String>,
+        path: Option<String>,
         /// Declare NAME with the given definition whether or not it is declared.
         #[arg(long)]
         force: bool,

@@ -19,18 +19,21 @@ pub fn add(root: &Path, args: &AddArgs) -> Result<ExitCode> {
     if args.local && args.keep_symlink {
         bail!("--local has no --keep-symlink option; a local source has no such option");
     }
+    if args.local && args.submodule {
+        bail!("--local has no --submodule option; a local source has no such option");
+    }
+    if args.submodule && args.keep_symlink {
+        bail!("`--submodule` cannot be used with `--keep-symlink`");
+    }
     let dest = args.dest.strip_prefix("./").unwrap_or(&args.dest);
     let source = if let Some(name) = &args.upstream {
-        let from = args.from.clone().unwrap_or_else(|| dest.to_owned());
         SourceText::Upstream {
             name: name.clone(),
-            path: from,
+            path: args.from.clone(),
             keep_symlink: args.keep_symlink,
+            submodule: args.submodule,
         }
     } else if let Some(url) = &args.git {
-        if args.submodule && args.keep_symlink {
-            bail!("`--submodule` cannot be used with `--keep-symlink`");
-        }
         SourceText::Git {
             git: url.clone(),
             rev: args.rev.clone(),
@@ -89,7 +92,7 @@ pub fn upstream(root: &Path, command: &UpstreamCommand) -> Result<ExitCode> {
             name,
             git,
             rev,
-            root: dir,
+            path: dir,
             force,
         } => {
             let (outcome, used) = catasto_core::upstream_add(
@@ -98,7 +101,7 @@ pub fn upstream(root: &Path, command: &UpstreamCommand) -> Result<ExitCode> {
                 &UpstreamText {
                     git: git.clone(),
                     rev: rev.clone(),
-                    root: dir.clone(),
+                    path: dir.clone(),
                 },
                 *force,
             )?;
@@ -125,8 +128,8 @@ pub fn upstream(root: &Path, command: &UpstreamCommand) -> Result<ExitCode> {
         UpstreamCommand::List => {
             for upstream in catasto_core::upstream_list(root)? {
                 let dir = upstream
-                    .root
-                    .map(|root| format!("  root {}", root.display()))
+                    .path
+                    .map(|path| format!("  path {}", path.display()))
                     .unwrap_or_default();
                 println!(
                     "{}  {} @ {}{dir}",

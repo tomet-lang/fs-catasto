@@ -840,12 +840,15 @@ fn fetches_repository_root_when_path_is_none() {
         ]
     );
 
-    let err = cache
+    let fetched_keep = cache
         .fetch(&repo.url(), "main", None, None, SymlinkMode::Keep)
-        .unwrap_err();
-    assert!(
-        err.to_string().contains("`symlink: keep` requires `path`"),
-        "{err}"
+        .unwrap();
+    assert_eq!(
+        fetched_keep.content.dir_entries().unwrap()[0],
+        DirEntry {
+            rel_path: PathBuf::from("alias.txt"),
+            content: DirEntryContent::Link("root.txt".into()),
+        }
     );
 }
 

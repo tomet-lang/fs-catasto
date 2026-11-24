@@ -16,8 +16,8 @@ pub use crate::edit::AddOutcome;
 use crate::edit::{self, SourceText, UpstreamText};
 use crate::lockfile::{LOCK_FILE, Lock};
 use crate::manifest::{
-    MANIFEST_FILE, ManagedKind, Manifest, Source, Symlink, UpstreamInfo, reject_misnamed,
-    upstreams_of,
+    MANIFEST_FILE, ManagedKind, Manifest, Source, Symlink, UpstreamInfo, UpstreamRef,
+    reject_misnamed, upstreams_of,
 };
 use crate::sync::{SyncMode, sync_only};
 
@@ -195,22 +195,7 @@ pub struct Row {
 
 /// Every declared file with its source and its state.
 pub fn list(root: &Path) -> Result<Vec<Row>> {
-    let manifest_file = root.join(MANIFEST_FILE);
-    let (manifest, upstreams) = match std::fs::read_to_string(&manifest_file) {
-        Ok(text) => (
-            Manifest::parse(&text)
-                .with_context(|| format!("invalid {}", manifest_file.display()))?,
-            upstreams_of(&text)?,
-        ),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-            reject_misnamed(root, MANIFEST_FILE)?;
-            (Manifest::default(), Vec::new())
-        }
-        Err(e) => {
-            return Err(e).with_context(|| format!("cannot read {}", manifest_file.display()));
-        }
-    };
-
+    let manifest = Manifest::load(root)?;
     let lock = Lock::load(root)?;
     let report = check(root)?;
 
@@ -227,27 +212,20 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
         .managed
         .iter()
         .map(|managed| match &managed.kind {
-            ManagedKind::File { source, .. } => Row {
+            ManagedKind::File {
+                source, symlink, ..
+            } => Row {
                 path: managed.path.clone(),
-                from: describe(source, &upstreams),
+                from: describe(source, managed.upstream.as_ref(), *symlink),
                 state: violations_by_path.get(&managed.path).cloned(),
                 commit: lock
                     .get(&managed.path)
                     .and_then(|locked| locked.commit.clone()),
-                symlink: match source {
-                    Source::Git {
-                        symlink: Symlink::Keep,
-                        ..
-                    } => Some(Symlink::Keep),
-                    _ => None,
-                },
+                symlink: (*symlink == Symlink::Keep).then_some(Symlink::Keep),
             },
             ManagedKind::Submodule(sub) => Row {
                 path: managed.path.clone(),
-                from: match &sub.path {
-                    Some(p) => format!("submodule {}@{}:{}", sub.git, sub.rev, p.display()),
-                    None => format!("submodule {}@{}", sub.git, sub.rev),
-                },
+                from: describe_submodule(sub, managed.upstream.as_ref()),
                 state: violations_by_path.get(&managed.path).cloned(),
                 commit: lock
                     .get_submodule(&managed.path)
@@ -258,40 +236,39 @@ pub fn list(root: &Path) -> Result<Vec<Row>> {
         .collect())
 }
 
-fn describe(source: &Source, upstreams: &[UpstreamInfo]) -> String {
+fn describe(source: &Source, upstream: Option<&UpstreamRef>, symlink: Symlink) -> String {
+    let suffix = match symlink {
+        Symlink::Follow => "",
+        Symlink::Keep => " symlink: keep",
+    };
+    if let Some(u) = upstream {
+        return match &u.path {
+            Some(p) => format!("{}:{}{suffix}", u.name, p.display()),
+            None => format!("{}{suffix}", u.name),
+        };
+    }
     match source {
         Source::Path(path) => format!("local {}", path.display()),
-        Source::Git {
-            git,
-            rev,
-            path,
-            symlink,
-        } => {
-            let suffix = match symlink {
-                Symlink::Follow => "",
-                Symlink::Keep => " symlink: keep",
-            };
-            if let Some(p) = path {
-                for upstream in upstreams.iter().filter(|u| &u.git == git && &u.rev == rev) {
-                    let inside = match &upstream.root {
-                        Some(root) => p.strip_prefix(root).ok(),
-                        None => Some(p.as_path()),
-                    };
-                    if let Some(inside) = inside {
-                        return format!("{}:{}{suffix}", upstream.name, inside.display());
-                    }
-                }
-                format!("git {git}@{rev}:{}{suffix}", p.display())
-            } else {
-                if let Some(upstream) = upstreams
-                    .iter()
-                    .find(|u| &u.git == git && &u.rev == rev && u.root.is_none())
-                {
-                    return format!("{}{suffix}", upstream.name);
-                }
-                format!("git {git}@{rev}{suffix}")
-            }
-        }
+        Source::Git { git, rev, path } => match path {
+            Some(p) => format!("git {git}@{rev}:{}{suffix}", p.display()),
+            None => format!("git {git}@{rev}{suffix}"),
+        },
+    }
+}
+
+fn describe_submodule(
+    sub: &crate::manifest::Submodule,
+    upstream: Option<&UpstreamRef>,
+) -> String {
+    if let Some(u) = upstream {
+        return match &u.path {
+            Some(p) => format!("submodule {}:{}", u.name, p.display()),
+            None => format!("submodule {}", u.name),
+        };
+    }
+    match &sub.path {
+        Some(p) => format!("submodule {}@{}:{}", sub.git, sub.rev, p.display()),
+        None => format!("submodule {}@{}", sub.git, sub.rev),
     }
 }
 

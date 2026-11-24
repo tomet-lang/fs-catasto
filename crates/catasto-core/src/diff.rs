@@ -178,6 +178,7 @@ fn diff_dir(file: &PlannedFile, entries: &[DirEntry], note: &str) -> Result<Opti
                     },
                     commit: file.commit.clone(),
                     source: file.source.clone(),
+                    upstream: file.upstream.clone(),
                     executable: match &entry.content {
                         DirEntryContent::File { executable, .. } => {
                             file.declared_executable.unwrap_or(*executable)

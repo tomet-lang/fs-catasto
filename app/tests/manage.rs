@@ -240,24 +240,36 @@ fn add_needs_to_know_where_from() {
 }
 
 #[test]
-fn add_defaults_path_to_dest_for_upstream_and_git_and_nested_dest() {
+fn add_omitting_path_takes_whole_upstream_or_git_root_and_cleans_dest() {
     let w = World::new();
     w.ready();
 
-    // --upstream without PATH defaults to dest
-    w.ok(&["add", "a.tmt", "--upstream", "shared"]);
-    assert_eq!(w.read("a.tmt"), "a one");
+    // --upstream without PATH omits `path` and fetches the whole upstream
+    w.ok(&["add", "vendor/shared", "--upstream", "shared"]);
+    assert_eq!(w.read("vendor/shared/a.tmt"), "a one");
+    assert_eq!(w.read("vendor/shared/sub/b.tmt"), "b one");
     let manifest = w.read("catasto.ctmt");
-    assert!(manifest.contains("\"a.tmt\":"), "{manifest}");
     assert!(
-        manifest.contains("catasto.upstream(shared, path: \"a.tmt\")"),
+        manifest.contains("\"vendor/shared\": catasto.upstream(shared)"),
         "{manifest}"
     );
     let listed = w.ok(&["list"]);
-    assert!(listed.contains("shared:a.tmt"), "{listed}");
+    assert!(listed.contains("vendor/shared  shared "), "{listed}");
 
-    // nested dest (including leading ./) defaults to same nested path
-    w.ok(&["add", "./sub/b.tmt", "--upstream", "shared"]);
+    // --upstream with `--path sub` on upstream and omitted PATH on `add` fetches `sub` directory
+    w.ok(&["upstream", "add", "sub_only", w.url(), "--path", "sub"]);
+    let up_list = w.ok(&["upstream", "list"]);
+    assert!(up_list.contains("path sub"), "{up_list}");
+    w.ok(&["add", "vendor/sub", "--upstream", "sub_only"]);
+    assert_eq!(w.read("vendor/sub/b.tmt"), "b one");
+    let manifest = w.read("catasto.ctmt");
+    assert!(
+        manifest.contains("\"vendor/sub\": catasto.upstream(sub_only)"),
+        "{manifest}"
+    );
+
+    // nested dest with leading ./ is normalized
+    w.ok(&["add", "./sub/b.tmt", "--upstream", "shared", "sub/b.tmt"]);
     assert_eq!(w.read("sub/b.tmt"), "b one");
     let manifest = w.read("catasto.ctmt");
     assert!(manifest.contains("\"sub/b.tmt\":"), "{manifest}");
@@ -459,7 +471,14 @@ fn add_with_keep_symlink_e2e() {
     w.ready();
     w.commit_symlink("link.tmt", "a.tmt");
 
-    let out = w.ok(&["add", "link.tmt", "--upstream", "shared", "--keep-symlink"]);
+    let out = w.ok(&[
+        "add",
+        "link.tmt",
+        "--upstream",
+        "shared",
+        "link.tmt",
+        "--keep-symlink",
+    ]);
     assert!(out.contains("added link.tmt"));
 
     let link_path = w.vault.join("link.tmt");

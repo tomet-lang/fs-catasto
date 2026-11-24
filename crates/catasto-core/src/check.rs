@@ -200,9 +200,11 @@ pub fn check(root: &Path) -> Result<CheckReport> {
 fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<ViolationKind>> {
     let _token = jobserver_gate::acquire();
     match &managed.kind {
-        ManagedKind::File { source, executable } => {
-            check_file(root, lock, &managed.path, source, *executable)
-        }
+        ManagedKind::File {
+            source,
+            executable,
+            symlink,
+        } => check_file(root, lock, &managed.path, source, *executable, *symlink),
         ManagedKind::Submodule(sub) => check_submodule(root, lock, &managed.path, sub),
     }
 }
@@ -213,6 +215,7 @@ fn check_file(
     path: &Path,
     source: &Source,
     executable: Option<bool>,
+    symlink: Symlink,
 ) -> Result<Vec<ViolationKind>> {
     let file = root.join(path);
     let meta = match std::fs::symlink_metadata(&file) {
@@ -224,6 +227,7 @@ fn check_file(
     let is_dir_on_disk = meta.as_ref().is_some_and(|m| m.is_dir());
     let Some(locked) = lock.get(path).filter(|locked| {
         &locked.source == source
+            && locked.symlink == symlink
             && matches!(source, Source::Git { .. }) == locked.commit.is_some()
             // A declared executable mode that the lock does not hold is a declaration changed since the lock
             // (for directories, locked.mode is always None because executable bits are hashed in sha256_dir).
@@ -235,13 +239,7 @@ fn check_file(
         return Ok(vec![ViolationKind::Unlocked]);
     };
 
-    let is_keep = matches!(
-        source,
-        Source::Git {
-            symlink: Symlink::Keep,
-            ..
-        }
-    );
+    let is_keep = symlink == Symlink::Keep;
 
     let mut kinds = Vec::new();
 

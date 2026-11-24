@@ -185,9 +185,8 @@ impl GitCache {
     /// file content as [`Content::File`] or directory tree as [`Content::Dir`].
     /// With [`SymlinkMode::Keep`], if `path` points to a symlink, its target
     /// text is returned as [`Content::Link`] without following; if `path` points
-    /// to a directory, its entries are returned as [`Content::Dir`] keeping
-    /// symlinks inside it as [`DirEntryContent::Link`]. `SymlinkMode::Keep`
-    /// requires `path` to be `Some`.
+    /// to a directory (or is `None` for the repository root), its entries are
+    /// returned as [`Content::Dir`] keeping symlinks inside it as [`DirEntryContent::Link`].
     ///
     /// In both modes, intermediate directory components must not be symlinks,
     /// and symlink targets are validated not to be empty, contain NUL bytes,

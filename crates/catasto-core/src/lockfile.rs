@@ -46,9 +46,14 @@ pub fn lock(root: &Path) -> Result<Lock> {
 
     for managed in &manifest.managed {
         match &managed.kind {
-            ManagedKind::File { source, executable } => {
+            ManagedKind::File {
+                source,
+                executable,
+                symlink,
+            } => {
                 if let Some(locked) = existing.get(&managed.path)
                     && &locked.source == source
+                    && locked.symlink == *symlink
                     && let Some(commit) = &locked.commit
                 {
                     commits.insert(managed.path.clone(), commit.clone());
@@ -59,7 +64,7 @@ pub fn lock(root: &Path) -> Result<Lock> {
                         Some(false) => None,
                         None => existing
                             .get(&managed.path)
-                            .filter(|locked| &locked.source == source)
+                            .filter(|locked| &locked.source == source && locked.symlink == *symlink)
                             .and_then(|locked| locked.mode),
                     };
                     if let Some(mode) = mode {
@@ -139,11 +144,13 @@ pub(crate) fn write_lock_selected_with_hashes(
     selected: &(dyn Fn(&Path) -> bool + Sync),
     known_hashes: &HashMap<PathBuf, String>,
 ) -> Result<Lock> {
-    let mut file_entries: Vec<(PathBuf, Source)> = Vec::new();
+    let mut file_entries: Vec<(PathBuf, Source, Symlink)> = Vec::new();
     let mut submodule_entries: Vec<(PathBuf, Submodule)> = Vec::new();
     for managed in manifest.managed {
         match managed.kind {
-            ManagedKind::File { source, .. } => file_entries.push((managed.path, source)),
+            ManagedKind::File {
+                source, symlink, ..
+            } => file_entries.push((managed.path, source, symlink)),
             ManagedKind::Submodule(sub) => submodule_entries.push((managed.path, sub)),
         }
     }
@@ -179,11 +186,11 @@ pub(crate) fn write_lock_selected_with_hashes(
 
     let locked_results: Result<Vec<Option<Locked>>> = file_entries
         .into_par_iter()
-        .map(|(path, source)| {
+        .map(|(path, source, symlink)| {
             if !selected(&path) {
                 let kept = previous
                     .get(&path)
-                    .filter(|kept| kept.source == source)
+                    .filter(|kept| kept.source == source && kept.symlink == symlink)
                     .cloned();
                 return Ok(kept);
             }
@@ -199,13 +206,7 @@ pub(crate) fn write_lock_selected_with_hashes(
                 }
             };
 
-            let is_keep = matches!(
-                source,
-                Source::Git {
-                    symlink: Symlink::Keep,
-                    ..
-                }
-            );
+            let is_keep = symlink == Symlink::Keep;
 
             if meta.is_dir() {
                 // Directories carry their entries' modes inside `sha256_dir` and never set top-level `mode`.
@@ -255,6 +256,7 @@ pub(crate) fn write_lock_selected_with_hashes(
                 source,
                 commit,
                 mode,
+                symlink,
             }))
         })
         .collect();

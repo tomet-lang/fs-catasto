@@ -15,7 +15,7 @@ use tomet_spec::schema::{ConfigGroupSpec, ConfigSpecProvider};
 /// Upstream repository definitions declared in `::upstream(...)`.
 ///
 /// An upstream declares a named `catasto.git(...)` repository at a pinned revision,
-/// optionally with a `root` directory inside the repository from which entry paths start.
+/// optionally with a `path` directory inside the repository from which entry paths start.
 #[derive(Debug, Clone, Default, PartialEq, Config)]
 #[config(group = "upstream")]
 pub struct UpstreamSpec {
@@ -27,16 +27,17 @@ pub struct UpstreamSpec {
     #[config(key = "rev", default = "main", type = "string")]
     pub rev: String,
 
-    /// Directory inside the upstream repository that entry paths are relative to.
-    #[config(key = "root", type = "path")]
-    pub root: Option<PathBuf>,
+    /// Directory or file inside the upstream repository that entry paths are relative to.
+    #[config(key = "path", type = "path")]
+    pub path: Option<PathBuf>,
 }
 
 /// Manifest entry declaring a managed workspace file, directory, or submodule.
 ///
 /// Each top-level entry in `catasto.ctmt` binds a workspace-relative path
-/// to a `catasto.{upstream,git,local}(...)` constructor call; file and directory entries
-/// may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
+/// to a `catasto.{upstream,git,local}(...)` constructor call, or a tuple
+/// `(call, executable: bool, symlink: follow | keep, submodule: bool)` pairing the
+/// source with placement options.
 #[derive(Debug, Clone, Default, PartialEq, Config)]
 #[config(group = "entry")]
 pub struct ManifestEntrySpec {
@@ -53,6 +54,14 @@ pub struct ManifestEntrySpec {
     /// source decides: a git file's `100755` or not, and a local file is never executable. Rejected when `submodule: true`.
     #[config(key = "executable", type = "boolean")]
     pub executable: Option<bool>,
+
+    /// How symlinks in a git or upstream source are handled (`follow` or `keep`). Rejected on `catasto.local` or when `submodule: true`.
+    #[config(key = "symlink", default = "follow", type = "follow | keep")]
+    pub symlink: String,
+
+    /// Whether to clone a git or upstream source as a Git submodule and register it in `.gitmodules`. Rejected on `catasto.local`.
+    #[config(key = "submodule", default = "false", type = "boolean")]
+    pub submodule: bool,
 }
 
 /// Directory schema rules declared in `::zone(...)`.
@@ -111,7 +120,8 @@ pub fn all_manifest_specs() -> Vec<ConfigGroupSpec> {
 ///   `recursive`, and nested `files` / `dirs` `(require, allow, deny)` rule tuples
 /// - Top-level entries mapping workspace paths (`<$string>`) to a source constructor
 ///   (`catasto.git`, `catasto.upstream`, `catasto.local`), or a tuple pairing a
-///   source constructor with optional `executable: bool`
+///   source constructor with optional `executable: bool`, `symlink: "follow" | "keep"`,
+///   and `submodule: bool`
 pub fn blueprint_spec() -> CtmtBlueprintSpec {
     let zone_pattern_list = SeatExpr::enum_of([
         EnumVariantExpr::ty("string"),
@@ -134,12 +144,20 @@ pub fn blueprint_spec() -> CtmtBlueprintSpec {
         ]
     };
 
+    let symlink_seat = SeatExpr::enum_of([
+        EnumVariantExpr::text("follow"),
+        EnumVariantExpr::text("keep"),
+    ])
+    .optional();
+
     let top_level_entry = SeatExpr::enum_of([
         EnumVariantExpr::enum_of(file_sources()),
         EnumVariantExpr::tuple(
             TupleSpec::new()
                 .positional(ValueSpec::Seat(SeatExpr::enum_of(file_sources())))
-                .fixed("executable", SeatExpr::bool().optional()),
+                .fixed("executable", SeatExpr::bool().optional())
+                .fixed("symlink", symlink_seat)
+                .fixed("submodule", SeatExpr::bool().optional()),
         ),
     ]);
 
@@ -205,6 +223,8 @@ mod tests {
         assert!(rendered.contains("`dirs`"));
         assert!(rendered.contains("`source`"));
         assert!(rendered.contains("`executable`"));
+        assert!(rendered.contains("`symlink`"));
+        assert!(rendered.contains("`submodule`"));
     }
 
     #[test]
@@ -225,7 +245,7 @@ mod tests {
         let repo_manifest_src = include_str!("../../../catasto.ctmt");
         let repo_manifest =
             tomet_ast_parser::parse_data_file(repo_manifest_src).expect("repo catasto.ctmt parses");
-        let doc_bindings = tomet_semantics::Bindings::for_document(&repo_manifest, [vocab]);
+        let doc_bindings = tomet_semantics::Bindings::for_document(&repo_manifest, [vocab.clone()]);
         let doc_errors = tomet_validator_blueprint::validate_ctmt_against_blueprint(
             &repo_manifest,
             &bp_ast,
@@ -234,6 +254,39 @@ mod tests {
         assert!(
             doc_errors.is_empty(),
             "repo catasto.ctmt failed blueprint validation: {doc_errors:?}"
+        );
+
+        let valid_tuple = tomet_ast_parser::parse_data_file(
+            r#"::kind(catasto, version: "1.0.0")
+"a": (catasto.git("https://example.com/a.git"), symlink: keep)
+"b": (catasto.git("https://example.com/b.git"), submodule: true)
+"#,
+        )
+        .unwrap();
+        let valid_bindings = tomet_semantics::Bindings::for_document(&valid_tuple, [vocab.clone()]);
+        assert!(
+            tomet_validator_blueprint::validate_ctmt_against_blueprint(
+                &valid_tuple,
+                &bp_ast,
+                &valid_bindings
+            )
+            .is_empty()
+        );
+
+        let invalid_symlink = tomet_ast_parser::parse_data_file(
+            r#"::kind(catasto, version: "1.0.0")
+"a": (catasto.git("https://example.com/a.git"), symlink: invalid)
+"#,
+        )
+        .unwrap();
+        let invalid_bindings = tomet_semantics::Bindings::for_document(&invalid_symlink, [vocab]);
+        assert!(
+            !tomet_validator_blueprint::validate_ctmt_against_blueprint(
+                &invalid_symlink,
+                &bp_ast,
+                &invalid_bindings
+            )
+            .is_empty()
         );
     }
 }

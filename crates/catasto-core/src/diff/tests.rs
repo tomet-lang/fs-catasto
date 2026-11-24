@@ -34,7 +34,7 @@ impl Fixture {
         UpstreamText {
             git: self.repo.url(),
             rev: "main".into(),
-            root: None,
+            path: None,
         }
     }
 
@@ -49,8 +49,9 @@ impl Fixture {
             dest,
             &SourceText::Upstream {
                 name: "t".into(),
-                path: path.into(),
+                path: Some(path.into()),
                 keep_symlink: false,
+                submodule: false,
             },
             false,
             Some(&self.cache),
@@ -190,8 +191,9 @@ fn symlink_diff_formats() {
         "link.tmt",
         &SourceText::Upstream {
             name: "t".into(),
-            path: "link.tmt".into(),
+            path: Some("link.tmt".into()),
             keep_symlink: true,
+            submodule: false,
         },
         false,
         Some(&fx.cache),
@@ -231,8 +233,9 @@ fn diff_handles_managed_directory_modified_missing_extra_and_type_mismatch() {
         "dir",
         &SourceText::Upstream {
             name: "t".into(),
-            path: "dir".into(),
+            path: Some("dir".into()),
             keep_symlink: false,
+            submodule: false,
         },
         false,
         Some(&fx.cache),

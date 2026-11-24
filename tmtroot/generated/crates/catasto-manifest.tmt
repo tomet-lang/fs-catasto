@@ -121,7 +121,7 @@ to constructor calls from the same vocabulary:
 ```text
 `` ::kind(catasto, version: "1.0.0")
 `` ::upstream(
-``   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, root: vocabularies)
+``   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, path: vocabularies)
 `` )
 ``
 `` "tmtroot/schema/writ.vocabulary.tmt": catasto.local("../vocabularies/writ.vocabulary.tmt")
@@ -138,9 +138,10 @@ to constructor calls from the same vocabulary:
 ```
 
 An upstream is resolved while the file is read, into the full `git`, `rev`
-and `path` of \[`Source::Git`\] (joining `root` in front of `path`), so
-everything after the parse, and the lockfile, see the same \[`Source`\]
-either way.
+and `path` of \[`Source::Git`\] (joining the upstream's `path` in front of
+the entry's `path`), so everything after the parse, and the lockfile, see
+the same \[`Source`\] either way, while \[`UpstreamRef`\] keeps the declared
+upstream provenance.
 
 ===[Module url]
 
@@ -175,6 +176,10 @@ The names catasto reads are exact. On a case-sensitive filesystem `Catasto.ctmt`
 "no manifest" without a word, while on a case-insensitive one it would work, so one tree would behave
 differently from one machine to the next.
 
+====[fn is_relative_inside]
+
+Returns `true` if `path` is non-empty, relative, and does not climb above its base (`..`).
+
 ====[fn is_inside_workspace]
 
 ===[Constants]
@@ -201,15 +206,16 @@ using `#[derive(Config)]` from `tomet-spec`.
 Upstream repository definitions declared in `::upstream(...)`.
 
 An upstream declares a named `catasto.git(...)` repository at a pinned revision,
-optionally with a `root` directory inside the repository from which entry paths start.
+optionally with a `path` directory inside the repository from which entry paths start.
 
 ====[struct ManifestEntrySpec]
 
 Manifest entry declaring a managed workspace file, directory, or submodule.
 
 Each top-level entry in `catasto.ctmt` binds a workspace-relative path
-to a `catasto.{upstream,git,local}(...)` constructor call; file and directory entries
-may optionally pair the call with `executable` in a tuple `(call, executable: bool)`.
+to a `catasto.{upstream,git,local}(...)` constructor call, or a tuple
+`(call, executable: bool, symlink: follow | keep, submodule: bool)` pairing the
+source with placement options.
 
 ====[struct ZoneSpec]
 
@@ -240,4 +246,5 @@ accepted by \[`crate::Manifest::parse`\]:
 - Top-level entries mapping workspace paths (`<$string>`) to a source constructor
 
 (`catasto.git`, `catasto.upstream`, `catasto.local`), or a tuple pairing a
-source constructor with optional `executable: bool`
+source constructor with optional `executable: bool`, `symlink: "follow" | "keep"`,
+and `submodule: bool`

@@ -362,7 +362,7 @@ fn sync_symlink_follow_and_keep_and_switching() {
     // 2. switch from follow to keep: sync replaces destination with symlink
     std::fs::write(
             vault.join("catasto.ctmt"),
-            format!("::kind(catasto, version: \"1.0.0\")\n\n\"out.txt\": catasto.git({:?}, rev: main, path: \"link.txt\", symlink: keep)\n", repo.url()),
+            format!("::kind(catasto, version: \"1.0.0\")\n\n\"out.txt\": (catasto.git({:?}, rev: main, path: \"link.txt\"), symlink: keep)\n", repo.url()),
         ).unwrap();
     sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
 
@@ -889,7 +889,7 @@ fn sync_clones_submodule_entry_creates_gitmodules_and_locks_commit() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git({:?}, rev: main, submodule: true)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": (catasto.git({:?}, rev: main), submodule: true)\n",
             upstream_repo.url()
         ),
     )
@@ -963,7 +963,7 @@ fn sync_dry_run_does_not_clone_submodule_or_write_gitmodules() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": catasto.git({:?}, rev: main, submodule: true)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"tools/sisho\": (catasto.git({:?}, rev: main), submodule: true)\n",
             upstream_repo.url()
         ),
     )
@@ -1016,7 +1016,7 @@ fn sync_update_advances_relative_submodule_and_updates_commit() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"vendor/lib\": catasto.git(\"../../{repo_name}\", rev: main, submodule: true)\n"
+            "::kind(catasto, version: \"1.0.0\")\n\n\"vendor/lib\": (catasto.git(\"../../{repo_name}\", rev: main), submodule: true)\n"
         ),
     )
     .unwrap();
@@ -1071,7 +1071,7 @@ fn sync_fetches_directory_from_git_upstream_and_repo_root() {
 ::kind(catasto, version: \"1.0.0\")
 ::upstream(u: catasto.git({url:?}, rev: main))
 
-\"kept_dir\": catasto.git({url:?}, rev: main, path: \"dir\", symlink: keep)
+\"kept_dir\": (catasto.git({url:?}, rev: main, path: \"dir\"), symlink: keep)
 \"followed_dir\": catasto.upstream(u, path: \"dir\")
 \"repo_root\": catasto.git({url:?}, rev: main)
 \"forced_exec_dir\": (catasto.git({url:?}, rev: main, path: \"dir\"), executable: true)
@@ -1171,30 +1171,43 @@ fn sync_and_check_sparse_checkout_submodule() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"vendor/part\": catasto.git({:?}, rev: main, path: \"sub/dir\", submodule: true)\n",
-            upstream_repo.url()
+            "\
+::kind(catasto, version: \"1.0.0\")
+::upstream(sub_up: catasto.git({url:?}, rev: main, path: \"sub\"))
+
+\"vendor/part\": (catasto.git({url:?}, rev: main, path: \"sub/dir\"), submodule: true)
+\"vendor/up_part\": (catasto.upstream(sub_up, path: \"dir\"), submodule: true)
+",
+            url = upstream_repo.url()
         ),
     )
     .unwrap();
 
     let lock = sync_with(&vault, SyncMode::Locked, Some(&cache)).unwrap();
-    assert!(vault.join("vendor/part/.git").exists());
-    assert_eq!(
-        std::fs::read_to_string(vault.join("vendor/part/sub/dir/one.txt")).unwrap(),
-        "one"
-    );
-    assert_eq!(
-        std::fs::read_to_string(vault.join("vendor/part/sub/dir/nested/two.txt")).unwrap(),
-        "two"
-    );
-    assert!(!vault.join("vendor/part/other").exists());
+    for dir in ["vendor/part", "vendor/up_part"] {
+        assert!(vault.join(dir).join(".git").exists());
+        assert_eq!(
+            std::fs::read_to_string(vault.join(dir).join("sub/dir/one.txt")).unwrap(),
+            "one"
+        );
+        assert_eq!(
+            std::fs::read_to_string(vault.join(dir).join("sub/dir/nested/two.txt")).unwrap(),
+            "two"
+        );
+        assert!(!vault.join(dir).join("other").exists());
+    }
 
-    assert_eq!(lock.submodules.len(), 1);
+    assert_eq!(lock.submodules.len(), 2);
     assert_eq!(
         lock.submodules[0].subpath.as_deref(),
         Some(Path::new("sub/dir"))
     );
     assert_eq!(lock.submodules[0].commit.as_deref(), Some(head2.as_str()));
+    assert_eq!(
+        lock.submodules[1].subpath.as_deref(),
+        Some(Path::new("sub/dir"))
+    );
+    assert_eq!(lock.submodules[1].commit.as_deref(), Some(head2.as_str()));
     assert!(check(&vault).unwrap().is_ok());
 
     // Sparse-checkout drift (disabling sparse checkout) is detected as Modified

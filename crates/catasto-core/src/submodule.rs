@@ -109,8 +109,8 @@ mod tests {
     fn renders_gitmodules_for_submodule_entries() {
         let manifest = Manifest::parse(&format!(
             "{USE}\
-             \"tools/sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, submodule: true)\n\
-             \"sisho-desk\": catasto.git(\"https://github.com/tomet-lang/sisho-desk.git\", rev: main, submodule: false)\n"
+             \"tools/sisho\": (catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main), submodule: true)\n\
+             \"sisho-desk\": (catasto.git(\"https://github.com/tomet-lang/sisho-desk.git\", rev: main), submodule: false)\n"
         ))
         .unwrap();
 
@@ -135,7 +135,7 @@ mod tests {
     fn sync_and_check_gitmodules_lifecycle() {
         let dir = tempfile::tempdir().unwrap();
         let manifest = Manifest::parse(&format!(
-            "{USE}\"sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, submodule: true)\n"
+            "{USE}\"sisho\": (catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main), submodule: true)\n"
         ))
         .unwrap();
         let lock = Lock::default();

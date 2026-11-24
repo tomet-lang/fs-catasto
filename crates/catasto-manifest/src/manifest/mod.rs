@@ -8,7 +8,7 @@
 //! ```text
 //! ::kind(catasto, version: "1.0.0")
 //! ::upstream(
-//!   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, root: vocabularies)
+//!   vocabularies: catasto.git("https://example.com/vocabularies.git", rev: main, path: vocabularies)
 //! )
 //!
 //! "tmtroot/schema/writ.vocabulary.tmt": catasto.local("../vocabularies/writ.vocabulary.tmt")
@@ -25,9 +25,10 @@
 //! ```
 //!
 //! An upstream is resolved while the file is read, into the full `git`, `rev`
-//! and `path` of [`Source::Git`] (joining `root` in front of `path`), so
-//! everything after the parse, and the lockfile, see the same [`Source`]
-//! either way.
+//! and `path` of [`Source::Git`] (joining the upstream's `path` in front of
+//! the entry's `path`), so everything after the parse, and the lockfile, see
+//! the same [`Source`] either way, while [`UpstreamRef`] keeps the declared
+//! upstream provenance.
 
 use std::path::{Component, Path};
 use std::sync::LazyLock;
@@ -43,7 +44,7 @@ pub mod url;
 mod zone;
 
 pub(crate) use types::check_git;
-pub use types::{Managed, ManagedKind, Manifest, Source, Submodule, Symlink};
+pub use types::{Managed, ManagedKind, Manifest, Source, Submodule, Symlink, UpstreamRef};
 pub use upstream::{UpstreamInfo, upstreams_of};
 pub use url::{UrlKind, classify};
 pub use zone::{EntryRules, Zone, ZonePattern};
@@ -85,9 +86,14 @@ pub fn reject_misnamed(root: &Path, expected: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn is_inside_workspace(path: &Path) -> bool {
+/// Returns `true` if `path` is non-empty, relative, and does not climb above its base (`..`).
+pub fn is_relative_inside(path: &Path) -> bool {
     !path.as_os_str().is_empty()
         && path
             .components()
             .all(|c| matches!(c, Component::Normal(_) | Component::CurDir))
+}
+
+pub fn is_inside_workspace(path: &Path) -> bool {
+    is_relative_inside(path)
 }

@@ -13,4 +13,4 @@
   dirs: <$enum((require: enum(string, list(string), optional: true), allow: enum(string, list(string), optional: true), deny: enum(string, list(string), optional: true)), optional: true)>
 ))
 
-<$string>: <$enum(enum(catasto.git, catasto.upstream, catasto.local), (enum(catasto.git, catasto.upstream, catasto.local), executable: bool(optional: true)))>
+<$string>: <$enum(enum(catasto.git, catasto.upstream, catasto.local), (enum(catasto.git, catasto.upstream, catasto.local), executable: bool(optional: true), symlink: enum("follow", "keep", optional: true), submodule: bool(optional: true)))>

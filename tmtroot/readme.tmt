@@ -23,8 +23,8 @@ Just as a cadastre (*catasto*) records the boundaries, parcels, and ownership of
 
 ```bash
 `` catasto init                                    # create catasto.ctmt
-`` catasto upstream add NAME GIT [--rev R] [--root DIR] [--force] # name a place files come from
-`` catasto add DEST [--force] --upstream NAME [PATH] [--keep-symlink] # take a file or directory: declare it, fetch it, lock it
+`` catasto upstream add NAME GIT [--rev R] [--path DIR] [--force] # name a place files come from
+`` catasto add DEST [--force] --upstream NAME [PATH] [--keep-symlink] [--submodule] # take a file, directory, or submodule: declare it, fetch it, lock it
 `` catasto add DEST [--force] --git URL [--rev R] [PATH] [--keep-symlink] [--submodule] #   ... from a repository (or as a submodule)
 `` catasto add DEST [--force] --local PATH                   #   ... from a file on disk
 `` catasto list [--json]                           # every declared entry, its source and its state
@@ -44,18 +44,18 @@ Every command works on the current directory; `-C DIR` (`--workspace DIR`) says 
 
 ```bash
 `` catasto init
-`` catasto upstream add vocabularies https://github.com/tomet-lang/vocabularies.git --root vocabularies
+`` catasto upstream add vocabularies https://github.com/tomet-lang/vocabularies.git --path vocabularies
 `` catasto add tmtroot/schema/writ@1.0.0.vocabulary.tmt --upstream vocabularies writ/writ@1.0.0.vocabulary.tmt
 `` catasto check
 ```
 
 That writes `catasto.ctmt` and `catasto.lock`, and the file itself. Commit the three. A fresh clone has the file already; `catasto check` says whether it is as locked, and `catasto sync` brings it back if not.
 
-`add` declares the file and reads it from the place, at the commit its `rev` points at now; the other files and what the lock says about them stay as they are. If the file cannot be read, the manifest is put back as it was. Plain `add` on a destination that is already declared fails with exit code 3; `--force` replaces its source while keeping the entry where it is, its comments, and any other fields. Plain `upstream add` on an upstream name that is already declared similarly fails with exit code 3; `--force` replaces its definition. With `--keep-symlink` on an upstream or git source, an upstream symlink is placed as a symlink rather than following it to the target file. `remove` forgets the declaration and the lock entry, and leaves the file on disk unless `--delete`.
+`add` declares the file and reads it from the place, at the commit its `rev` points at now; the other files and what the lock says about them stay as they are. Omitting `PATH` with `--upstream NAME` takes the upstream's declared location as a whole (`catasto.upstream(NAME)`), just as omitting `PATH` with `--git URL` takes the repository root. If the file cannot be read, the manifest is put back as it was. Plain `add` on a destination that is already declared fails with exit code 3; `--force` replaces its source while keeping the entry where it is, its comments, and any other fields. Plain `upstream add` on an upstream name that is already declared similarly fails with exit code 3; `--force` replaces its definition. With `--keep-symlink` on an upstream or git source, an upstream symlink is placed as a symlink rather than following it to the target file. `remove` forgets the declaration and the lock entry, and leaves the file on disk unless `--delete`.
 
 The commands edit `catasto.ctmt` without rewriting it: comments, order and layout stay, a new entry goes after the last, and the result is read again before it is saved, so an edit that would leave a manifest that does not load is refused. You can also write the file by hand, as shown under Files.
 
-`catasto list` shows `name:path` (or `name`) for an entry taken from a named place, `git URL@REV:path` (or `git URL@REV`) or `local PATH` for other file or directory entries, and `submodule URL@REV` (or `submodule URL@REV:path`) for submodules, with `ok` or the way it has drifted, and the commit it was locked at. `--json` is the same for tools.
+`catasto list` shows `name:path` (or `name`) for an entry taken from a named place, `git URL@REV:path` (or `git URL@REV`) or `local PATH` for other file or directory entries, and `submodule name` (or `submodule name:path`) or `submodule URL@REV` (or `submodule URL@REV:path`) for submodules, with `ok` or the way it has drifted, and the commit it was locked at. `--json` is the same for tools.
 
 `catasto sync --only FILE` reads one entry again. With `--update` it moves a file or directory to where its `rev` points now, or updates a submodule worktree, and nothing else, which is how to take one new vocabulary without taking all of them. `catasto sync --dry-run` previews what `sync` would write: it displays moved git sources, a unified diff for each changed file or directory, and any planned submodule or `.gitmodules` changes without altering files, submodules, `.gitmodules`, or the lock, ending with a summary line (`would change N of M file(s)` or `nothing would change`).
 
@@ -73,15 +73,13 @@ The names are exact: `catasto.ctmt` and `catasto.lock`, and `init` takes no othe
 `` "docs/shared/terms.tmt": catasto.local("../shared/terms.tmt")
 ```
 
-The key is a path relative to the workspace and must stay inside it. Quote a path that is not a bare word, which is any path with a `/` or a space in it. Each path may be declared once, and its value is a bare constructor call or a tuple `(call, executable: bool)`.
+The key is a path relative to the workspace and must stay inside it. Quote a path that is not a bare word, which is any path with a `/` or a space in it. Each path may be declared once, and its value is a bare constructor call or a tuple `(call, executable: bool, symlink: follow | keep, submodule: bool)`.
 
 A source is one of three constructors:
 
 -| `catasto.local("...")` -- a file on the local filesystem, relative to the workspace root. It may point outside the workspace.
--| `catasto.git("...", rev: ..., path: ..., symlink: ..., submodule: ...)` -- a file, directory, or submodule from a git repository. The positional first argument is an `https://` URL or a local path (relative to the workspace root), and `rev` (default `main`) is a tag, a branch, or a commit already reachable from one (quote a `rev` that reads as a number, e.g. `rev: "1.2"`).
-  - When `submodule: false` (the default), it fetches a file or directory at `path` (or the entire repository root if `path` is omitted) from the git repository into the workspace without `.git`, locking its content or deterministic directory tree SHA-256 under `"files"` in `catasto.lock`. An optional `symlink: keep` preserves symlinks in the workspace rather than following them to write target file content.
-  - When `submodule: true`, it clones the repository as a Git submodule worktree at the declared directory path and generates and checks `.gitmodules`. When `path` is also given with `submodule: true`, `catasto` configures `git sparse-checkout` so only that path inside the submodule is checked out. Submodule entries are recorded under `"submodules"` in `catasto.lock`, cannot declare `executable` or `symlink`, and no managed entry may be declared inside a submodule's directory.
--| `catasto.upstream(name, path: "...")` -- the same, with the repository and `rev` named once in `::upstream(...)` (below); `path` may name either a file or a directory inside the upstream repository (relative to `root` if set).
+-| `catasto.git("...", rev: ..., path: ...)` -- a file or directory from a git repository. The positional first argument is an `https://` URL or a local path (relative to the workspace root), `rev` (default `main`) is a tag, a branch, or a commit already reachable from one (quote a `rev` that reads as a number, e.g. `rev: "1.2"`), and `path` (optional) is the location inside the repository relative to the repository root (omit to take the repository root).
+-| `catasto.upstream(name, path: "...")` -- a file or directory from an upstream repository named once in `::upstream(...)` (below); `path` is relative to the upstream's `path` (or the repository root if the upstream omits `path`), and omitting `path` takes the upstream's location as a whole.
 
 ```text
 `` ::kind(catasto, version: "1.0.0")
@@ -95,12 +93,12 @@ A source is one of three constructors:
 
 ==[ Upstreams ]
 
-Files that come from the same place name it once. `::upstream(...)` goes at the top of `catasto.ctmt`, alongside `::kind(catasto, version: "1.0.0")` and before the first path, mapping each name to a `catasto.git(...)` constructor with `rev` and optionally a `root`:
+Files that come from the same place name it once. `::upstream(...)` goes at the top of `catasto.ctmt`, alongside `::kind(catasto, version: "1.0.0")` and before the first path, mapping each name to a `catasto.git(...)` constructor with `rev` and optionally a `path`:
 
 ```text
 `` ::kind(catasto, version: "1.0.0")
 `` ::upstream(
-``   vocabularies: catasto.git("https://github.com/tomet-lang/vocabularies.git", rev: main, root: vocabularies)
+``   vocabularies: catasto.git("https://github.com/tomet-lang/vocabularies.git", rev: main, path: vocabularies)
 `` )
 ``
 `` "tmtroot/schema/rust@1.0.0.vocabulary.tmt": catasto.upstream(
@@ -109,20 +107,24 @@ Files that come from the same place name it once. `::upstream(...)` goes at the 
 `` )
 ```
 
-`root` is the directory of the repository that the `path`s of its entries start from: above, `rust/rust@1.0.0.vocabulary.tmt` is the file `vocabularies/rust/rust@1.0.0.vocabulary.tmt`. Without it they start at the top of the repository. It must be relative and stay inside the repository, and a `path` cannot climb out of it.
+In `catasto.git(...)`, `path` is always relative to the repository root, whether it appears in `::upstream(...)` or directly in an entry. In `catasto.upstream(name, path: ...)`, `path` is relative to the `path` declared by that upstream (or the repository root when the upstream omits `path`): above, `rust/rust@1.0.0.vocabulary.tmt` resolves to `vocabularies/rust/rust@1.0.0.vocabulary.tmt`, and omitting `path` in `catasto.upstream(vocabularies)` refers to the `vocabularies` directory as a whole. An upstream's location is a boundary: `path` must be relative and cannot climb out of it with `..`.
 
-An upstream is not a macro and the name does not leave the manifest. It is resolved into the full `git`, `rev` and `path` while the file is loaded, so `catasto.lock` records the same `git`, `rev`, `commit` and `sha256` as when they are written out, and moving an entry between the two forms does not make it stale. The `git` URL and `rev` of an upstream are checked where it is declared (and `path`, `symlink`, and `submodule` are disallowed there). An entry uses `catasto.upstream(...)` or `catasto.git(...)`, not both. The declarations catasto reads are `::kind(catasto, ...)` and the attributes of the `catasto` vocabulary, `::upstream` and `::zone`.
-`catasto upstream add --force NAME GIT [--rev R] [--root DIR]` replaces the definition of an existing upstream name, leaving entries and comments where they are. It edits the manifest only, without touching the lock or files; run `catasto sync` afterward to take affected files from the new place.
+An upstream is resolved into the full `git`, `rev` and `path` while the file is loaded, so `catasto.lock` records the same `git`, `rev`, `commit` and `sha256` as when they are written out, and moving an entry between the two forms does not make it stale. The `git` URL, `rev`, and `path` of an upstream are checked where it is declared. An entry uses `catasto.upstream(...)` or `catasto.git(...)`, not both. The declarations catasto reads are `::kind(catasto, ...)` and the attributes of the `catasto` vocabulary, `::upstream` and `::zone`.
+`catasto upstream add --force NAME GIT [--rev R] [--path DIR]` replaces the definition of an existing upstream name, leaving entries and comments where they are. It edits the manifest only, without touching the lock or files; run `catasto sync` afterward to take affected files from the new place.
 
-An entry may also say whether the file is executable by wrapping the constructor call in a tuple:
+An entry may also specify placement options (`executable`, `symlink`, `submodule`) by wrapping the source constructor call in a tuple:
 
 ```text
 `` "scripts/tool.sh": (catasto.local("../shared/tool.sh"), executable: true)
+`` "CLAUDE.md":       (catasto.upstream(commonfiles, path: "CLAUDE.md"), symlink: keep)
+`` "tools/sisho":     (catasto.git("https://github.com/tomet-lang/sisho.git", rev: main), submodule: true)
 ```
 
-`executable: true` places the file with its executable bits set and `executable: false` with them cleared, whatever the source says. Left out, the source decides: a git file is executable when it is `100755` there, and a local file is never executable. The lock records the mode that results (`"mode": "executable"`, absent for a normal file), and `check` calls an entry `unlocked` when what it declares is not what the lock holds, until `catasto sync` (or `catasto lock`) is run.
+-| `executable: bool` -- `executable: true` places a file with its executable bits set (or every file in a fetched directory) and `executable: false` with them cleared, whatever the source says. Left out, the source decides: a git file is executable when it is `100755` there, and a local file is never executable. The lock records the mode that results (`"mode": "executable"`, absent for a normal file or directory), and `check` calls an entry `unlocked` when what it declares is not what the lock holds, until `catasto sync` (or `catasto lock`) is run.
+-| `symlink: follow | keep` (git and upstream file/directory entries only; default `follow`) -- when `symlink: keep`, symlinks in the git source (either a single symlink entry or symlinks inside a fetched directory tree) are preserved as symlinks in the workspace rather than following them to write target file content. Cannot be combined with `catasto.local` or `submodule: true`.
+-| `submodule: bool` (git and upstream entries only; default `false`) -- when `submodule: true`, catasto clones the repository as a Git submodule worktree at the declared directory path and generates and checks `.gitmodules`. When the resolved repository path is present (via `catasto.git(..., path: ...)` or `catasto.upstream(...)` with a path on the upstream and/or entry), `catasto` configures `git sparse-checkout` so only that path inside the submodule is checked out. Submodule entries are recorded under `"submodules"` in `catasto.lock`, cannot declare `executable` or `symlink`, cannot be combined with `catasto.local`, and no managed entry may be declared inside a submodule's directory.
 
-`catasto.lock` is generated by `catasto lock` and `catasto sync`. Commit it together with the managed files, so a fresh clone can run `catasto check` without the sources. It is JSON, keyed by path under `files` (and `submodules` when submodule entries are declared), with a `version`; nobody edits it by hand. Each entry under `files` records its content or deterministic directory tree `sha256`, its `source`, and (for git sources) `commit`; a file entry also records `"mode": "executable"` when placed executable (a git source's `100755`, or an entry that declares `executable: true`), absent for normal files and directories. Each entry under `submodules` records `git`, `rev`, optional `path` (when sparse-checkout is configured), and `commit`.
+`catasto.lock` is generated by `catasto lock` and `catasto sync`. Commit it together with the managed files, so a fresh clone can run `catasto check` without the sources. It is JSON, keyed by path under `files` (and `submodules` when submodule entries are declared), with a `version`; nobody edits it by hand. Each entry under `files` records its content or deterministic directory tree `sha256`, its `source`, and (for git sources) `commit`; an entry also records `"mode": "executable"` when a file is placed executable (a git source's `100755`, or an entry that declares `executable: true`) and `"symlink": "keep"` when declared with `symlink: keep`. Each entry under `submodules` records `git`, `rev`, optional `path` (when sparse-checkout is configured), and `commit`.
 
 ==[ Git Sources ]
 
@@ -134,7 +136,7 @@ The lock records the commit that `rev` resolved to. Like `cargo build`, `catasto
 
 `catasto lock` never resolves a revision, so it cannot pin a git source that has no recorded commit. Run `catasto sync` for that.
 
-When `path` points to a symlink in the repository, catasto follows it by default (up to 8 hops) and writes the resolved target file's content as a regular file. Symlinks pointing to an empty target, containing NUL bytes, absolute paths, or escaping the repository root are refused. Intermediate directory components may not be symlinks. With `symlink: keep`, the upstream entry must be a symlink, and catasto places the symlink itself into the workspace with its exact target text intact. Writes to the destination never write through an existing symlink, replacing it atomically instead.
+When a git source points to a symlink in the repository (or contains symlinks inside a fetched directory), catasto follows it by default (up to 8 hops) and writes the resolved target file's content as a regular file. Symlinks pointing to an empty target, containing NUL bytes, absolute paths, or escaping the repository root are refused. Intermediate directory components may not be symlinks. With `symlink: keep`, a single-entry source must be a symlink (and symlinks inside a fetched directory tree are preserved as symlinks), and catasto places the symlink itself into the workspace with its exact target text intact. Writes to the destination never write through an existing symlink, replacing it atomically instead.
 
 ==[ Drift ]
 

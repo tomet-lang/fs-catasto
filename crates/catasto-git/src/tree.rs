@@ -442,9 +442,6 @@ pub(crate) fn read_path(
     symlink: SymlinkMode,
 ) -> Result<(Content, bool)> {
     let Some(p) = path else {
-        if symlink == SymlinkMode::Keep {
-            bail!("`symlink: keep` requires `path`");
-        }
         let entries = read_dir_tree(repo, commit, "", Path::new("."), symlink)?;
         return Ok((Content::Dir(entries), false));
     };

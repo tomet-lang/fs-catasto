@@ -73,7 +73,7 @@ mod tests {
         let full = tomet_ast_parser::parse_data_file(
             r#"::kind(catasto, version: "1.0.0")
 ::upstream(
-  common: catasto.git("https://example.com/common.git", rev: main, root: base)
+  common: catasto.git("https://example.com/common.git", rev: main, path: base)
 )
 ::zone(
   ".": (
@@ -87,11 +87,12 @@ mod tests {
   )
 )
 
-"vendor/lib": catasto.git("https://example.com/lib.git", rev: main, submodule: true)
+"vendor/lib": (catasto.git("https://example.com/lib.git", rev: main), submodule: true)
 "a.txt": catasto.git("https://example.com/a.git", rev: main, path: "a.txt")
 "b.txt": catasto.upstream(common, path: "b.txt")
 "c.txt": catasto.local("local/c.txt")
 "scripts/run.sh": (catasto.local("local/run.sh"), executable: true)
+"scripts/link.sh": (catasto.upstream(common, path: "link.sh"), symlink: keep)
 "scripts/plain.sh": (catasto.upstream(common, path: "plain.sh"),)
 "#,
         )

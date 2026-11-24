@@ -14,7 +14,7 @@ Start with `catasto init`, name a place with `catasto upstream add`, take a file
 
 Options:
 
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto init ]
 
@@ -26,7 +26,7 @@ Create catasto.ctmt, a manifest that declares nothing yet
 
 Options:
 
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto add ]
 
@@ -43,7 +43,7 @@ Refuses with exit code 3 if DEST is already declared; use --force to replace its
 Arguments:
 
 - `<DEST>`: Where the file, directory, or submodule goes, relative to the workspace root.
-- `[FROM]`: Path in the upstream or git repository (omit for repository root with --git), or on disk with --local. Defaults to DEST with --upstream.
+- `[FROM]`: Path in the upstream or git repository (omit for the whole upstream or repository root), or on disk with --local.
 
 Options:
 
@@ -51,10 +51,10 @@ Options:
 - `--git <URL>`: Take it from this git repository (`https://` or a local path).
 - `--local`: Take it from a file or directory on disk, relative to the workspace root.
 - `--rev <REV>`: The tag, branch or commit to read, with --git. Default: `main`.
-- `--submodule`: Clone as a git submodule worktree and register in `.gitmodules`, with --git.
+- `--submodule`: Clone as a git submodule worktree and register in `.gitmodules`.
 - `--keep-symlink`: Place an upstream symlink as a symlink rather than following it.
 - `--force`: Declare DEST with the given source whether or not it is declared.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto remove ]
 
@@ -73,7 +73,7 @@ Arguments:
 Options:
 
 - `--delete`: Delete the file too.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto upstream ]
 
@@ -85,7 +85,7 @@ Name the places files are taken from
 
 Options:
 
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ===[ catasto upstream add ]
 
@@ -103,9 +103,9 @@ Arguments:
 Options:
 
 - `--rev <REV>`: The tag, branch or commit to read. Default: `main`.
-- `--root <ROOT>`: The directory of the repository that the entries' paths start from.
+- `--path <PATH>`: The directory of the repository that the entries' paths start from.
 - `--force`: Declare NAME with the given definition whether or not it is declared.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ===[ catasto upstream remove ]
 
@@ -121,7 +121,7 @@ Arguments:
 
 Options:
 
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ===[ catasto upstream list ]
 
@@ -133,7 +133,7 @@ List the names and what they point at
 
 Options:
 
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto list ]
 
@@ -151,7 +151,7 @@ Options:
 
 - `--all`: Discover and list all workspaces under the root.
 - `--json`: Print JSON, for tools.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto check ]
 
@@ -171,7 +171,7 @@ Options:
 
 - `--all`: Discover and check all workspaces under the root.
 - `--json`: Print JSON, for tools.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto lock ]
 
@@ -188,7 +188,7 @@ Arguments:
 Options:
 
 - `--all`: Discover and lock all workspaces under the root.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto sync ]
 
@@ -210,7 +210,7 @@ Options:
 - `--update`: Resolve every git rev again and lock the commits they point at now.
 - `--only <FILE>`: Only this file (as the manifest writes its path); repeat for more. The others, and what the lock says about them, stay as they are.
 - `--dry-run`: Compute what sync would write and print the diff and summary without writing any files or rewriting the lock. May fetch new git commits into the cache.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto diff ]
 
@@ -230,7 +230,7 @@ Options:
 
 - `--all`: Discover and diff all workspaces under the root.
 - `--only <FILE>`: Only this file (as the manifest writes its path); repeat for more.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).
 
 ==[ catasto spec ]
 
@@ -249,4 +249,4 @@ Options:
 - `--all`: Generate all declared specification targets. Requires `--out <DIR>`. Conflicts with `[TARGET]`.
 - `-o, --out <OUT>`: Write to this file or directory instead of stdout.
 - `--check`: Fail if output files are missing or out of date, without writing.
-- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --root` is something else: a directory inside the repository it names.).
+- `-C, --workspace <DIR>`: The workspace root. Defaults to the current directory. `check`, `lock` and `sync` also take it as a trailing path, like the other tools of the ecosystem. (`upstream add --path` is something else: a directory inside the repository it names.).

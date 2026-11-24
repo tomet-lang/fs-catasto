@@ -63,6 +63,8 @@ pub struct PlannedFile {
     pub commit: Option<String>,
     /// The canonical source from the manifest.
     pub source: Source,
+    /// The declared upstream name, if the entry was written via `catasto.upstream(...)`.
+    pub upstream: Option<String>,
     /// Whether the file is executable (`100755` in git). Always `false` for directories.
     pub executable: bool,
     /// The executable override explicitly declared in the manifest, if any.
@@ -126,6 +128,7 @@ pub fn plan_sync(
             content,
             commit,
             source: source.clone(),
+            upstream: managed.upstream.as_ref().map(|u| u.name.clone()),
             executable,
             declared_executable: managed.executable(),
         });
@@ -318,12 +321,6 @@ fn run_dry_run(
 ) -> Result<DryRunReport> {
     let plan = plan_sync(root, mode, cache_dir, only)?;
 
-    let manifest_file = root.join(crate::MANIFEST_FILE);
-    let upstreams = match std::fs::read_to_string(&manifest_file) {
-        Ok(text) => catasto_manifest::manifest::upstreams_of(&text)?,
-        Err(_) => Vec::new(),
-    };
-
     let mut moved_sources = Vec::new();
     let mut seen_groups = std::collections::HashSet::new();
 
@@ -337,11 +334,7 @@ fn run_dry_run(
         if let (Some(old), Some(new)) = (old_commit, new_commit)
             && old != new
         {
-            let label = upstreams
-                .iter()
-                .find(|u| &u.git == git && &u.rev == rev)
-                .map(|u| u.name.clone())
-                .unwrap_or_else(|| git.clone());
+            let label = file.upstream.clone().unwrap_or_else(|| git.clone());
 
             if seen_groups.insert((label.clone(), rev.clone())) {
                 moved_sources.push(MovedSource {
@@ -510,9 +503,8 @@ fn fetch_entry(
     managed: &Managed,
 ) -> Result<Fetched> {
     let ManagedKind::File {
-        source: source @ Source::Git {
-            rev, path, symlink, ..
-        },
+        source: source @ Source::Git { rev, path, .. },
+        symlink,
         ..
     } = &managed.kind
     else {
@@ -522,7 +514,7 @@ fn fetch_entry(
         SyncMode::Update => None,
         SyncMode::Locked => lock
             .get(&managed.path)
-            .filter(|locked| &locked.source == source)
+            .filter(|locked| &locked.source == source && locked.symlink == *symlink)
             .and_then(|locked| locked.commit.as_deref()),
     };
     cache

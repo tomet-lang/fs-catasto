@@ -205,7 +205,7 @@ fn lock_round_trip_with_and_without_symlink_keep() {
     let parsed = Lock::parse(text_without).unwrap();
     assert_eq!(parsed.render().unwrap(), text_without);
 
-    let text_with = "{\n  \"version\": 1,\n  \"files\": {\n    \"a\": {\n      \"sha256\": \"abc\",\n      \"source\": {\n        \"git\": \"https://example.com/a.git\",\n        \"rev\": \"main\",\n        \"path\": \"a\",\n        \"symlink\": \"keep\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\"\n    }\n  }\n}\n";
+    let text_with = "{\n  \"version\": 1,\n  \"files\": {\n    \"a\": {\n      \"sha256\": \"abc\",\n      \"source\": {\n        \"git\": \"https://example.com/a.git\",\n        \"rev\": \"main\",\n        \"path\": \"a\"\n      },\n      \"commit\": \"0123456789abcdef0123456789abcdef01234567\",\n      \"symlink\": \"keep\"\n    }\n  }\n}\n";
     let parsed_keep = Lock::parse(text_with).unwrap();
     assert_eq!(parsed_keep.render().unwrap(), text_with);
 }
@@ -213,14 +213,14 @@ fn lock_round_trip_with_and_without_symlink_keep() {
 #[test]
 #[cfg(unix)]
 fn lock_fails_when_destination_kind_does_not_match_symlink_declaration() {
-    let keep_manifest = "::kind(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\", symlink: keep)\n";
+    let keep_manifest = "::kind(catasto, version: \"1.0.0\")\n\n\"link\": (catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\"), symlink: keep)\n";
     let default_manifest = "::kind(catasto, version: \"1.0.0\")\n\n\"link\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"link\")\n";
 
     // 1. keep declared, but destination is regular file -> error
     let dir1 = workspace(keep_manifest, &[("link", "regular file")]);
     std::fs::write(
             dir1.path().join(LOCK_FILE),
-            "{\"version\":1,\"files\":{\"link\":{\"sha256\":\"x\",\"source\":{\"git\":\"https://example.com/v.git\",\"rev\":\"v1\",\"path\":\"link\",\"symlink\":\"keep\"},\"commit\":\"0123456789abcdef0123456789abcdef01234567\"}}}",
+            "{\"version\":1,\"files\":{\"link\":{\"sha256\":\"x\",\"source\":{\"git\":\"https://example.com/v.git\",\"rev\":\"v1\",\"path\":\"link\"},\"commit\":\"0123456789abcdef0123456789abcdef01234567\",\"symlink\":\"keep\"}}}",
         )
         .unwrap();
     let err1 = lock(dir1.path()).unwrap_err();
@@ -281,7 +281,7 @@ fn lock_records_submodule_entries_in_submodules_section() {
     let manifest = "\
 ::kind(catasto, version: \"1.0.0\")
 
-\"tools/sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, path: \"crates/sisho\", submodule: true)
+\"tools/sisho\": (catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, path: \"crates/sisho\"), submodule: true)
 ";
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("catasto.ctmt"), manifest).unwrap();
@@ -318,7 +318,7 @@ fn submodule_lock_preserves_existing_commit() {
     let manifest = "\
 ::kind(catasto, version: \"1.0.0\")
 
-\"sisho\": catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main, submodule: true)
+\"sisho\": (catasto.git(\"https://github.com/tomet-lang/sisho.git\", rev: main), submodule: true)
 ";
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("catasto.ctmt"), manifest).unwrap();
@@ -350,6 +350,7 @@ fn lock_without_submodules_omits_submodules_key() {
         sha256: "abc".into(),
         commit: None,
         mode: None,
+        symlink: Symlink::Follow,
     }]);
     let rendered = lock.render().unwrap();
     assert!(!rendered.contains("\"submodules\""), "{rendered}");

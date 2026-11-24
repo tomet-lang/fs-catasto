@@ -19,18 +19,17 @@ mod scanner;
 #[cfg(test)]
 mod tests;
 
-use scanner::{
-    Layout, cut_lines, first_unnamed_in_tuple, is_name_char, line_start, scan, scan_entries, splice,
-};
+use scanner::{Layout, cut_lines, is_name_char, line_start, scan, scan_entries, splice};
 
 /// Where a managed file comes from, as the text of one entry writes it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SourceText {
-    /// `catasto.upstream(name, path: "...")`
+    /// `catasto.upstream(name, path: "...")` or `catasto.upstream(name)`
     Upstream {
         name: String,
-        path: String,
+        path: Option<String>,
         keep_symlink: bool,
+        submodule: bool,
     },
     /// `catasto.git("...", rev: ..., path: "...")`
     Git {
@@ -44,12 +43,28 @@ pub enum SourceText {
     Local { path: String },
 }
 
+impl SourceText {
+    fn keep_symlink(&self) -> bool {
+        match self {
+            Self::Upstream { keep_symlink, .. } | Self::Git { keep_symlink, .. } => *keep_symlink,
+            Self::Local { .. } => false,
+        }
+    }
+
+    fn submodule(&self) -> bool {
+        match self {
+            Self::Upstream { submodule, .. } | Self::Git { submodule, .. } => *submodule,
+            Self::Local { .. } => false,
+        }
+    }
+}
+
 /// What `::upstream(...)` says about one place.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UpstreamText {
     pub git: String,
     pub rev: String,
-    pub root: Option<String>,
+    pub path: Option<String>,
 }
 
 /// The outcome of declaring an entry in the manifest.
@@ -125,22 +140,19 @@ pub fn add_or_replace_entry(
             return Err(anyhow::Error::new(AlreadyDeclared::entry(dest)));
         }
         let val_span = existing.value.clone();
-        let new_source = source_value_text(source);
-        let replace_span = if text[val_span.clone()].starts_with('(') {
-            first_unnamed_in_tuple(text, &val_span)?.ok_or_else(|| {
-                anyhow!("malformed entry tuple for {dest}: missing constructor call")
-            })?
-        } else {
-            val_span
-        };
+        let existing_text = &text[val_span.clone()];
+        let existing_exec = extract_existing_executable(existing_text);
+        let multiline = existing_text.starts_with('(') && existing_text.contains('\n');
+        let options = RenderOptions::merged(source, existing_exec);
+        let new_value = format_entry_value(source, options, multiline);
 
-        let replaced = if text[replace_span.clone()] == new_source {
+        let replaced = if existing_text == new_value {
             if has_kind_catasto(text, &layout) {
                 return Ok((text.to_owned(), AddOutcome::Unchanged));
             }
             text.to_owned()
         } else {
-            splice(text, replace_span, &new_source)
+            splice(text, val_span, &new_value)
         };
         let ensured = ensure_kind_catasto(&replaced)?;
         let outcome = if ensured == text {
@@ -363,33 +375,13 @@ pub fn remove_upstream(text: &str, name: &str) -> Result<String> {
 
 /// Whether some entry of `text` names `upstream` via `catasto.upstream(...)`.
 pub fn upstream_is_used(text: &str, upstream: &str) -> Result<Vec<String>> {
-    let file = cotomet::parse_file(text).map_err(|e| anyhow!("{e}"))?;
-    let Value::Tuple(entries) = &file.body else {
-        return Ok(Vec::new());
-    };
-    let mut users = Vec::new();
-    for entry in entries.entries() {
-        let Some(path) = entry.name() else { continue };
-        let call = match entry.value() {
-            Value::Call(_, _) => entry.value(),
-            Value::Tuple(tuple) => match tuple.unnamed().next() {
-                Some(v @ Value::Call(_, _)) => v,
-                _ => continue,
-            },
-            _ => continue,
-        };
-        let Value::Call(head, args) = call else {
-            continue;
-        };
-        if head != "catasto.upstream" {
-            continue;
-        }
-        let target = args.get("upstream").or_else(|| args.nth_unnamed(0));
-        if matches!(target, Some(Value::Scalar(Scalar::Text(name))) if name == upstream) {
-            users.push(path.to_owned());
-        }
-    }
-    Ok(users)
+    let manifest = crate::Manifest::parse(text)?;
+    Ok(manifest
+        .managed
+        .iter()
+        .filter(|m| m.upstream().is_some_and(|u| u.name == upstream))
+        .map(|m| m.path.to_string_lossy().into_owned())
+        .collect())
 }
 
 fn has_kind_catasto(text: &str, layout: &Layout) -> bool {
@@ -429,36 +421,50 @@ fn ensure_kind_catasto(text: &str) -> Result<String> {
     Ok(splice(text, at..at, &block))
 }
 
-fn source_value_text(source: &SourceText) -> String {
-    match source {
-        SourceText::Upstream {
-            name,
-            path,
-            keep_symlink,
-        } => {
-            let symlink = if *keep_symlink { ", symlink: keep" } else { "" };
-            format!(
-                "catasto.upstream({}, path: {}{symlink})",
-                scalar(name),
-                quoted(path)
-            )
-        }
-        SourceText::Git {
-            git,
-            rev,
-            path,
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct RenderOptions {
+    executable: Option<bool>,
+    keep_symlink: bool,
+    submodule: bool,
+}
+
+impl RenderOptions {
+    fn merged(source: &SourceText, existing_executable: Option<bool>) -> Self {
+        let submodule = source.submodule();
+        let keep_symlink = source.keep_symlink();
+        let executable = if submodule { None } else { existing_executable };
+        Self {
+            executable,
             keep_symlink,
             submodule,
-        } => {
+        }
+    }
+}
+
+fn extract_existing_executable(existing_value_text: &str) -> Option<bool> {
+    let Ok(Value::Tuple(tuple)) = tomet_ast_parser::parse_value(existing_value_text) else {
+        return None;
+    };
+    match tuple.get("executable") {
+        Some(Value::Scalar(Scalar::Bool(b))) => Some(*b),
+        _ => None,
+    }
+}
+
+fn source_call_text(source: &SourceText) -> String {
+    match source {
+        SourceText::Upstream { name, path, .. } => match path {
+            Some(path) => format!(
+                "catasto.upstream({}, path: {})",
+                scalar(name),
+                quoted(path)
+            ),
+            None => format!("catasto.upstream({})", scalar(name)),
+        },
+        SourceText::Git { git, rev, path, .. } => {
             let mut out = format!("catasto.git({}, rev: {}", quoted(git), scalar(rev));
             if let Some(path) = path {
                 out.push_str(&format!(", path: {}", quoted(path)));
-            }
-            if *keep_symlink {
-                out.push_str(", symlink: keep");
-            }
-            if *submodule {
-                out.push_str(", submodule: true");
             }
             out.push(')');
             out
@@ -467,9 +473,36 @@ fn source_value_text(source: &SourceText) -> String {
     }
 }
 
+fn format_entry_value(source: &SourceText, options: RenderOptions, multiline: bool) -> String {
+    let call = source_call_text(source);
+    let mut fields = Vec::new();
+    if let Some(exec) = options.executable {
+        fields.push(format!("executable: {exec}"));
+    }
+    if options.keep_symlink {
+        fields.push("symlink: keep".to_owned());
+    }
+    if options.submodule {
+        fields.push("submodule: true".to_owned());
+    }
+    if fields.is_empty() {
+        return call;
+    }
+    if multiline {
+        let mut items = Vec::with_capacity(1 + fields.len());
+        items.push(format!("  {call}"));
+        for field in fields {
+            items.push(format!("  {field}"));
+        }
+        format!("(\n{}\n)", items.join(",\n"))
+    } else {
+        format!("({call}, {})", fields.join(", "))
+    }
+}
+
 fn entry_text(dest: &str, source: &SourceText) -> String {
-    let source = source_value_text(source);
-    format!("{}: {source}\n", quoted(dest))
+    let value = format_entry_value(source, RenderOptions::merged(source, None), false);
+    format!("{}: {value}\n", quoted(dest))
 }
 
 fn upstream_text(upstream: &UpstreamText) -> String {
@@ -478,8 +511,8 @@ fn upstream_text(upstream: &UpstreamText) -> String {
         quoted(&upstream.git),
         scalar(&upstream.rev)
     );
-    if let Some(root) = &upstream.root {
-        text.push_str(&format!(", root: {}", scalar_path(root)));
+    if let Some(path) = &upstream.path {
+        text.push_str(&format!(", path: {}", scalar_path(path)));
     }
     text.push(')');
     text

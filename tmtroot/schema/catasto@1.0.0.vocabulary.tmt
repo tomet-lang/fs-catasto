@@ -2,7 +2,7 @@
 ::vocabulary(catasto, version: "1.0.0")
 ::attribute(
   upstream: (
-    about: | Git repositories, each named once (`name: catasto.git(url, rev: main, root: dir)`), that entries take files from with `catasto.upstream(name, path: ...)`.
+    about: | Git repositories, each named once (`name: catasto.git(url, rev: main, path: dir)`), that entries take files or directories from with `catasto.upstream(name, path: ...)`.
     host: ctmt
   )
   zone: (
@@ -11,7 +11,7 @@
 ))
 ::constructor(
   git: (
-    about: | A file or repository in Git.
+    about: | A file, directory, or repository in Git.
     args: (
       url: (
         type: string
@@ -24,23 +24,9 @@
         default: main
         about: | Pinned tag, branch, or commit hash. Quote numeric revisions (e.g. `rev: "1.2"`).
       )
-      root: (
-        type: string
-        about: | Directory inside the upstream repository that entry paths start from (used in `::upstream`).
-      )
       path: (
         type: string
-        about: | Location of the file or directory inside the Git repository. Omit to take the repository root.
-      )
-      symlink: (
-        type: string
-        default: follow
-        about: | How symlinks in the repository are handled (`follow` or `keep`).
-      )
-      submodule: (
-        type: bool
-        default: false
-        about: | Whether to clone the repository as a Git submodule and register it in `.gitmodules`.
+        about: | Location of the file or directory inside the Git repository, relative to the repository root. Omit to take the repository root.
   )))
   upstream: (
     about: | A file or directory from an upstream repository declared in `::upstream(...)`.
@@ -53,13 +39,7 @@
       )
       path: (
         type: string
-        required: true
-        about: | Location of the file or directory inside the upstream repository (relative to `root` if set).
-      )
-      symlink: (
-        type: string
-        default: follow
-        about: | How symlinks in the repository are handled (`follow` or `keep`).
+        about: | Location of the file or directory relative to the upstream's `path` (or the repository root). Omit to take the upstream's location as a whole.
   )))
   local: (
     about: | A file on the local filesystem, relative to the workspace root.

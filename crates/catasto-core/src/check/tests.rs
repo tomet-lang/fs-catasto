@@ -207,7 +207,7 @@ fn check_symlink_keep_and_default_table() {
     let target_hash = sha256_hex(b"target.txt");
 
     // Helper to setup a vault with custom manifest and lock
-    let setup_vault = |manifest_src: &str, lock_src: &str, locked_hash: &str| {
+    let setup_vault = |manifest_src: &str, lock_extra: &str, locked_hash: &str| {
         let tmp = tempfile::tempdir().unwrap();
         std::fs::write(
             tmp.path().join("catasto.ctmt"),
@@ -217,7 +217,7 @@ fn check_symlink_keep_and_default_table() {
         std::fs::write(
                 tmp.path().join("catasto.lock"),
                 format!(
-                    "{{\"version\":1,\"files\":{{\"link\":{{\"sha256\":\"{locked_hash}\",\"source\":{lock_src},\"commit\":\"{commit}\"}}}}}}"
+                    "{{\"version\":1,\"files\":{{\"link\":{{\"sha256\":\"{locked_hash}\",\"source\":{{\"git\":\"https://example.com/v.git\",\"rev\":\"main\",\"path\":\"link\"}},\"commit\":\"{commit}\"{lock_extra}}}}}}}"
                 ),
             )
             .unwrap();
@@ -225,10 +225,10 @@ fn check_symlink_keep_and_default_table() {
     };
 
     let keep_manifest =
-        "catasto.git(\"https://example.com/v.git\", rev: main, path: \"link\", symlink: keep)";
+        "(catasto.git(\"https://example.com/v.git\", rev: main, path: \"link\"), symlink: keep)";
     let default_manifest = "catasto.git(\"https://example.com/v.git\", rev: main, path: \"link\")";
-    let keep_lock = "{\"git\":\"https://example.com/v.git\",\"rev\":\"main\",\"path\":\"link\",\"symlink\":\"keep\"}";
-    let default_lock = "{\"git\":\"https://example.com/v.git\",\"rev\":\"main\",\"path\":\"link\"}";
+    let keep_lock = ",\"symlink\":\"keep\"";
+    let default_lock = "";
 
     // === Keep entry tests ===
     // 1. absent -> Missing
@@ -408,7 +408,7 @@ fn check_submodule_detects_unlocked_missing_modified_remote_and_sparse_drift() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"deps/tool\": catasto.git({:?}, rev: main, path: \"sub/dir\", submodule: true)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"deps/tool\": (catasto.git({:?}, rev: main, path: \"sub/dir\"), submodule: true)\n",
             upstream.url()
         ),
     )
@@ -482,7 +482,7 @@ fn check_directory_detects_modified_added_deleted_and_exec_drift() {
     std::fs::write(
         vault.join("catasto.ctmt"),
         format!(
-            "::kind(catasto, version: \"1.0.0\")\n\n\"dir\": catasto.git({:?}, rev: main, path: \"dir\", symlink: keep)\n",
+            "::kind(catasto, version: \"1.0.0\")\n\n\"dir\": (catasto.git({:?}, rev: main, path: \"dir\"), symlink: keep)\n",
             repo.url()
         ),
     )

@@ -7,9 +7,9 @@ use tomet_declaration::{Declaration as SemDeclaration, Host, check_declarations}
 use tomet_scalar::Scalar;
 use tomet_type::Version;
 
-use super::types::{check_git, require_rev, require_text};
+use super::types::parse_git_call;
 use super::zone::{Zone, parse_zone_decls};
-use super::{is_inside_workspace, vocabulary};
+use super::vocabulary;
 
 /// What `::upstream` names: a git repository at a `rev`, and the directory
 /// of it that the entries' `path`s are relative to.
@@ -18,7 +18,7 @@ pub(super) struct Upstream {
     pub(super) rev: String,
     /// The directory inside the repository that `path` starts from. Without
     /// it, `path` starts at the root of the repository.
-    pub(super) root: Option<PathBuf>,
+    pub(super) path: Option<PathBuf>,
 }
 
 /// Header state parsed from `::kind(catasto, ...)`, `::upstream(...)`, and `::zone(...)`.
@@ -204,39 +204,8 @@ fn parse_upstream_entry(name: &str, value: &Value) -> Result<Upstream> {
         );
     }
 
-    if let Value::Call(_, raw_args) = value {
-        for forbidden in ["path", "symlink"] {
-            if raw_args.contains_key(forbidden) {
-                bail!("{context}: `catasto.git` inside `::upstream` cannot specify `{forbidden}`");
-            }
-        }
-        if raw_args.contains_key("submodule") {
-            bail!(
-                "upstream `{name}` cannot specify `submodule`; `submodule` goes on a manifest entry"
-            );
-        }
-    }
-
-    let git = require_text(&constructed, "url", &context)?;
-    let rev = require_rev(&constructed, &context)?;
-    check_git(&git, &rev).map_err(|e| anyhow!("{context}: {e}"))?;
-
-    let root = match constructed.get("root") {
-        None | Some(Value::Scalar(Scalar::None)) => None,
-        Some(Value::Scalar(Scalar::Text(r))) => {
-            let root_path = PathBuf::from(r);
-            if !is_inside_workspace(&root_path) {
-                bail!(
-                    "{context}: `root` must be relative and stay inside the repository: {}",
-                    root_path.display()
-                );
-            }
-            Some(root_path)
-        }
-        Some(_) => bail!("{context}: `root` must be a string"),
-    };
-
-    Ok(Upstream { git, rev, root })
+    let (git, rev, path) = parse_git_call(&constructed, &context)?;
+    Ok(Upstream { git, rev, path })
 }
 
 impl Upstreams {
@@ -265,7 +234,7 @@ pub struct UpstreamInfo {
     pub git: String,
     pub rev: String,
     /// The directory of the repository its entries' paths start from.
-    pub root: Option<PathBuf>,
+    pub path: Option<PathBuf>,
 }
 
 /// The places `::upstream(...)` names in `text`, in the order they were written.
@@ -280,7 +249,7 @@ pub fn upstreams_of(text: &str) -> Result<Vec<UpstreamInfo>> {
             name,
             git: upstream.git,
             rev: upstream.rev,
-            root: upstream.root,
+            path: upstream.path,
         })
         .collect())
 }

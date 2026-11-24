@@ -43,16 +43,20 @@ fn parses_managed_entries_in_the_order_written() {
         vec![
             Managed {
                 path: "b/writ.vocabulary.tmt".into(),
+                upstream: None,
                 kind: ManagedKind::File {
                     source: path_source("../vocabularies/writ.vocabulary.tmt"),
                     executable: None,
+                    symlink: Symlink::Follow,
                 },
             },
             Managed {
                 path: "a/rust.vocabulary.tmt".into(),
+                upstream: None,
                 kind: ManagedKind::File {
                     source: path_source("../vocabularies/rust.vocabulary.tmt"),
                     executable: None,
+                    symlink: Symlink::Follow,
                 },
             },
         ]
@@ -191,7 +195,7 @@ fn an_unknown_declaration_names_the_attributes_of_the_vocabulary() {
 }
 
 #[test]
-fn an_upstream_reads_as_the_entry_written_in_full() {
+fn an_upstream_reads_as_the_entry_written_in_full_and_preserves_provenance() {
     let named = Manifest::parse(&format!(
         "{VOCABULARIES}\n\"a.tmt\": catasto.upstream(vocabularies, path: \"x/a.tmt\")\n"
     ))
@@ -200,14 +204,22 @@ fn an_upstream_reads_as_the_entry_written_in_full() {
         "{KIND}\"a.tmt\": catasto.git(\"https://example.com/v.git\", rev: main, path: \"x/a.tmt\")\n"
     ))
     .unwrap();
-    assert_eq!(named, written);
+    assert_eq!(named.managed[0].source(), written.managed[0].source());
+    assert_eq!(
+        named.managed[0].upstream(),
+        Some(&UpstreamRef {
+            name: "vocabularies".into(),
+            path: Some("x/a.tmt".into()),
+        })
+    );
+    assert_eq!(written.managed[0].upstream(), None);
 }
 
 #[test]
-fn a_root_is_joined_in_front_of_the_path() {
+fn an_upstream_path_is_joined_in_front_of_the_entry_path() {
     let rooted = Manifest::parse(&format!(
         "{KIND}\
-         ::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, root: vocabularies))\n\
+         ::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, path: vocabularies))\n\
          \"a.tmt\": catasto.upstream(v, path: \"rust/a.tmt\")\n"
     ))
     .unwrap();
@@ -215,35 +227,89 @@ fn a_root_is_joined_in_front_of_the_path() {
         "{KIND}\"a.tmt\": catasto.git(\"https://example.com/v.git\", rev: main, path: \"vocabularies/rust/a.tmt\")\n"
     ))
     .unwrap();
-    assert_eq!(rooted, written);
+    assert_eq!(rooted.managed[0].source(), written.managed[0].source());
+    assert_eq!(
+        rooted.managed[0].upstream(),
+        Some(&UpstreamRef {
+            name: "v".into(),
+            path: Some("rust/a.tmt".into()),
+        })
+    );
 }
 
 #[test]
-fn a_root_is_checked_where_it_is_declared() {
-    for root in ["/etc", "../outside", "a/../b", "\"\""] {
+fn an_upstream_path_is_checked_where_it_is_declared() {
+    for bad_path in ["/etc", "../outside", "a/../b", "\"\""] {
         let err = Manifest::parse(&format!(
-            "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, root: {root}))\n"
+            "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, path: {bad_path}))\n"
         ))
         .unwrap_err();
         assert!(
             err.to_string()
-                .contains("`root` must be relative and stay inside"),
-            "{root}: {err}"
+                .contains("git path must be relative and stay inside the repository"),
+            "{bad_path}: {err}"
         );
     }
 }
 
 #[test]
-fn a_path_cannot_climb_out_of_the_root() {
-    let err = Manifest::parse(&format!(
+fn a_path_cannot_climb_out_of_the_upstream_boundary() {
+    for bad in ["../secret.tmt", "a/../../secret.tmt", "/etc/passwd", ""] {
+        let err = Manifest::parse(&format!(
+            "{KIND}\
+             ::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, path: vocabularies))\n\
+             \"a.tmt\": catasto.upstream(v, path: \"{bad}\")\n"
+        ))
+        .unwrap_err();
+        assert!(
+            err.to_string().contains("stay inside the repository"),
+            "{bad}: {err}"
+        );
+    }
+}
+
+#[test]
+fn an_upstream_call_may_omit_path_to_take_the_whole_upstream() {
+    let manifest = Manifest::parse(&format!(
         "{KIND}\
-         ::upstream(v: catasto.git(\"https://example.com/v.git\", rev: main, root: vocabularies))\n\
-         \"a.tmt\": catasto.upstream(v, path: \"../secret.tmt\")\n"
+         ::upstream(\n\
+           with_path: catasto.git(\"https://example.com/v.git\", rev: main, path: vocabularies)\n\
+           repo_root: catasto.git(\"https://example.com/r.git\", rev: v1)\n\
+         )\n\
+         \"dir_a\": catasto.upstream(with_path)\n\
+         \"dir_b\": catasto.upstream(repo_root)\n"
     ))
-    .unwrap_err();
-    assert!(
-        err.to_string().contains("stay inside the repository"),
-        "{err}"
+    .unwrap();
+
+    assert_eq!(
+        manifest.managed[0].source(),
+        Some(&Source::Git {
+            git: "https://example.com/v.git".into(),
+            rev: "main".into(),
+            path: Some("vocabularies".into()),
+        })
+    );
+    assert_eq!(
+        manifest.managed[0].upstream(),
+        Some(&UpstreamRef {
+            name: "with_path".into(),
+            path: None,
+        })
+    );
+    assert_eq!(
+        manifest.managed[1].source(),
+        Some(&Source::Git {
+            git: "https://example.com/r.git".into(),
+            rev: "v1".into(),
+            path: None,
+        })
+    );
+    assert_eq!(
+        manifest.managed[1].upstream(),
+        Some(&UpstreamRef {
+            name: "repo_root".into(),
+            path: None,
+        })
     );
 }
 
@@ -334,18 +400,6 @@ fn an_upstream_constructor_rejects_git_or_rev_arguments() {
 }
 
 #[test]
-fn an_upstream_call_needs_a_path() {
-    let err = Manifest::parse(&format!(
-        "{VOCABULARIES}\n\"a.tmt\": catasto.upstream(vocabularies)\n"
-    ))
-    .unwrap_err();
-    assert!(
-        err.to_string().contains("requires the argument `path`"),
-        "{err}"
-    );
-}
-
-#[test]
 fn an_upstream_is_checked_where_it_is_declared() {
     let err = Manifest::parse(&format!(
         "{KIND}::upstream(v: catasto.git(\"git@example.com:o/v.git\", rev: main))\n"
@@ -360,17 +414,17 @@ fn an_upstream_is_checked_where_it_is_declared() {
     assert!(err.to_string().contains("write it in quotes"), "{err}");
 
     let err = Manifest::parse(&format!(
-        "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", path: \"a\"))\n"
+        "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", root: \"a\"))\n"
     ))
     .unwrap_err();
-    assert!(err.to_string().contains("cannot specify `path`"), "{err}");
+    assert!(err.to_string().contains("has no argument `root`"), "{err}");
 
     let err = Manifest::parse(&format!(
         "{KIND}::upstream(v: catasto.git(\"https://example.com/v.git\", symlink: keep))\n"
     ))
     .unwrap_err();
     assert!(
-        err.to_string().contains("cannot specify `symlink`"),
+        err.to_string().contains("has no argument `symlink`"),
         "{err}"
     );
 
@@ -379,7 +433,7 @@ fn an_upstream_is_checked_where_it_is_declared() {
     ))
     .unwrap_err();
     assert!(
-        err.to_string().contains("cannot specify `submodule`"),
+        err.to_string().contains("has no argument `submodule`"),
         "{err}"
     );
 
@@ -508,27 +562,29 @@ fn parses_a_git_source() {
             git: "https://example.com/v.git".into(),
             rev: "v1".into(),
             path: Some("dir/w.tmt".into()),
-            symlink: Symlink::Follow,
         })
     );
+    assert_eq!(manifest.managed[0].symlink(), Some(Symlink::Follow));
     assert_eq!(
         manifest.managed[1].source(),
         Some(&Source::Git {
             git: "https://example.com/v.git".into(),
             rev: "v1".into(),
             path: None,
-            symlink: Symlink::Follow,
         })
     );
+    assert_eq!(manifest.managed[1].symlink(), Some(Symlink::Follow));
 }
 
 #[test]
-fn parses_symlink_keep_and_follow_in_git_source_and_upstream() {
+fn parses_symlink_keep_and_follow_in_entry_tuple_for_git_and_upstream() {
     let manifest = Manifest::parse(&format!(
         "{VOCABULARIES}\n\
-         \"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", symlink: keep)\n\
-         \"b\": catasto.upstream(vocabularies, path: \"b\", symlink: keep)\n\
-         \"c\": catasto.upstream(vocabularies, path: \"c\", symlink: follow)\n"
+         \"a\": (catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\"), symlink: keep)\n\
+         \"b\": (catasto.upstream(vocabularies, path: \"b\"), symlink: keep)\n\
+         \"c\": (catasto.upstream(vocabularies, path: \"c\"), symlink: follow)\n\
+         \"d\": (catasto.upstream(vocabularies), symlink: keep)\n\
+         \"e\": (catasto.git(\"https://example.com/v.git\", rev: v1), symlink: keep)\n"
     ))
     .unwrap();
 
@@ -538,34 +594,44 @@ fn parses_symlink_keep_and_follow_in_git_source_and_upstream() {
             git: "https://example.com/v.git".into(),
             rev: "v1".into(),
             path: Some("a".into()),
-            symlink: Symlink::Keep,
         })
     );
+    assert_eq!(manifest.managed[0].symlink(), Some(Symlink::Keep));
     assert_eq!(
         manifest.managed[1].source(),
         Some(&Source::Git {
             git: "https://example.com/v.git".into(),
             rev: "main".into(),
             path: Some("b".into()),
-            symlink: Symlink::Keep,
         })
     );
+    assert_eq!(manifest.managed[1].symlink(), Some(Symlink::Keep));
     assert_eq!(
         manifest.managed[2].source(),
         Some(&Source::Git {
             git: "https://example.com/v.git".into(),
             rev: "main".into(),
             path: Some("c".into()),
-            symlink: Symlink::Follow,
         })
     );
+    assert_eq!(manifest.managed[2].symlink(), Some(Symlink::Follow));
+    assert_eq!(
+        manifest.managed[3].source(),
+        Some(&Source::Git {
+            git: "https://example.com/v.git".into(),
+            rev: "main".into(),
+            path: None,
+        })
+    );
+    assert_eq!(manifest.managed[3].symlink(), Some(Symlink::Keep));
+    assert_eq!(manifest.managed[4].symlink(), Some(Symlink::Keep));
 }
 
 #[test]
 fn rejects_invalid_symlink_values() {
     for bad in ["true", "false", "123", "\"\"", "preserve"] {
         let err = Manifest::parse(&format!(
-            "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", symlink: {bad})\n"
+            "{KIND}\"a\": (catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\"), symlink: {bad})\n"
         ))
         .unwrap_err();
         assert!(
@@ -576,9 +642,35 @@ fn rejects_invalid_symlink_values() {
 }
 
 #[test]
+fn rejects_symlink_and_submodule_on_local_source() {
+    for sym in ["follow", "keep"] {
+        let err = Manifest::parse(&format!(
+            "{KIND}\"a\": (catasto.local(\"src/a\"), symlink: {sym})\n"
+        ))
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("`catasto.local` cannot specify `symlink`"),
+            "{err}"
+        );
+    }
+    for sub in ["true", "false"] {
+        let err = Manifest::parse(&format!(
+            "{KIND}\"a\": (catasto.local(\"src/a\"), submodule: {sub})\n"
+        ))
+        .unwrap_err();
+        assert!(
+            err.to_string()
+                .contains("`catasto.local` cannot specify `submodule`"),
+            "{err}"
+        );
+    }
+}
+
+#[test]
 fn git_source_rejects_unknown_arguments_and_root_in_entry() {
     let err = Manifest::parse(&format!(
-        "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", symlink: keep, extra: x)\n"
+        "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", extra: x)\n"
     ))
     .unwrap_err();
     assert!(err.to_string().contains("has no argument `extra`"), "{err}");
@@ -587,7 +679,25 @@ fn git_source_rejects_unknown_arguments_and_root_in_entry() {
         "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, root: sub, path: \"a\")\n"
     ))
     .unwrap_err();
-    assert!(err.to_string().contains("cannot specify `root`"), "{err}");
+    assert!(err.to_string().contains("has no argument `root`"), "{err}");
+
+    let err = Manifest::parse(&format!(
+        "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, path: \"a\", symlink: keep)\n"
+    ))
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("has no argument `symlink`"),
+        "{err}"
+    );
+
+    let err = Manifest::parse(&format!(
+        "{KIND}\"a\": catasto.git(\"https://example.com/v.git\", rev: v1, submodule: true)\n"
+    ))
+    .unwrap_err();
+    assert!(
+        err.to_string().contains("has no argument `submodule`"),
+        "{err}"
+    );
 }
 
 #[test]
@@ -625,6 +735,7 @@ fn rejects_malformed_git_sources() {
     for call in [
         "catasto.git(\"https://example.com/u.git\", rev: \"v\", symlink: keep)",
         "catasto.git(\"https://example.com/u.git\", rev: \"v\", submodule: yes)",
+        "(catasto.git(\"https://example.com/u.git\", rev: \"v\"), submodule: yes)",
         "catasto.git(rev: \"v\", path: \"p\")",
         "catasto.git(\"-u\", rev: \"v\", path: \"p\")",
         "catasto.git(\"u\", rev: \"-v\", path: \"p\")",
@@ -668,71 +779,42 @@ fn a_source_round_trips_through_json() {
             git: "https://example.com/v.git".into(),
             rev: "v1".into(),
             path: Some("dir/w.tmt".into()),
-            symlink: Symlink::Follow,
-        },
-        Source::Git {
-            git: "https://example.com/v.git".into(),
-            rev: "v1".into(),
-            path: Some("dir/w.tmt".into()),
-            symlink: Symlink::Keep,
         },
         Source::Git {
             git: "https://example.com/v.git".into(),
             rev: "v1".into(),
             path: None,
-            symlink: Symlink::Follow,
         },
     ] {
         let json = serde_json::to_string(&source).unwrap();
         assert_eq!(serde_json::from_str::<Source>(&json).unwrap(), source);
     }
 
-    // Verify that Symlink::Follow does not emit `"symlink"` in JSON
-    let default_git = Source::Git {
-        git: "https://example.com/v.git".into(),
-        rev: "v1".into(),
-        path: Some("dir/w.tmt".into()),
-        symlink: Symlink::Follow,
-    };
-    let json = serde_json::to_string(&default_git).unwrap();
-    assert!(
-        !json.contains("symlink"),
-        "default git source emitted symlink in JSON: {json}"
-    );
-
     // Verify that path: None does not emit `"path"` in JSON
     let root_git = Source::Git {
         git: "https://example.com/v.git".into(),
         rev: "v1".into(),
         path: None,
-        symlink: Symlink::Follow,
     };
     let json_root = serde_json::to_string(&root_git).unwrap();
     assert!(
         !json_root.contains("\"path\""),
         "root git source emitted path in JSON: {json_root}"
     );
-
-    let keep_git = Source::Git {
-        git: "https://example.com/v.git".into(),
-        rev: "v1".into(),
-        path: Some("dir/w.tmt".into()),
-        symlink: Symlink::Keep,
-    };
-    let json_keep = serde_json::to_string(&keep_git).unwrap();
-    assert!(json_keep.contains("\"symlink\":\"keep\""), "{json_keep}");
 }
 
 #[test]
 fn upstream_with_symlink_keep_resolves_identically_to_full_form() {
     let manifest = Manifest::parse(&format!(
         "{VOCABULARIES}\n\
-         \"a.tmt\": catasto.upstream(vocabularies, path: \"a.tmt\", symlink: keep)\n\
-         \"b.tmt\": catasto.git(\"https://example.com/v.git\", rev: main, path: \"a.tmt\", symlink: keep)\n"
+         \"a.tmt\": (catasto.upstream(vocabularies, path: \"a.tmt\"), symlink: keep)\n\
+         \"b.tmt\": (catasto.git(\"https://example.com/v.git\", rev: main, path: \"a.tmt\"), symlink: keep)\n"
     ))
     .unwrap();
 
     assert_eq!(manifest.managed[0].source(), manifest.managed[1].source());
+    assert_eq!(manifest.managed[0].symlink(), Some(Symlink::Keep));
+    assert_eq!(manifest.managed[1].symlink(), Some(Symlink::Keep));
     assert_eq!(
         serde_json::to_string(manifest.managed[0].source().unwrap()).unwrap(),
         serde_json::to_string(manifest.managed[1].source().unwrap()).unwrap()
@@ -740,18 +822,22 @@ fn upstream_with_symlink_keep_resolves_identically_to_full_form() {
 }
 
 #[test]
-fn parses_submodule_entries_with_and_without_path() {
+fn parses_submodule_entries_with_and_without_path_and_via_upstream() {
     let manifest = Manifest::parse(&format!(
         "{KIND}\
-         \"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", rev: v1, submodule: true)\n\
-         \"vendor/lib\": catasto.git(\"../lib\", path: \"sub/pkg\", submodule: true)\n\
-         \"vendor/plain\": catasto.git(\"../plain\", submodule: false)\n"
+         ::upstream(sisho_up: catasto.git(\"https://example.com/sisho.git\", rev: v1, path: crates))\n\
+         \"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", rev: v1), submodule: true)\n\
+         \"vendor/lib\": (catasto.git(\"../lib\", path: \"sub/pkg\"), submodule: true)\n\
+         \"vendor/plain\": (catasto.git(\"../plain\"), submodule: false)\n\
+         \"vendor/from_up\": (catasto.upstream(sisho_up, path: \"sisho\"), submodule: true)\n"
     ))
     .unwrap();
 
     assert!(manifest.managed[0].is_submodule());
     assert!(!manifest.managed[0].is_file());
     assert_eq!(manifest.managed[0].source(), None);
+    assert_eq!(manifest.managed[0].symlink(), None);
+    assert_eq!(manifest.managed[0].upstream(), None);
     assert_eq!(
         manifest.managed[0].submodule(),
         Some(&Submodule {
@@ -770,6 +856,23 @@ fn parses_submodule_entries_with_and_without_path() {
     );
     assert!(manifest.managed[2].is_file());
     assert!(!manifest.managed[2].is_submodule());
+    assert_eq!(manifest.managed[2].symlink(), Some(Symlink::Follow));
+    assert_eq!(
+        manifest.managed[3].submodule(),
+        Some(&Submodule {
+            git: "https://example.com/sisho.git".into(),
+            rev: "v1".into(),
+            path: Some("crates/sisho".into()),
+        })
+    );
+    assert_eq!(manifest.managed[3].symlink(), None);
+    assert_eq!(
+        manifest.managed[3].upstream(),
+        Some(&UpstreamRef {
+            name: "sisho_up".into(),
+            path: Some("sisho".into()),
+        })
+    );
     assert_eq!(
         manifest.submodules().collect::<Vec<_>>(),
         vec![
@@ -789,6 +892,14 @@ fn parses_submodule_entries_with_and_without_path() {
                     path: Some("sub/pkg".into()),
                 }
             ),
+            (
+                Path::new("vendor/from_up"),
+                &Submodule {
+                    git: "https://example.com/sisho.git".into(),
+                    rev: "v1".into(),
+                    path: Some("crates/sisho".into()),
+                }
+            ),
         ]
     );
 }
@@ -797,24 +908,24 @@ fn parses_submodule_entries_with_and_without_path() {
 fn rejects_executable_and_symlink_on_submodule_entry() {
     for flag in ["true", "false"] {
         let err = Manifest::parse(&format!(
-            "{KIND}\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", submodule: true), executable: {flag})\n"
+            "{KIND}\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\"), submodule: true, executable: {flag})\n"
         ))
         .unwrap_err();
         assert!(
             err.to_string()
-                .contains("catasto.git(..., submodule: true) cannot declare executable"),
+                .contains("submodule entry (`submodule: true`) cannot declare `executable`"),
             "{err}"
         );
     }
 
     for sym in ["follow", "keep"] {
         let err = Manifest::parse(&format!(
-            "{KIND}\"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", path: \"a\", symlink: {sym}, submodule: true)\n"
+            "{KIND}\"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\", path: \"a\"), symlink: {sym}, submodule: true)\n"
         ))
         .unwrap_err();
         assert!(
             err.to_string()
-                .contains("catasto.git(..., submodule: true) cannot specify `symlink`"),
+                .contains("submodule entry (`submodule: true`) cannot specify `symlink`"),
             "{err}"
         );
     }
@@ -824,7 +935,7 @@ fn rejects_executable_and_symlink_on_submodule_entry() {
 fn rejects_entries_inside_a_declared_submodule() {
     let err = Manifest::parse(&format!(
         "{KIND}\
-         \"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", submodule: true)\n\
+         \"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\"), submodule: true)\n\
          \"tools/sisho/README.md\": catasto.local(\"../README.md\")\n"
     ))
     .unwrap_err();
@@ -837,7 +948,7 @@ fn rejects_entries_inside_a_declared_submodule() {
     let err = Manifest::parse(&format!(
         "{KIND}\
          \"tools/sisho/sub/a\": catasto.local(\"../a\")\n\
-         \"./tools/sisho\": catasto.git(\"https://example.com/sisho.git\", submodule: true)\n"
+         \"./tools/sisho\": (catasto.git(\"https://example.com/sisho.git\"), submodule: true)\n"
     ))
     .unwrap_err();
     assert!(
@@ -849,7 +960,7 @@ fn rejects_entries_inside_a_declared_submodule() {
     assert!(
         Manifest::parse(&format!(
             "{KIND}\
-             \"tools/sisho\": catasto.git(\"https://example.com/sisho.git\", submodule: true)\n\
+             \"tools/sisho\": (catasto.git(\"https://example.com/sisho.git\"), submodule: true)\n\
              \"tools/sisho-extra/file\": catasto.local(\"../a\")\n"
         ))
         .is_ok()

@@ -13,7 +13,7 @@ use tomet_semantics::Constructed;
 
 use super::upstream::Header;
 use super::zone::Zone;
-use super::{MANIFEST_FILE, is_inside_workspace, reject_misnamed, vocabulary};
+use super::{MANIFEST_FILE, is_inside_workspace, is_relative_inside, reject_misnamed, vocabulary};
 
 /// The set of files and directory zones catasto manages in a workspace.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -24,7 +24,16 @@ pub struct Manifest {
     pub zones: Vec<Zone>,
 }
 
-/// A Git repository cloned as a submodule worktree in the workspace (`catasto.git(..., submodule: true)`).
+/// The `catasto.upstream(name, path: ...)` reference an entry was declared with, before expansion into [`Source::Git`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UpstreamRef {
+    /// Name of the upstream declared in `::upstream(...)`.
+    pub name: String,
+    /// Optional path relative to the upstream's `path` (or repository root).
+    pub path: Option<PathBuf>,
+}
+
+/// A Git repository cloned as a submodule worktree in the workspace (`(..., submodule: true)`).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Submodule {
     /// An `https://` URL, or a local path relative to the workspace root.
@@ -45,6 +54,8 @@ pub enum ManagedKind {
         /// `Some(false)` not, whatever the source says. `None` leaves it to the source (a git file's `100755`
         /// or not; a local file is never executable).
         executable: Option<bool>,
+        /// How symlinks in a git source are handled (`Follow` by default, or `Keep`).
+        symlink: Symlink,
     },
     Submodule(Submodule),
 }
@@ -54,7 +65,9 @@ pub enum ManagedKind {
 pub struct Managed {
     /// Location inside the workspace, relative to the root.
     pub path: PathBuf,
-    /// File/directory source (with optional executable mode) or Git submodule.
+    /// Present when the entry was declared via `catasto.upstream(name, path: ...)`.
+    pub upstream: Option<UpstreamRef>,
+    /// File/directory source (with optional placement options) or Git submodule.
     pub kind: ManagedKind,
 }
 
@@ -77,6 +90,11 @@ impl Managed {
         }
     }
 
+    /// Returns the upstream reference if this entry was declared via `catasto.upstream(...)`.
+    pub fn upstream(&self) -> Option<&UpstreamRef> {
+        self.upstream.as_ref()
+    }
+
     /// Returns the submodule spec if this entry is a submodule.
     pub fn submodule(&self) -> Option<&Submodule> {
         match &self.kind {
@@ -89,6 +107,14 @@ impl Managed {
     pub fn executable(&self) -> Option<bool> {
         match &self.kind {
             ManagedKind::File { executable, .. } => *executable,
+            ManagedKind::Submodule(_) => None,
+        }
+    }
+
+    /// Returns the symlink handling mode if this entry is a file or directory.
+    pub fn symlink(&self) -> Option<Symlink> {
+        match &self.kind {
+            ManagedKind::File { symlink, .. } => Some(*symlink),
             ManagedKind::Submodule(_) => None,
         }
     }
@@ -149,8 +175,6 @@ pub enum Source {
         rev: String,
         /// Location of the file or directory inside the repository (`None` for repository root).
         path: Option<PathBuf>,
-        /// How symlinks in the git source are handled (`Follow` by default, or `Keep`).
-        symlink: Symlink,
     },
 }
 
@@ -173,57 +197,6 @@ struct GitSource {
     rev: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     path: Option<PathBuf>,
-    /// How symlinks are handled (`follow` by default, or `keep`).
-    #[serde(default, deserialize_with = "deserialize_symlink")]
-    symlink: Symlink,
-}
-
-fn deserialize_symlink<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Symlink, D::Error> {
-    struct SymlinkVisitor;
-
-    impl Visitor<'_> for SymlinkVisitor {
-        type Value = Symlink;
-
-        fn expecting(&self, f: &mut fmt::Formatter) -> fmt::Result {
-            f.write_str("`keep`")
-        }
-
-        fn visit_str<E: de::Error>(self, v: &str) -> Result<Symlink, E> {
-            if v == "keep" {
-                Ok(Symlink::Keep)
-            } else {
-                Err(E::custom(
-                    "invalid symlink option: `keep` is the only supported value",
-                ))
-            }
-        }
-
-        fn visit_bool<E: de::Error>(self, _: bool) -> Result<Symlink, E> {
-            Err(E::custom(
-                "invalid symlink option: `keep` is the only supported value",
-            ))
-        }
-
-        fn visit_i64<E: de::Error>(self, _: i64) -> Result<Symlink, E> {
-            Err(E::custom(
-                "invalid symlink option: `keep` is the only supported value",
-            ))
-        }
-
-        fn visit_u64<E: de::Error>(self, _: u64) -> Result<Symlink, E> {
-            Err(E::custom(
-                "invalid symlink option: `keep` is the only supported value",
-            ))
-        }
-
-        fn visit_f64<E: de::Error>(self, _: f64) -> Result<Symlink, E> {
-            Err(E::custom(
-                "invalid symlink option: `keep` is the only supported value",
-            ))
-        }
-    }
-
-    deserializer.deserialize_any(SymlinkVisitor)
 }
 
 /// Reads a `rev`, which must be a string. Numeric revisions must be quoted.
@@ -271,27 +244,17 @@ pub(crate) fn check_git(git: &str, rev: &str) -> Result<(), String> {
 
 impl GitSource {
     fn into_source(self) -> Result<Source, String> {
-        let GitSource {
-            git,
-            rev,
-            path,
-            symlink,
-        } = self;
+        let GitSource { git, rev, path } = self;
         check_git(&git, &rev)?;
         if let Some(ref p) = path
-            && !is_inside_workspace(p)
+            && !is_relative_inside(p)
         {
             return Err(format!(
                 "git path must be relative and stay inside the repository: {}",
                 p.display()
             ));
         }
-        Ok(Source::Git {
-            git,
-            rev,
-            path,
-            symlink,
-        })
+        Ok(Source::Git { git, rev, path })
     }
 }
 
@@ -332,26 +295,14 @@ impl Serialize for Source {
             rev: &'a str,
             #[serde(skip_serializing_if = "Option::is_none")]
             path: Option<&'a Path>,
-            #[serde(skip_serializing_if = "is_follow")]
-            symlink: Symlink,
-        }
-
-        fn is_follow(symlink: &Symlink) -> bool {
-            matches!(symlink, Symlink::Follow)
         }
 
         match self {
             Source::Path(path) => path.serialize(serializer),
-            Source::Git {
-                git,
-                rev,
-                path,
-                symlink,
-            } => GitSourceRef {
+            Source::Git { git, rev, path } => GitSourceRef {
                 git,
                 rev,
                 path: path.as_deref(),
-                symlink: *symlink,
             }
             .serialize(serializer),
         }
@@ -377,23 +328,54 @@ pub(super) fn require_rev(constructed: &Constructed, context: &str) -> Result<St
     }
 }
 
-fn parse_symlink(constructed: &Constructed, context: &str) -> Result<Symlink> {
-    match constructed.get("symlink") {
-        None => Ok(Symlink::Follow),
-        Some(Value::Scalar(Scalar::Text(s))) => match s.as_str() {
+/// Parses a `catasto.git(url, rev:, path:)` constructor call identically in `::upstream` and in manifest entries.
+pub(super) fn parse_git_call(
+    constructed: &Constructed,
+    context: &str,
+) -> Result<(String, String, Option<PathBuf>)> {
+    let git = require_text(constructed, "url", context)?;
+    let rev = require_rev(constructed, context)?;
+    check_git(&git, &rev).map_err(|e| anyhow!("{context}: {e}"))?;
+    let path = match constructed.get("path") {
+        None | Some(Value::Scalar(Scalar::None)) => None,
+        Some(Value::Scalar(Scalar::Text(p))) => {
+            let pb = PathBuf::from(p);
+            if !is_relative_inside(&pb) {
+                bail!(
+                    "{context}: git path must be relative and stay inside the repository: {}",
+                    pb.display()
+                );
+            }
+            Some(pb)
+        }
+        Some(_) => bail!("{context}: `path` must be a string"),
+    };
+    Ok((git, rev, path))
+}
+
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+struct EntryOptions {
+    executable: Option<bool>,
+    symlink: Option<Symlink>,
+    submodule: Option<bool>,
+}
+
+fn parse_symlink_value(val: &Value, context: &str) -> Result<Symlink> {
+    match val {
+        Value::Scalar(Scalar::Text(s)) => match s.as_str() {
             "follow" => Ok(Symlink::Follow),
             "keep" => Ok(Symlink::Keep),
             other => {
                 bail!("{context}: invalid symlink option `{other}`; expected `follow` or `keep`")
             }
         },
-        Some(_) => bail!("{context}: invalid symlink option; expected `follow` or `keep`"),
+        _ => bail!("{context}: invalid symlink option; expected `follow` or `keep`"),
     }
 }
 
-fn split_entry_value<'a>(path: &str, value: &'a Value) -> Result<(&'a Value, Option<bool>)> {
+fn split_entry_value<'a>(path: &str, value: &'a Value) -> Result<(&'a Value, EntryOptions)> {
     match value {
-        Value::Call(_, _) => Ok((value, None)),
+        Value::Call(_, _) => Ok((value, EntryOptions::default())),
         Value::Tuple(tuple) => {
             let mut unnamed = tuple.unnamed();
             let Some(call) = unnamed.next() else {
@@ -409,30 +391,76 @@ fn split_entry_value<'a>(path: &str, value: &'a Value) -> Result<(&'a Value, Opt
                     "{path}: first item of entry tuple must be a constructor call (e.g. `catasto.local(\"...\")`)"
                 );
             }
-            let mut executable = None;
+            let mut options = EntryOptions::default();
             for (key, val) in tuple.named() {
-                if key != "executable" {
-                    bail!("{path}: unknown entry field `{key}`; only `executable` is allowed");
+                match key {
+                    "executable" => {
+                        let Value::Scalar(Scalar::Bool(b)) = val else {
+                            bail!("{path}: `executable` must be a boolean (`true` or `false`)");
+                        };
+                        options.executable = Some(*b);
+                    }
+                    "symlink" => {
+                        options.symlink = Some(parse_symlink_value(val, path)?);
+                    }
+                    "submodule" => {
+                        let Value::Scalar(Scalar::Bool(b)) = val else {
+                            bail!("{path}: `submodule` must be a boolean (`true` or `false`)");
+                        };
+                        options.submodule = Some(*b);
+                    }
+                    _ => {
+                        bail!(
+                            "{path}: unknown entry field `{key}`; expected `executable`, `symlink`, or `submodule`"
+                        );
+                    }
                 }
-                let Value::Scalar(Scalar::Bool(b)) = val else {
-                    bail!("{path}: `executable` must be a boolean (`true` or `false`)");
-                };
-                executable = Some(*b);
             }
-            Ok((call, executable))
+            Ok((call, options))
         }
         _ => bail!(
-            "{path}: entry must be a constructor call (e.g. `catasto.local(\"...\")`) or `(call, executable: bool)`"
+            "{path}: entry must be a constructor call (e.g. `catasto.local(\"...\")`) or `(call, executable: ..., symlink: ..., submodule: ...)`"
         ),
     }
 }
 
-fn parse_entry_kind(
+fn resolve_git_entry_kind(
+    path: &str,
+    git: String,
+    rev: String,
+    repo_path: Option<PathBuf>,
+    options: EntryOptions,
+) -> Result<ManagedKind> {
+    if options.submodule == Some(true) {
+        if options.executable.is_some() {
+            bail!("{path}: submodule entry (`submodule: true`) cannot declare `executable`");
+        }
+        if options.symlink.is_some() {
+            bail!("{path}: submodule entry (`submodule: true`) cannot specify `symlink`");
+        }
+        return Ok(ManagedKind::Submodule(Submodule {
+            git,
+            rev,
+            path: repo_path,
+        }));
+    }
+    Ok(ManagedKind::File {
+        source: Source::Git {
+            git,
+            rev,
+            path: repo_path,
+        },
+        executable: options.executable,
+        symlink: options.symlink.unwrap_or(Symlink::Follow),
+    })
+}
+
+fn parse_entry(
     path: &str,
     call_value: &Value,
-    executable: Option<bool>,
+    options: EntryOptions,
     header: &Header,
-) -> Result<ManagedKind> {
+) -> Result<(ManagedKind, Option<UpstreamRef>)> {
     if !header.has_kind {
         bail!(
             "`catasto` constructors require `::kind(catasto, version: \"1.0.0\")` at the top of the manifest"
@@ -442,69 +470,31 @@ fn parse_entry_kind(
         .read_call(call_value)
         .map_err(|e| anyhow!("{path}: {e}"))?;
 
-    let source = match constructed.name.as_str() {
+    match constructed.name.as_str() {
         "local" => {
+            if options.symlink.is_some() {
+                bail!("{path}: `catasto.local` cannot specify `symlink`");
+            }
+            if options.submodule.is_some() {
+                bail!("{path}: `catasto.local` cannot specify `submodule`");
+            }
             let local_path = require_text(&constructed, "path", path)?;
             if local_path.is_empty() {
                 bail!("{path}: a source path must not be empty");
             }
-            Source::Path(local_path.into())
+            Ok((
+                ManagedKind::File {
+                    source: Source::Path(local_path.into()),
+                    executable: options.executable,
+                    symlink: Symlink::Follow,
+                },
+                None,
+            ))
         }
         "git" => {
-            if let Value::Call(_, raw_args) = call_value
-                && raw_args.contains_key("root")
-            {
-                bail!(
-                    "{path}: `catasto.git` in a manifest entry cannot specify `root`; declare an upstream in `::upstream(...)` or include it in `path`"
-                );
-            }
-            let git = require_text(&constructed, "url", path)?;
-            let rev = require_rev(&constructed, path)?;
-            check_git(&git, &rev).map_err(|e| anyhow!("{path}: {e}"))?;
-            let entry_path = match constructed.get("path") {
-                None | Some(Value::Scalar(Scalar::None)) => None,
-                Some(Value::Scalar(Scalar::Text(p))) => {
-                    let pb = PathBuf::from(p);
-                    if !is_inside_workspace(&pb) {
-                        bail!(
-                            "{path}: git path must be relative and stay inside the repository: {}",
-                            pb.display()
-                        );
-                    }
-                    Some(pb)
-                }
-                Some(_) => bail!("{path}: `path` must be a string"),
-            };
-            let is_submodule = match constructed.get("submodule") {
-                None => false,
-                Some(Value::Scalar(Scalar::Bool(b))) => *b,
-                Some(_) => bail!("{path}: `submodule` must be a boolean (`true` or `false`)"),
-            };
-            if is_submodule {
-                if executable.is_some() {
-                    bail!("{path}: catasto.git(..., submodule: true) cannot declare executable");
-                }
-                if let Value::Call(_, raw_args) = call_value
-                    && raw_args.contains_key("symlink")
-                {
-                    bail!("{path}: catasto.git(..., submodule: true) cannot specify `symlink`");
-                }
-                return Ok(ManagedKind::Submodule(Submodule {
-                    git,
-                    rev,
-                    path: entry_path,
-                }));
-            }
-            let symlink = parse_symlink(&constructed, path)?;
-            if symlink == Symlink::Keep && entry_path.is_none() {
-                bail!("{path}: `symlink: keep` requires `path`");
-            }
-            Source::Git {
-                git,
-                rev,
-                path: entry_path,
-                symlink,
-            }
+            let (git, rev, entry_path) = parse_git_call(&constructed, path)?;
+            let kind = resolve_git_entry_kind(path, git, rev, entry_path, options)?;
+            Ok((kind, None))
         }
         "upstream" => {
             let name = require_text(&constructed, "upstream", path)?;
@@ -512,30 +502,41 @@ fn parse_entry_kind(
                 .upstreams
                 .get(&name)
                 .map_err(|e| anyhow!("{path}: {e}"))?;
-            let entry_path_str = require_text(&constructed, "path", path)?;
-            let entry_path = PathBuf::from(&entry_path_str);
-            if !is_inside_workspace(&entry_path) {
-                bail!(
-                    "{path}: upstream path must be relative and stay inside the repository: {}",
-                    entry_path.display()
-                );
-            }
-            let full_path = match &upstream.root {
-                Some(root) => root.join(&entry_path),
-                None => entry_path,
+            let entry_path = match constructed.get("path") {
+                None | Some(Value::Scalar(Scalar::None)) => None,
+                Some(Value::Scalar(Scalar::Text(p))) => {
+                    let pb = PathBuf::from(p);
+                    if !is_relative_inside(&pb) {
+                        bail!(
+                            "{path}: upstream path must be relative and stay inside the repository: {}",
+                            pb.display()
+                        );
+                    }
+                    Some(pb)
+                }
+                Some(_) => bail!("{path}: `path` must be a string"),
             };
-            let symlink = parse_symlink(&constructed, path)?;
-            Source::Git {
-                git: upstream.git.clone(),
-                rev: upstream.rev.clone(),
-                path: Some(full_path),
-                symlink,
-            }
+            let full_path = match (&upstream.path, &entry_path) {
+                (Some(base), Some(rel)) => Some(base.join(rel)),
+                (Some(base), None) => Some(base.clone()),
+                (None, Some(rel)) => Some(rel.clone()),
+                (None, None) => None,
+            };
+            let upstream_ref = UpstreamRef {
+                name,
+                path: entry_path,
+            };
+            let kind = resolve_git_entry_kind(
+                path,
+                upstream.git.clone(),
+                upstream.rev.clone(),
+                full_path,
+                options,
+            )?;
+            Ok((kind, Some(upstream_ref)))
         }
         other => bail!("{path}: unknown constructor `catasto.{other}`"),
-    };
-
-    Ok(ManagedKind::File { source, executable })
+    }
 }
 
 impl Manifest {
@@ -568,10 +569,11 @@ impl Manifest {
             let Some(path) = entry.name() else {
                 bail!("manifest entry must have a workspace path key");
             };
-            let (call_value, executable) = split_entry_value(path, entry.value())?;
-            let kind = parse_entry_kind(path, call_value, executable, &header)?;
+            let (call_value, options) = split_entry_value(path, entry.value())?;
+            let (kind, upstream) = parse_entry(path, call_value, options, &header)?;
             managed.push(Managed {
                 path: path.into(),
+                upstream,
                 kind,
             });
         }
