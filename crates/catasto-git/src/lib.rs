@@ -15,9 +15,9 @@ mod tree;
 mod url;
 
 pub use cmd::{
-    apply_sparse_checkout, check_sparse_checkout, checkout_commit, checkout_rev, clone_submodule,
-    current_branch, fetch_worktree, head_commit, is_sparse_checkout, remote_url,
-    sparse_checkout_list, update_submodule,
+    VisibleEntry, VisibleEntryKind, apply_sparse_checkout, check_sparse_checkout, checkout_commit,
+    checkout_rev, clone_submodule, current_branch, fetch_worktree, head_commit, is_sparse_checkout,
+    remote_url, sparse_checkout_list, update_submodule, visible_entries,
 };
 pub use url::{UrlKind, classify, resolve_url};
 

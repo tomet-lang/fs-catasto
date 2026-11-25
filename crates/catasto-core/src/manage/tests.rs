@@ -1,5 +1,5 @@
 use super::*;
-use crate::{AlreadyDeclared, DeclaredKind, sync_with};
+use crate::{AlreadyDeclared, DeclaredKind, check, sync_with};
 use catasto_git::testing::TestRepo;
 
 struct Fixture {

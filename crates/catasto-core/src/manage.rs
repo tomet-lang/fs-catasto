@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 
-use crate::check::{ViolationKind, check};
+use crate::check::ViolationKind;
 pub use crate::edit::AddOutcome;
 use crate::edit::{self, SourceText, UpstreamText};
 use crate::lockfile::{LOCK_FILE, Lock};
@@ -197,15 +197,13 @@ pub struct Row {
 pub fn list(root: &Path) -> Result<Vec<Row>> {
     let manifest = Manifest::load(root)?;
     let lock = Lock::load(root)?;
-    let report = check(root)?;
+    let violations = crate::check::check_managed(root, &manifest, &lock)?;
 
     let mut violations_by_path = HashMap::new();
-    for violation in &report.violations {
-        if !violation.kind.is_zone() {
-            violations_by_path
-                .entry(&violation.path)
-                .or_insert_with(|| violation.kind.clone());
-        }
+    for violation in &violations {
+        violations_by_path
+            .entry(&violation.path)
+            .or_insert_with(|| violation.kind.clone());
     }
 
     Ok(manifest

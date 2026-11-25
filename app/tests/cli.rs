@@ -364,6 +364,12 @@ fn e2e_git_symlink_keep() {
 fn check_evaluates_zone_rules_for_human_and_json_output() {
     let tmp = tempfile::tempdir().unwrap();
     let ws = tmp.path();
+    let init = Command::new("git")
+        .current_dir(ws)
+        .args(["init", "--quiet", "-b", "main"])
+        .output()
+        .unwrap();
+    assert!(init.status.success());
 
     std::fs::write(
         ws.join("catasto.ctmt"),

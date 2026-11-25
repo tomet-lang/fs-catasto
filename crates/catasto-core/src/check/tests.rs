@@ -542,10 +542,15 @@ fn check_directory_detects_modified_added_deleted_and_exec_drift() {
     assert_eq!(rep.violations[0].kind, ViolationKind::Missing);
 }
 
+fn init_git(dir: &Path) {
+    catasto_git::testing::run_git(dir, &["init", "--quiet", "-b", "main"]);
+}
+
 #[test]
 fn zone_clean_workspace_skips_git_and_respects_ignore() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    init_git(root);
 
     std::fs::write(
         root.join("catasto.ctmt"),
@@ -568,8 +573,6 @@ fn zone_clean_workspace_skips_git_and_respects_ignore() {
     )
     .unwrap();
 
-    std::fs::create_dir_all(root.join(".git/objects")).unwrap();
-    std::fs::write(root.join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     std::fs::write(root.join("Cargo.toml"), "[workspace]\n").unwrap();
     std::fs::create_dir_all(root.join("target/debug")).unwrap();
     std::fs::write(root.join("target/debug/bad.bak"), "ignored").unwrap();
@@ -594,6 +597,7 @@ fn zone_clean_workspace_skips_git_and_respects_ignore() {
 fn zone_detects_require_allow_and_deny_violations() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    init_git(root);
 
     std::fs::write(
         root.join("catasto.ctmt"),
@@ -665,6 +669,7 @@ fn zone_detects_require_allow_and_deny_violations() {
 fn zone_empty_allow_and_ignored_required_entry() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    init_git(root);
 
     std::fs::write(
         root.join("catasto.ctmt"),
@@ -718,6 +723,7 @@ fn zone_empty_allow_and_ignored_required_entry() {
 fn zone_multiple_matching_zones_and_zero_matching_dirs() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    init_git(root);
 
     std::fs::write(
         root.join("catasto.ctmt"),
@@ -754,6 +760,7 @@ fn zone_multiple_matching_zones_and_zero_matching_dirs() {
 fn zone_does_not_recurse_into_symlinked_directories() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    init_git(root);
     let external = tempfile::tempdir().unwrap();
     std::fs::write(external.path().join("bad.bak"), "").unwrap();
 
@@ -775,6 +782,7 @@ fn zone_violations_do_not_corrupt_managed_list_status() {
     let vault = tmp.path().join("vault");
     let src_dir = tmp.path().join("src");
     std::fs::create_dir_all(vault.join("notes")).unwrap();
+    init_git(&vault);
     std::fs::create_dir_all(&src_dir).unwrap();
     std::fs::write(src_dir.join("a.txt"), "hello").unwrap();
     std::fs::write(vault.join("notes/a.txt"), "hello").unwrap();
@@ -803,6 +811,7 @@ fn zone_violations_do_not_corrupt_managed_list_status() {
 fn zone_recursive_propagates_without_double_evaluation() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    init_git(root);
 
     std::fs::write(
         root.join("catasto.ctmt"),
@@ -863,6 +872,7 @@ fn zone_recursive_propagates_without_double_evaluation() {
 fn zone_files_and_dirs_apply_by_entry_kind() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    init_git(root);
 
     std::fs::write(
         root.join("catasto.ctmt"),
@@ -890,8 +900,11 @@ fn zone_files_and_dirs_apply_by_entry_kind() {
     // A directory named `index.md` does NOT satisfy `files.require`, and a file named `assets`
     // does NOT satisfy `dirs.require`.
     std::fs::create_dir_all(docs.join("index.md")).unwrap();
+    std::fs::write(docs.join("index.md/.keep"), "").unwrap();
     std::fs::create_dir_all(docs.join("tmp_dir")).unwrap();
+    std::fs::write(docs.join("tmp_dir/.keep"), "").unwrap();
     std::fs::create_dir_all(docs.join("BadDir")).unwrap();
+    std::fs::write(docs.join("BadDir/.keep"), "").unwrap();
     std::fs::write(docs.join("assets"), "").unwrap();
     std::fs::write(docs.join("draft.md"), "").unwrap();
     std::fs::write(docs.join("secret"), "").unwrap();
@@ -974,6 +987,7 @@ fn zone_files_and_dirs_apply_by_entry_kind() {
 fn zone_ignore_stops_recursive_inheritance_per_zone() {
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
+    init_git(root);
 
     std::fs::write(
         root.join("catasto.ctmt"),
@@ -1032,4 +1046,212 @@ fn zone_ignore_stops_recursive_inheritance_per_zone() {
             },
         }]
     );
+}
+
+#[test]
+fn zone_gitignored_files_and_empty_dirs_do_not_violate_while_untracked_do() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    init_git(root);
+
+    std::fs::write(
+        root.join(".gitignore"),
+        "*.swp\n.DS_Store\ntarget/\n.jj/\n",
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::kind(catasto, version: \"1.0.0\")
+::zone(
+  \".\": (
+    allow: (\".gitignore\", \"catasto.ctmt\", \"crates\")
+  )
+  \"crates/<?kebab>\": (
+    require: (\"Cargo.toml\", \"src\")
+    allow: (\"Cargo.toml\", \"src\")
+  )
+  \"crates/<?kebab>/src\": (
+    files: (allow: (\"<?snake>.rs\"))
+  )
+)
+",
+    )
+    .unwrap();
+
+    // Valid crate
+    std::fs::create_dir_all(root.join("crates/my-crate/src")).unwrap();
+    std::fs::write(root.join("crates/my-crate/Cargo.toml"), "").unwrap();
+    std::fs::write(root.join("crates/my-crate/src/lib.rs"), "").unwrap();
+
+    // 1. `.gitignore`-ignored files inside restricted directories must NOT violate
+    std::fs::write(root.join("crates/my-crate/src/lib.rs.swp"), "").unwrap();
+    std::fs::write(root.join("crates/my-crate/.DS_Store"), "").unwrap();
+    std::fs::create_dir_all(root.join("target/debug")).unwrap();
+    std::fs::write(root.join("target/debug/bin"), "").unwrap();
+    std::fs::create_dir_all(root.join(".jj/repo")).unwrap();
+    std::fs::write(root.join(".jj/repo/store"), "").unwrap();
+
+    // 2. Empty directories (and directories containing only gitignored files) must NOT violate
+    std::fs::create_dir_all(root.join("crates/empty-crate")).unwrap();
+    std::fs::create_dir_all(root.join("crates/ignored-only-crate")).unwrap();
+    std::fs::write(root.join("crates/ignored-only-crate/.DS_Store"), "").unwrap();
+
+    let rep = check(root).unwrap();
+    assert!(rep.is_ok(), "unexpected violations: {:?}", rep.violations);
+
+    // 3. Untracked and non-ignored file DOES violate
+    std::fs::write(root.join("crates/my-crate/src/NotSnake.rs"), "").unwrap();
+    let rep = check(root).unwrap();
+    assert_eq!(
+        rep.violations,
+        vec![Violation {
+            path: PathBuf::from("crates/my-crate/src/NotSnake.rs"),
+            kind: ViolationKind::ZoneDisallowed {
+                zone: "crates/<?kebab>/src".into(),
+            },
+        }]
+    );
+}
+
+#[test]
+fn zone_excludes_tracked_files_deleted_from_working_tree() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    init_git(root);
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::zone(
+  \"src\": (
+    require: (\"lib.rs\")
+    allow: (\"<?snake>.rs\")
+  )
+)
+",
+    )
+    .unwrap();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    std::fs::write(root.join("src/lib.rs"), "").unwrap();
+    std::fs::write(root.join("src/BadTracked.rs"), "").unwrap();
+
+    catasto_git::testing::run_git(root, &["add", "--all"]);
+    catasto_git::testing::run_git(root, &["commit", "--quiet", "-m", "initial"]);
+
+    // While present on disk, `BadTracked.rs` violates `allow`.
+    let rep = check(root).unwrap();
+    assert_eq!(
+        rep.violations,
+        vec![Violation {
+            path: PathBuf::from("src/BadTracked.rs"),
+            kind: ViolationKind::ZoneDisallowed { zone: "src".into() },
+        }]
+    );
+
+    // Removing `BadTracked.rs` from the working tree (without `git rm`) excludes it from zone checks.
+    std::fs::remove_file(root.join("src/BadTracked.rs")).unwrap();
+    let rep = check(root).unwrap();
+    assert!(rep.is_ok(), "unexpected violations: {:?}", rep.violations);
+
+    // Removing the required `lib.rs` from the working tree ( leaving `src` with no git-visible files )
+    // means `src` itself no longer exists as a git-visible directory; if another file keeps `src`
+    // alive, `lib.rs` is reported missing.
+    std::fs::write(root.join("src/helper.rs"), "").unwrap();
+    std::fs::remove_file(root.join("src/lib.rs")).unwrap();
+    let rep = check(root).unwrap();
+    assert_eq!(
+        rep.violations,
+        vec![Violation {
+            path: PathBuf::from("src"),
+            kind: ViolationKind::ZoneMissingRequired {
+                zone: "src".into(),
+                pattern: "lib.rs".into(),
+            },
+        }]
+    );
+}
+
+#[test]
+fn zone_classifies_submodules_as_dirs_without_descending_into_them() {
+    let sub_repo = catasto_git::testing::TestRepo::new();
+    sub_repo.commit("BadInnerFile.BAK", "inside submodule");
+
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    init_git(root);
+
+    std::fs::write(
+        root.join("catasto.ctmt"),
+        "\
+::zone(
+  \"deps\": (
+    recursive: true
+    files: (allow: (\"<?snake>.rs\"))
+    dirs: (allow: (\"<?kebab>\"))
+  )
+)
+",
+    )
+    .unwrap();
+
+    std::fs::create_dir_all(root.join("deps")).unwrap();
+    std::fs::write(root.join("deps/mod.rs"), "").unwrap();
+
+    // 1. Tracked submodule (160000) named in kebab-case: classified as a directory (`dirs.allow`),
+    // does NOT violate `files.allow` (`<?snake>.rs`), and its inner `BadInnerFile.BAK` is NOT descended into.
+    catasto_git::testing::run_git(
+        root,
+        &[
+            "-c",
+            "protocol.file.allow=always",
+            "submodule",
+            "add",
+            "--quiet",
+            &sub_repo.url(),
+            "deps/tracked-sub",
+        ],
+    );
+
+    // 2. Untracked nested git repository (trailing `/` in `ls-files --others`) named in kebab-case:
+    // also classified as a directory and not descended into.
+    catasto_git::clone_submodule(
+        &sub_repo.url(),
+        &root.join("deps/untracked-sub"),
+        "main",
+        None,
+        None,
+    )
+    .unwrap();
+
+    let rep = check(root).unwrap();
+    assert!(rep.is_ok(), "unexpected violations: {:?}", rep.violations);
+}
+
+#[test]
+fn zone_in_non_git_workspace_errors_on_check_but_list_succeeds() {
+    let tmp = tempfile::tempdir().unwrap();
+    let vault = tmp.path().join("vault");
+    let src_dir = tmp.path().join("src");
+    std::fs::create_dir_all(vault.join("notes")).unwrap();
+    std::fs::create_dir_all(&src_dir).unwrap();
+    std::fs::write(src_dir.join("a.txt"), "hello").unwrap();
+    std::fs::write(vault.join("notes/a.txt"), "hello").unwrap();
+    std::fs::write(
+        vault.join("catasto.ctmt"),
+        "\
+::kind(catasto, version: \"1.0.0\")
+::zone(\"notes\": (require: \"a.txt\"))
+
+\"notes/a.txt\": catasto.local(\"../src/a.txt\")
+",
+    )
+    .unwrap();
+    lock(&vault).unwrap();
+
+    // `vault` is not a git repository: `check` refuses with an error, while `list` does not run zone checks.
+    assert!(check(&vault).is_err());
+    let rows = crate::manage::list(&vault).unwrap();
+    assert_eq!(rows.len(), 1);
+    assert_eq!(rows[0].state, None);
 }

@@ -132,11 +132,25 @@ pub fn check(root: &Path) -> Result<CheckReport> {
     let manifest = Manifest::load(root)?;
     let lock = Lock::load(root)?;
 
+    let mut violations = check_managed(root, &manifest, &lock)?;
+    violations.extend(zone::check_zones(root, &manifest.zones)?);
+
+    Ok(CheckReport {
+        root: root.to_path_buf(),
+        violations,
+    })
+}
+
+pub(crate) fn check_managed(
+    root: &Path,
+    manifest: &Manifest,
+    lock: &Lock,
+) -> Result<Vec<Violation>> {
     let entry_violations: Result<Vec<Vec<Violation>>> = manifest
         .managed
         .par_iter()
         .map(|managed| {
-            let kinds = check_entry(root, &lock, managed)?;
+            let kinds = check_entry(root, lock, managed)?;
             let v = kinds
                 .into_iter()
                 .map(|kind| Violation {
@@ -177,7 +191,7 @@ pub fn check(root: &Path) -> Result<CheckReport> {
         }
     }
 
-    if let Some(drift) = crate::submodule::check_gitmodules(root, &manifest, &lock)? {
+    if let Some(drift) = crate::submodule::check_gitmodules(root, manifest, lock)? {
         let kind = match drift {
             crate::submodule::GitmodulesDrift::Missing => ViolationKind::Missing,
             crate::submodule::GitmodulesDrift::Modified => ViolationKind::Modified,
@@ -189,12 +203,7 @@ pub fn check(root: &Path) -> Result<CheckReport> {
         });
     }
 
-    violations.extend(zone::check_zones(root, &manifest.zones)?);
-
-    Ok(CheckReport {
-        root: root.to_path_buf(),
-        violations,
-    })
+    Ok(violations)
 }
 
 fn check_entry(root: &Path, lock: &Lock, managed: &Managed) -> Result<Vec<ViolationKind>> {

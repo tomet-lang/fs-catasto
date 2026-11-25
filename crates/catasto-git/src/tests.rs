@@ -1078,3 +1078,105 @@ fn update_submodule_advances_rev_and_updates_sparse_checkout() {
         "v1"
     );
 }
+
+#[test]
+fn visible_entries_tracks_files_symlinks_submodules_and_excludes_ignored_and_deleted() {
+    let sub_upstream = TestRepo::new();
+    sub_upstream.commit("sub.txt", "sub");
+
+    let repo = TestRepo::new();
+    let root = PathBuf::from(repo.url());
+
+    std::fs::write(root.join(".gitignore"), "*.swp\nignored_dir/\n").unwrap();
+    repo.commit(".gitignore", "*.swp\nignored_dir/\n");
+    repo.commit("tracked.txt", "keep");
+    repo.commit("deleted.txt", "remove me");
+    repo.commit("special/space and \"quote\".txt", "special");
+    #[cfg(unix)]
+    repo.commit_symlink("tracked_link", "tracked.txt");
+
+    // Tracked submodule (160000)
+    repo.git(&[
+        "-c",
+        "protocol.file.allow=always",
+        "submodule",
+        "add",
+        "--quiet",
+        &sub_upstream.url(),
+        "deps/tracked_sub",
+    ]);
+    repo.git(&["commit", "--quiet", "-m", "add submodule"]);
+
+    // Working-tree changes:
+    // 1. Delete a tracked file without staging
+    std::fs::remove_file(root.join("deleted.txt")).unwrap();
+    // 2. Untracked non-ignored file
+    std::fs::write(root.join("untracked.txt"), "new").unwrap();
+    // 3. Untracked ignored files & directory
+    std::fs::write(root.join("scratch.swp"), "ignored").unwrap();
+    std::fs::create_dir_all(root.join("ignored_dir")).unwrap();
+    std::fs::write(root.join("ignored_dir/inside.txt"), "ignored").unwrap();
+    // 4. Empty directory
+    std::fs::create_dir_all(root.join("empty_dir")).unwrap();
+    // 5. Untracked submodule / nested git repo (shows with trailing `/` in `--others`)
+    clone_submodule(
+        &sub_upstream.url(),
+        &root.join("deps/untracked_sub"),
+        "main",
+        None,
+        None,
+    )
+    .unwrap();
+    // 6. Untracked symlink
+    #[cfg(unix)]
+    std::os::unix::fs::symlink("tracked.txt", root.join("untracked_link")).unwrap();
+
+    let entries = visible_entries(&root).unwrap();
+    let expected = vec![
+        VisibleEntry {
+            path: ".gitignore".into(),
+            kind: VisibleEntryKind::File,
+        },
+        VisibleEntry {
+            path: ".gitmodules".into(),
+            kind: VisibleEntryKind::File,
+        },
+        VisibleEntry {
+            path: "deps/tracked_sub".into(),
+            kind: VisibleEntryKind::Submodule,
+        },
+        VisibleEntry {
+            path: "deps/untracked_sub".into(),
+            kind: VisibleEntryKind::Submodule,
+        },
+        VisibleEntry {
+            path: "special/space and \"quote\".txt".into(),
+            kind: VisibleEntryKind::File,
+        },
+        #[cfg(unix)]
+        VisibleEntry {
+            path: "tracked_link".into(),
+            kind: VisibleEntryKind::Symlink,
+        },
+        VisibleEntry {
+            path: "tracked.txt".into(),
+            kind: VisibleEntryKind::File,
+        },
+        #[cfg(unix)]
+        VisibleEntry {
+            path: "untracked_link".into(),
+            kind: VisibleEntryKind::Symlink,
+        },
+        VisibleEntry {
+            path: "untracked.txt".into(),
+            kind: VisibleEntryKind::File,
+        },
+    ];
+    let mut expected_sorted = expected;
+    expected_sorted.sort();
+    assert_eq!(entries, expected_sorted);
+
+    // Non-git directory fails with an error
+    let non_git = tempfile::tempdir().unwrap();
+    assert!(visible_entries(non_git.path()).is_err());
+}

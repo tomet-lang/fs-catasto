@@ -1,7 +1,28 @@
+use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
 use anyhow::{Context, Result, bail};
+
+/// Kind of a git-visible entry in a working tree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub enum VisibleEntryKind {
+    /// A regular file (`100644` or `100755`).
+    File,
+    /// A symbolic link (`120000`).
+    Symlink,
+    /// A git submodule or nested git repository (`160000` or trailing `/` in `--others`).
+    Submodule,
+}
+
+/// One git-visible entry in a working tree, relative to the queried directory.
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct VisibleEntry {
+    /// Path relative to the queried directory, separated by `/`.
+    pub path: String,
+    /// Kind of entry.
+    pub kind: VisibleEntryKind,
+}
 
 pub(crate) fn run(git_dir: Option<&Path>, args: &[&str]) -> Result<Output> {
     let mut command = Command::new("git");
@@ -324,4 +345,73 @@ pub fn update_submodule(
         }
     }
     Ok(head)
+}
+
+/// Lists all git-visible entries under `dir` (tracked entries still present in the working tree,
+/// plus untracked and non-ignored entries), sorted by path.
+pub fn visible_entries(dir: &Path) -> Result<Vec<VisibleEntry>> {
+    let deleted_output = run_worktree(dir, &["ls-files", "-z", "--deleted"])?;
+    let mut deleted = HashSet::new();
+    for item in deleted_output.stdout.split(|&b| b == 0) {
+        if item.is_empty() {
+            continue;
+        }
+        let path = std::str::from_utf8(item).context("git ls-files output is not valid UTF-8")?;
+        deleted.insert(path);
+    }
+
+    let stage_output = run_worktree(dir, &["ls-files", "-z", "--stage"])?;
+    let mut entries = BTreeMap::new();
+    for item in stage_output.stdout.split(|&b| b == 0) {
+        if item.is_empty() {
+            continue;
+        }
+        let item_str =
+            std::str::from_utf8(item).context("git ls-files output is not valid UTF-8")?;
+        let (meta, path) = item_str
+            .split_once('\t')
+            .context("invalid git ls-files --stage output: missing tab")?;
+        if deleted.contains(path) {
+            continue;
+        }
+        let mode = meta
+            .split_whitespace()
+            .next()
+            .context("missing mode in git ls-files --stage")?;
+        let kind = match mode {
+            "160000" => VisibleEntryKind::Submodule,
+            "120000" => VisibleEntryKind::Symlink,
+            _ => VisibleEntryKind::File,
+        };
+        entries.insert(path.to_owned(), kind);
+    }
+
+    let others_output =
+        run_worktree(dir, &["ls-files", "-z", "--others", "--exclude-standard"])?;
+    for item in others_output.stdout.split(|&b| b == 0) {
+        if item.is_empty() {
+            continue;
+        }
+        let raw_path =
+            std::str::from_utf8(item).context("git ls-files output is not valid UTF-8")?;
+        if let Some(sub_path) = raw_path.strip_suffix('/') {
+            if !sub_path.is_empty() {
+                entries.insert(sub_path.to_owned(), VisibleEntryKind::Submodule);
+            }
+        } else {
+            let is_symlink = std::fs::symlink_metadata(dir.join(raw_path))
+                .is_ok_and(|meta| meta.is_symlink());
+            let kind = if is_symlink {
+                VisibleEntryKind::Symlink
+            } else {
+                VisibleEntryKind::File
+            };
+            entries.insert(raw_path.to_owned(), kind);
+        }
+    }
+
+    Ok(entries
+        .into_iter()
+        .map(|(path, kind)| VisibleEntry { path, kind })
+        .collect())
 }

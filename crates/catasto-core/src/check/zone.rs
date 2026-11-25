@@ -1,68 +1,108 @@
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use anyhow::{Context, Result};
+use anyhow::Result;
+use catasto_git::{VisibleEntry, VisibleEntryKind};
 
 use super::{Violation, ViolationKind};
 use crate::manifest::{EntryRules, Zone};
 
 struct ChildEntry {
     name: String,
-    abs_path: PathBuf,
     rel_path: PathBuf,
     is_dir: bool,
-    is_symlink: bool,
 }
 
-/// Evaluates all `::zone(...)` rules across directories under `root`.
+#[derive(Default)]
+struct DirNode {
+    children: BTreeMap<String, NodeKind>,
+}
+
+enum NodeKind {
+    /// A regular file or symbolic link (`is_dir: false`, not traversed).
+    File,
+    /// A git submodule or nested git repository (`is_dir: true`, not traversed).
+    Submodule,
+    /// A directory containing git-visible entries (`is_dir: true`, traversed).
+    Dir(DirNode),
+}
+
+impl DirNode {
+    fn from_visible_entries(entries: &[VisibleEntry]) -> Self {
+        let mut root = Self::default();
+        for entry in entries {
+            let parts: Vec<&str> = entry.path.split('/').filter(|s| !s.is_empty()).collect();
+            if parts.is_empty() {
+                continue;
+            }
+            let mut cur = &mut root;
+            for &dir_seg in &parts[..parts.len() - 1] {
+                let node = cur
+                    .children
+                    .entry(dir_seg.to_owned())
+                    .or_insert_with(|| NodeKind::Dir(Self::default()));
+                if !matches!(node, NodeKind::Dir(_)) {
+                    *node = NodeKind::Dir(Self::default());
+                }
+                let NodeKind::Dir(next) = node else {
+                    unreachable!();
+                };
+                cur = next;
+            }
+            let leaf_name = parts[parts.len() - 1];
+            let leaf_kind = match entry.kind {
+                VisibleEntryKind::File | VisibleEntryKind::Symlink => NodeKind::File,
+                VisibleEntryKind::Submodule => NodeKind::Submodule,
+            };
+            cur.children.entry(leaf_name.to_owned()).or_insert(leaf_kind);
+        }
+        root
+    }
+}
+
+/// Evaluates all `::zone(...)` rules across the git-visible tree under `root`.
 ///
-/// Always skips `.git`, never follows directory symlinks, and skips recursing
-/// into subdirectories ignored by every active zone on their parent.
+/// Only git-visible entries (tracked and not deleted, or untracked and not ignored)
+/// and directories containing at least one such entry are evaluated. Directory symlinks
+/// are treated as non-directory leaf entries, submodules are treated as directory entries
+/// without descending into them, and subdirectories ignored by every active zone on their
+/// parent are skipped.
 pub(super) fn check_zones(root: &Path, zones: &[Zone]) -> Result<Vec<Violation>> {
     if zones.is_empty() {
         return Ok(Vec::new());
     }
+    let entries = catasto_git::visible_entries(root)?;
+    let tree = DirNode::from_visible_entries(&entries);
     let mut violations = Vec::new();
     let inherited = vec![false; zones.len()];
-    walk_dir(root, ".", zones, &inherited, &mut violations)?;
+    walk_tree(&tree, ".", zones, &inherited, &mut violations);
     Ok(violations)
 }
 
-fn walk_dir(
-    abs_dir: &Path,
+fn walk_tree(
+    node: &DirNode,
     rel_dir: &str,
     zones: &[Zone],
     inherited: &[bool],
     violations: &mut Vec<Violation>,
-) -> Result<()> {
-    let read = std::fs::read_dir(abs_dir)
-        .with_context(|| format!("failed to read directory {}", abs_dir.display()))?;
-    let mut raw_entries: Vec<_> = read
-        .collect::<std::result::Result<Vec<_>, std::io::Error>>()
-        .with_context(|| format!("failed to read entries in {}", abs_dir.display()))?;
-    raw_entries.sort_by_key(|entry| entry.file_name());
-
-    let mut children = Vec::with_capacity(raw_entries.len());
-    for entry in raw_entries {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        if name == ".git" {
-            continue;
-        }
-        let file_type = entry
-            .file_type()
-            .with_context(|| format!("failed to get file type for {}", entry.path().display()))?;
-        let rel_path = if rel_dir == "." {
-            PathBuf::from(&name)
-        } else {
-            PathBuf::from(rel_dir).join(&name)
-        };
-        children.push(ChildEntry {
-            name,
-            abs_path: entry.path(),
-            rel_path,
-            is_dir: file_type.is_dir(),
-            is_symlink: file_type.is_symlink(),
-        });
-    }
+) {
+    let children: Vec<ChildEntry> = node
+        .children
+        .iter()
+        .map(|(name, kind)| {
+            let rel_path = if rel_dir == "." {
+                PathBuf::from(name)
+            } else {
+                PathBuf::from(format!("{rel_dir}/{name}"))
+            };
+            let is_dir = matches!(kind, NodeKind::Dir(_) | NodeKind::Submodule);
+            ChildEntry {
+                name: name.clone(),
+                rel_path,
+                is_dir,
+            }
+        })
+        .collect();
 
     let active: Vec<bool> = zones
         .iter()
@@ -77,16 +117,16 @@ fn walk_dir(
         }
     }
 
-    for child in &children {
-        if !child.is_dir || child.is_symlink {
+    for (name, kind) in &node.children {
+        let NodeKind::Dir(child_node) = kind else {
             continue;
-        }
+        };
         let ignored_by_all_active = has_active
             && zones
                 .iter()
                 .zip(&active)
                 .filter(|&(_, &is_active)| is_active)
-                .all(|(zone, _)| is_ignored(zone, &child.name));
+                .all(|(zone, _)| is_ignored(zone, name));
         if ignored_by_all_active {
             continue;
         }
@@ -94,23 +134,21 @@ fn walk_dir(
         let child_inherited: Vec<bool> = zones
             .iter()
             .zip(&active)
-            .map(|(zone, &is_active)| is_active && zone.recursive && !is_ignored(zone, &child.name))
+            .map(|(zone, &is_active)| is_active && zone.recursive && !is_ignored(zone, name))
             .collect();
         let child_rel = if rel_dir == "." {
-            child.name.clone()
+            name.clone()
         } else {
-            format!("{rel_dir}/{}", child.name)
+            format!("{rel_dir}/{name}")
         };
-        walk_dir(
-            &child.abs_path,
+        walk_tree(
+            child_node,
             &child_rel,
             zones,
             &child_inherited,
             violations,
-        )?;
+        );
     }
-
-    Ok(())
 }
 
 fn is_ignored(zone: &Zone, name: &str) -> bool {
